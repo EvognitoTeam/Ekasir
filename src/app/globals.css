@@ -1,26 +1,198 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Colors - Artisan Reserve "Editorial Bistro" Reference Palette */
+  --color-surface: #fcf9f4;
+  --color-surface-bright: #fcf9f4;
+  --color-surface-dim: #e2dfda;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f6f3ee;
+  --color-surface-container: #f0ede9;
+  --color-surface-container-high: #edeae4;
+  --color-surface-container-highest: #e5e2dd;
+  
+  --color-on-surface: #1c1c19;
+  --color-on-surface-variant: #5a4b44;
+  --color-outline-variant: #d6c2bd;
+
+  --color-primary: #0E5C37;
+  --color-primary-container: #0a4228;
+  --color-on-primary: #ffffff;
+
+  --color-secondary: #5a6052;
+  --color-on-secondary: #ffffff;
+
+  --color-tertiary: #36645d;
+  --color-on-tertiary: #ffffff;
+
+  /* Typography Stacks */
+  --font-display: 'Noto Serif', serif;
+  --font-headline: 'Noto Serif', serif;
+  --font-body: 'Manrope', sans-serif;
+  --font-label: 'Manrope', sans-serif;
+
+  /* Transitions - "Weighted Luxury" Easing */
+  --transition-soft: 500ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-fast: 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body);
+  background-color: var(--color-surface);
+  color: var(--color-on-surface);
+  line-height: 1.625;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.03;
+  z-index: 9999;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+
+h1, h2, h3, .font-serif {
+  font-family: var(--font-display);
+}
+
+.font-label {
+  font-family: var(--font-label);
+  text-transform: uppercase;
+  letter-spacing: 0.05rem;
+  font-weight: 700;
+}
+
+/* Base Editorial Layout Utils */
+.main-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.main-content {
+  flex: 1;
+  width: 100%;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding: 0 1.25rem;
+  }
+}
+
+/* Glassmorphism Refined - Artisan Reserve Spec */
+.glass {
+  background: rgba(252, 249, 244, 0.8);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.glass-dark {
+  background: rgba(28, 28, 25, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* Ghost Border Utility - spec: felt not seen */
+.ghost-border {
+  border: 1px solid rgba(214, 194, 189, 0.15);
+}
+
+/* Button & Interaction Styles */
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+  transition: all var(--transition-fast);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-primary {
+  background: linear-gradient(45deg, var(--color-primary), var(--color-primary-container));
+  color: var(--color-on-primary);
+  border-radius: 1.5rem;
+  font-weight: 700;
+  box-shadow: 0 10px 30px -10px rgba(127, 80, 65, 0.25);
+}
+
+.btn-secondary {
+  background-color: var(--color-secondary);
+  color: var(--color-on-secondary);
+  border-radius: 1.5rem;
+  font-weight: 700;
+}
+
+/* Scrollbar Cleanliness */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Tonal Lift Utility - Depth without Lines */
+.tonal-lift {
+  background-color: var(--color-surface-container-low);
+  transition: background-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.tonal-lift:active {
+  background-color: var(--color-surface-container);
+  transform: scale(0.985);
+}
+
+/* Stamped Badge Utility - Editorial Label Spec */
+.stamped-badge {
+  padding: 0.375rem 0.75rem;
+  font-size: 9px;
+  font-family: var(--font-label);
+  text-transform: uppercase;
+  letter-spacing: 0.05rem;
+  font-weight: 700;
+  border-radius: 9999px;
+  background-color: var(--color-surface-container-high);
+  color: var(--color-on-surface-variant);
+  mix-blend-mode: multiply;
+  box-shadow: inset 0 0 10px rgba(0,0,0,0.01);
+}
+
+/* Typography Editorial Touches */
+.font-headline {
+  letter-spacing: -0.02em;
+}
+
+/* Ambient Shadow - "Warm Natural Depth" */
+.ambient-shadow {
+  box-shadow: 0 20px 40px rgba(28, 28, 25, 0.06);
+}
+
+/* Gradient Refinements */
+.hero-gradient {
+  background: linear-gradient(to top, 
+    rgba(28, 28, 25, 0.9) 0%, 
+    rgba(28, 28, 25, 0.3) 50%, 
+    transparent 100%
+  );
 }
