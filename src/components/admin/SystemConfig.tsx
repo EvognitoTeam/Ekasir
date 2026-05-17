@@ -1,83 +1,29 @@
-"use client";
-
-import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
-import { Save, RefreshCcw, Info, Percent, Utensils, Coffee, Loader2, CheckCircle2 } from 'lucide-react';
+import { useState } from 'react';
+import { useOrderStore } from '../../store/order.store';
+import { Save, RefreshCcw, Info, Percent, Utensils, Coffee } from 'lucide-react';
 
 export default function SystemConfig() {
-  const params = useParams();
-  const slug = params.mitraSlug as string;
-
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isSaved, setIsSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
+  const { settings, updateSettings } = useOrderStore();
   const [formData, setFormData] = useState({
-    cafeName: '',
-    taxRate: '',
-    serviceRate: '', // Renamed from serviceChargeRate for consistency
+    cafeName: settings.cafeName,
+    taxRate: (settings.taxRate * 100).toString(),
+    serviceChargeRate: (settings.serviceChargeRate * 100).toString(),
   });
+  const [isSaved, setIsSaved] = useState(false);
 
-  useEffect(() => {
-    if (!slug) {
-      setIsLoading(false);
-      setError("Mitra slug not found in URL.");
-      return;
-    }
+  const handleSave = () => {
+    updateSettings({
+      cafeName: formData.cafeName,
+      taxRate: parseFloat(formData.taxRate) / 100,
+      serviceChargeRate: parseFloat(formData.serviceChargeRate) / 100,
+    });
+    setIsSaved(true);
+    setTimeout(() => setIsSaved(false), 3000);
 
-    const fetchSettings = async () => {
-      setIsLoading(true);
-      try {
-        const res = await fetch(`/api/settings?slug=${slug}`);
-        const data = await res.json();
-        if (data.success) {
-          setFormData({
-            cafeName: data.data.cafeName || '',
-            taxRate: (data.data.taxRate * 100).toString(),
-            serviceRate: (data.data.serviceRate * 100).toString(),
-          });
-        } else {
-          setError(data.message || "Failed to fetch settings.");
-        }
-      } catch (err) {
-        setError("Network error while fetching settings.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchSettings();
-  }, [slug]);
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    setError(null);
-    try {
-      const payload = {
-        slug: slug,
-        taxRate: parseFloat(formData.taxRate) / 100,
-        serviceRate: parseFloat(formData.serviceRate) / 100,
-        cafeName: formData.cafeName,
-      };
-
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      const result = await res.json();
-      if (!result.success) throw new Error(result.message || 'Failed to save settings');
-
-      setIsSaved(true);
-      setTimeout(() => setIsSaved(false), 3000);
-
-    } catch (err: any) {
-      setError(err.message || 'An error occurred while saving.');
-    } finally {
-      setIsSaving(false);
-    }
+    // Broadcast update to all tabs
+    const channel = new BroadcastChannel('bersejuk-order-sync');
+    channel.postMessage({ type: 'STATUS_UPDATE', __secureToken: 'bsjk-secure-v1' });
+    setTimeout(() => channel.close(), 100);
   };
 
   return (
@@ -89,18 +35,6 @@ export default function SystemConfig() {
         </p>
       </div>
 
-      {isLoading && (
-        <div className="flex justify-center items-center p-10">
-          <Loader2 className="w-8 h-8 animate-spin text-stone-400" />
-        </div>
-      )}
-
-      {error && !isLoading && (
-        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-2xl">
-          <strong>Error:</strong> {error}
-        </div>
-      )}
-
       <div className="space-y-6">
         {/* Cafe Name */}
         <div className="space-y-2">
@@ -111,7 +45,7 @@ export default function SystemConfig() {
             </div>
             <input 
               type="text" 
-              className="w-full bg-white border border-stone-100 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold focus:border-[var(--color-primary)] outline-none transition-all"
+              className="w-full bg-white border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold focus:border-[var(--color-primary)] focus:ring-4 focus:ring-[var(--color-primary)]/5 outline-none transition-all shadow-sm"
               value={formData.cafeName}
               onChange={(e) => setFormData({ ...formData, cafeName: e.target.value })}
             />
@@ -124,30 +58,30 @@ export default function SystemConfig() {
             <label className="text-[10px] font-label uppercase tracking-widest text-stone-400 pl-1">Pajak (PPN %)</label>
             <div className="relative">
               <div className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300">
-                <Percent className="w-4 h-4" /> 
+                <Percent className="w-4 h-4" />
               </div>
-              <input 
-                type="number" 
-                step="0.1"
-                className="w-full bg-white border border-stone-100 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold focus:border-[var(--color-primary)] outline-none transition-all"
-                value={formData.taxRate}
-                onChange={(e) => setFormData({ ...formData, taxRate: e.target.value })}
-              />
+               <input 
+                 type="number" 
+                 step="0.1"
+                 className="w-full bg-white border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold focus:border-[var(--color-primary)] focus:ring-4 focus:ring-[var(--color-primary)]/5 outline-none transition-all shadow-sm"
+                 value={formData.taxRate}
+                 onChange={(e) => setFormData({ ...formData, taxRate: e.target.value })}
+               />
             </div>
           </div>
           <div className="space-y-2">
-            <label className="text-[10px] font-label uppercase tracking-widest text-stone-400 pl-1">Biaya Layanan (%)</label>
+            <label className="text-[10px] font-label uppercase tracking-widest text-stone-400 pl-1">Service Charge (%)</label>
             <div className="relative">
               <div className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300">
                 <Utensils className="w-4 h-4" />
               </div>
-              <input 
-                type="number" 
-                step="0.1"
-                className="w-full bg-white border border-stone-100 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold focus:border-[var(--color-primary)] outline-none transition-all"
-                value={formData.serviceRate}
-                onChange={(e) => setFormData({ ...formData, serviceRate: e.target.value })}
-              />
+               <input 
+                 type="number" 
+                 step="0.1"
+                 className="w-full bg-white border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold focus:border-[var(--color-primary)] focus:ring-4 focus:ring-[var(--color-primary)]/5 outline-none transition-all shadow-sm"
+                 value={formData.serviceChargeRate}
+                 onChange={(e) => setFormData({ ...formData, serviceChargeRate: e.target.value })}
+               />
             </div>
           </div>
         </div>
@@ -156,20 +90,20 @@ export default function SystemConfig() {
       <div className="pt-4">
         <button 
           onClick={handleSave}
-          disabled={isLoading || isSaving}
           className={`w-full py-4 rounded-2xl flex items-center justify-center gap-3 font-label text-xs uppercase tracking-widest font-bold transition-all active:scale-[0.98] ${
-            isSaved ? 'bg-green-500 text-white' : isSaving ? 'bg-stone-400' : 'bg-stone-900 text-white hover:bg-stone-800'
+            isSaved ? 'bg-green-500 text-white' : 'bg-stone-900 text-white hover:bg-stone-800'
           }`}
         >
           {isSaved ? (
             <>
-              <CheckCircle2 className="w-4 h-4" />
+              <RefreshCcw className="w-4 h-4 animate-spin" />
               Tersimpan!
             </>
-          ) : isSaving ? (
-            <><Loader2 className="w-4 h-4 animate-spin" /> Menyimpan...</>
           ) : (
-            <><Save className="w-4 h-4" /> Simpan Konfigurasi</>
+            <>
+              <Save className="w-4 h-4" />
+              Simpan Konfigurasi
+            </>
           )}
         </button>
       </div>
@@ -183,17 +117,17 @@ export default function SystemConfig() {
             <span className="font-bold">Rp 100.000</span>
           </div>
           <div className="flex justify-between text-xs">
-            <span className="text-stone-500">Biaya Layanan ({formData.serviceRate}%)</span>
-            <span className="font-bold">Rp {((100000 * parseFloat(formData.serviceRate || '0')) / 100).toLocaleString('id-ID')}</span>
+            <span className="text-stone-500">Service Charge ({formData.serviceChargeRate}%)</span>
+            <span className="font-bold">Rp {((100000 * parseFloat(formData.serviceChargeRate || '0')) / 100).toLocaleString('id-ID')}</span>
           </div>
           <div className="flex justify-between text-xs">
             <span className="text-stone-500">Pajak ({formData.taxRate}%)</span>
-            <span className="font-bold">Rp {((100000 * (1 + parseFloat(formData.serviceRate || '0') / 100) * parseFloat(formData.taxRate || '0')) / 100).toLocaleString('id-ID', { maximumFractionDigits: 0 })}</span>
+            <span className="font-bold">Rp {((100000 * (1 + parseFloat(formData.serviceChargeRate || '0') / 100) * parseFloat(formData.taxRate || '0')) / 100).toLocaleString('id-ID', { maximumFractionDigits: 0 })}</span>
           </div>
           <div className="pt-3 border-t border-stone-200 flex justify-between">
             <span className="text-sm font-bold">Total Est.</span>
             <span className="text-sm font-bold text-[var(--color-primary)]">
-              Rp {(100000 * (1 + parseFloat(formData.serviceRate || '0') / 100) * (1 + parseFloat(formData.taxRate || '0') / 100)).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+              Rp {(100000 * (1 + parseFloat(formData.serviceChargeRate || '0') / 100) * (1 + parseFloat(formData.taxRate || '0') / 100)).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
             </span>
           </div>
         </div>

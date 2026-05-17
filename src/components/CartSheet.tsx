@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation'; // Untuk mengambil slug kedai
+import { useParams } from 'next/navigation'; 
 import { useCartStore } from '../store/cart.store';
 import { useMenuStore } from '../store/menu.store';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -12,25 +12,26 @@ interface Props {
   onCheckout: () => void;
 }
 
-// Helper untuk format mata uang
 const formatIDR = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 })
     .format(n).replace(/\s/g, '');
 
 export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
   const params = useParams();
-  const slug = params.mitraSlug as string;
+  const slug = (params.mitraSlug as string) || "";
 
-  const { items: cartItems, updateQuantity, removeItem, calculateTotal } = useCartStore();
+  // 🔴 1. Ambil getCartBySlug, dan update fungsi lainnya
+  const { getCartBySlug, updateQuantity, removeItem, calculateTotal } = useCartStore();
   const { items: menuItems } = useMenuStore();
 
-  // 1. State untuk menyimpan pengaturan dari database
+  // 🔴 2. Panggil getCartBySlug untuk mendapatkan item keranjang spesifik toko ini
+  const cartItems = getCartBySlug(slug);
+
   const [settings, setSettings] = useState({ taxRate: 0, serviceRate: 0, isTaxIncluded: false });
 
-  // 2. Ambil Settings Pajak dari API
   useEffect(() => {
     const fetchSettings = async () => {
-      if (!slug || !isOpen) return; // Hanya fetch jika cart terbuka agar hemat resource
+      if (!slug || !isOpen) return; 
       
       try {
         const res = await fetch(`/api/settings?slug=${slug}`);
@@ -50,9 +51,9 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
     fetchSettings();
   }, [slug, isOpen]);
 
-  // 3. Kalkulasi dinamis berdasarkan pengaturan
   const getCartTotals = () => {
-    const subtotal = calculateTotal(menuItems);
+    // 🔴 3. Sisipkan slug saat memanggil calculateTotal
+    const subtotal = calculateTotal(slug, menuItems);
     let tax = 0;
     let service = 0;
 
@@ -119,11 +120,9 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
                     const product = menuItems.find((i: MenuItem) => i.id === item.menuItemId);
                     if (!product) return null;
 
-                    // Hitung harga per item secara dinamis
                     let unitPrice = Number(product.basePrice);
                     const labels: string[] = [];
 
-                    // 1. Logika Size & POS Meta
                     if (item.options && product.meta) {
                       const sizeDef = product.meta.sizes?.find((s: any) => s.label === item.options!.size);
                       if (sizeDef) unitPrice = Number(sizeDef.price);
@@ -131,7 +130,6 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
                       if (item.options.temperature) labels.push(item.options.temperature.replace('Serve ', ''));
                     }
 
-                    // 2. Logika Categorized Addons (New System)
                     if (Array.isArray(item.selectedAddOns) && product.categorizedAddons) {
                       item.selectedAddOns.forEach((id: any) => {
                         product.categorizedAddons?.forEach((group: any) => {
@@ -153,7 +151,8 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
                           <div className="flex justify-between items-start">
                             <h4 className="text-sm font-bold text-stone-900 truncate pr-2">{product.name}</h4>
                             <button 
-                              onClick={() => removeItem(item.id)}
+                              // 🔴 4. Sisipkan slug saat menghapus item
+                              onClick={() => removeItem(slug, item.id)}
                               className="text-stone-300 hover:text-red-500 transition-colors"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -171,11 +170,19 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
                               {formatIDR(unitPrice * item.quantity)}
                             </span>
                             <div className="flex items-center gap-3 bg-stone-50 rounded-full px-3 py-1 border border-stone-100">
-                              <button onClick={() => updateQuantity(item.id, -1)} className="hover:text-red-500 transition-colors">
+                              <button 
+                                // 🔴 5. Sisipkan slug saat update kuantitas (kurang)
+                                onClick={() => updateQuantity(slug, item.id, -1)} 
+                                className="hover:text-red-500 transition-colors"
+                              >
                                 <Minus className="w-3 h-3" />
                               </button>
                               <span className="text-xs font-bold w-4 text-center">{item.quantity}</span>
-                              <button onClick={() => updateQuantity(item.id, 1)} className="hover:text-[#0E5C37] transition-colors">
+                              <button 
+                                // 🔴 6. Sisipkan slug saat update kuantitas (tambah)
+                                onClick={() => updateQuantity(slug, item.id, 1)} 
+                                className="hover:text-[#0E5C37] transition-colors"
+                              >
                                 <Plus className="w-3 h-3" />
                               </button>
                             </div>
@@ -197,12 +204,10 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
                 </div>
                 <div className="flex justify-between text-xs text-stone-500">
                   <div className="flex items-center gap-1">
-                    {/* Tulisan berubah sesuai database */}
                     <span>Tax & Service</span>
                     <Receipt className="w-3 h-3 opacity-30" />
                   </div>
                   <span className="font-bold text-stone-900">
-                    {/* Tampilkan 'Included' jika pajak sudah digabung harga */}
                     {settings.isTaxIncluded ? 'Included' : formatIDR(tax + service)}
                   </span>
                 </div>

@@ -2,16 +2,21 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, MinusCircle, PlusCircle, Coffee, Settings2 } from 'lucide-react';
 import { MenuItem, POSOptions } from '../types/menu';
+import { useParams } from 'next/navigation';
 
 interface Props {
   item: MenuItem;
   onClose: () => void;
-  onAddToCart: (item: MenuItem, selections: any, quantity: number, options?: POSOptions, sku_code?: string) => void;
+  onAddToCart: (slug: string, item: MenuItem, selections: any, quantity: number, options?: POSOptions, sku_code?: string) => void;
 }
 
 export default function ProductDetailView({ item, onClose, onAddToCart }: Props) {
+  const params = useParams();
+  const slug = (params.mitraSlug as string) || "";
+  
   const [quantity, setQuantity] = useState(1);
   const [isBaristaMode, setIsBaristaMode] = useState(false);
+  
   
   // State untuk menampung ID Add-on terpilih
   const [selectedAddons, setSelectedAddons] = useState<number[]>([]);
@@ -130,12 +135,14 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
   };
 
   const handleAddToCart = () => {
+    
     if (!isValid) return; // Keamanan ganda
 
     const completeOptions = { ...posOptions, size: selectedSize };
     const cleanAddons = selectedAddons.filter(id => !isNaN(id) && id !== null);
 
     onAddToCart(
+      slug,
       item, 
       cleanAddons, 
       quantity, 

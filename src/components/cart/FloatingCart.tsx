@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ShoppingBag, ArrowRight } from 'lucide-react';
 import { useCartStore } from '../../store/cart.store';
 import { useMenuStore } from '../../store/menu.store';
+import { useParams } from 'next/navigation';
 
 interface FloatingCartProps {
   onOpenCart: () => void;
@@ -15,11 +16,14 @@ const formatIDR = (n: number) =>
     .replace(/\s/g, '');
 
 export default function FloatingCart({ onOpenCart, onCheckout }: FloatingCartProps) {
+  const params = useParams();
+  const slug = (params.mitraSlug as string) || "";
+
   const { getTotalItems, calculateTotal } = useCartStore();
   const { items: menuItems } = useMenuStore();
 
-  const totalItems = getTotalItems();
-  const cartTotal = calculateTotal(menuItems);
+  const totalItems = getTotalItems(slug);
+  const cartTotal = calculateTotal(slug, menuItems);
 
   return (
     <AnimatePresence>

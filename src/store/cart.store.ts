@@ -2,87 +2,118 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { CartItem, MenuItem } from '../types/menu';
 
+// State baru: Keranjang disimpan berdasarkan Slug Toko (Record<string, CartItem[]>)
 interface CartState {
-  items: CartItem[];
-  addItem: (product: MenuItem, selections: any, quantity: number, options?: any, sku_code?: string) => void;
-  removeItem: (id: string) => void;
-  updateQuantity: (id: string, delta: number) => void;
-  clearCart: () => void;
-  getTotalItems: () => number;
-  calculateTotal: (menuItems: MenuItem[]) => number;
+  cartsBySlug: Record<string, CartItem[]>;
+  
+  // Semua fungsi sekarang menerima parameter 'slug' pertama kali
+  addItem: (slug: string, product: MenuItem, selections: any, quantity: number, options?: any, sku_code?: string) => void;
+  removeItem: (slug: string, id: string) => void;
+  updateQuantity: (slug: string, id: string, delta: number) => void;
+  clearCart: (slug: string) => void;
+  getTotalItems: (slug: string) => number;
+  calculateTotal: (slug: string, menuItems: MenuItem[]) => number;
+  
+  // Utility untuk mengambil item keranjang di toko tertentu
+  getCartBySlug: (slug: string) => CartItem[];
 }
 
 export const useCartStore = create<CartState>()(
   persist(
     (set, get) => ({
-      items: [],
+      // Inisialisasi awal objek kosong
+      cartsBySlug: {},
       
-      addItem: (product, selections, quantity, options, sku_code) => {
+      getCartBySlug: (slug) => {
+        return get().cartsBySlug[slug] || [];
+      },
+
+      addItem: (slug, product, selections, quantity, options, sku_code) => {
         let sanitized: number[] = [];
 
-        // Konversi masukan menjadi array angka murni [1, 2]
+        // Konversi masukan menjadi array angka murni
         if (Array.isArray(selections)) {
           sanitized = selections
             .map(item => {
-              // Jika tidak sengaja menerima format objek legacy, ambil choiceIds-nya
               if (typeof item === 'object' && item !== null && 'choiceIds' in item) {
                 return Number(item.choiceIds);
               }
-              // Jika sudah benar (ID murni), langsung konversi ke Number
               return Number(item);
             })
             .filter(id => !isNaN(id) && id !== 0)
             .sort();
         }
 
+        // Ambil keranjang milik toko tersebut (atau array kosong jika belum ada)
+        const currentCart = get().cartsBySlug[slug] || [];
+
         // Cari item yang sama untuk penggabungan kuantitas
-        const existingItem = get().items.find(item => 
+        const existingItem = currentCart.find(item => 
           item.menuItemId === product.id && 
           JSON.stringify(item.selectedAddOns) === JSON.stringify(sanitized) &&
           JSON.stringify(item.options) === JSON.stringify(options)
         );
 
         if (existingItem) {
-          set({ 
-            items: get().items.map(i => 
-              i.id === existingItem.id ? { ...i, quantity: i.quantity + quantity } : i
-            )
-          });
+          // Update kuantitas item yang sudah ada
+          const updatedCart = currentCart.map(i => 
+            i.id === existingItem.id ? { ...i, quantity: i.quantity + quantity } : i
+          );
+          set((state) => ({ 
+            cartsBySlug: { ...state.cartsBySlug, [slug]: updatedCart } 
+          }));
         } else {
-          set({ 
-            items: [
-              ...get().items, 
-              { 
-                id: Math.random().toString(36).substring(2, 9), 
-                menuItemId: product.id, 
-                quantity, 
-                selectedAddOns: sanitized, 
-                options,
-                sku_code
-              }
-            ]
-          });
+          // Tambahkan item baru ke keranjang toko tersebut
+          const newItem = { 
+            id: Math.random().toString(36).substring(2, 9), 
+            menuItemId: product.id, 
+            quantity, 
+            selectedAddOns: sanitized, 
+            options,
+            sku_code
+          };
+          set((state) => ({ 
+            cartsBySlug: { ...state.cartsBySlug, [slug]: [...currentCart, newItem] } 
+          }));
         }
       },
 
-      removeItem: (id) => set({ items: get().items.filter(i => i.id !== id) }),
+      removeItem: (slug, id) => {
+        const currentCart = get().cartsBySlug[slug] || [];
+        const updatedCart = currentCart.filter(i => i.id !== id);
+        set((state) => ({ 
+          cartsBySlug: { ...state.cartsBySlug, [slug]: updatedCart } 
+        }));
+      },
 
-      updateQuantity: (id, delta) => set({
-        items: get().items.map(i => 
+      updateQuantity: (slug, id, delta) => {
+        const currentCart = get().cartsBySlug[slug] || [];
+        const updatedCart = currentCart.map(i => 
           i.id === id ? { ...i, quantity: Math.max(0, i.quantity + delta) } : i
-        ).filter(i => i.quantity > 0)
-      }),
+        ).filter(i => i.quantity > 0);
+        
+        set((state) => ({ 
+          cartsBySlug: { ...state.cartsBySlug, [slug]: updatedCart } 
+        }));
+      },
 
-      clearCart: () => set({ items: [] }),
+      clearCart: (slug) => {
+        set((state) => ({ 
+          cartsBySlug: { ...state.cartsBySlug, [slug]: [] } 
+        }));
+      },
 
-      getTotalItems: () => get().items.reduce((acc, item) => acc + item.quantity, 0),
+      getTotalItems: (slug) => {
+        const currentCart = get().cartsBySlug[slug] || [];
+        return currentCart.reduce((acc, item) => acc + item.quantity, 0);
+      },
 
-      calculateTotal: (menuItems) => {
-        return get().items.reduce((total, cartItem) => {
+      calculateTotal: (slug, menuItems) => {
+        const currentCart = get().cartsBySlug[slug] || [];
+        
+        return currentCart.reduce((total, cartItem) => {
           const product = menuItems.find(i => i.id === cartItem.menuItemId);
           
-          // console.log(`Produk: ${product?.name}`, "Addons yang tersedia di produk ini:", product?.addons);
-          // console.log("Addons yang dipilih user (ID):", cartItem.selectedAddOns);
           if (!product) return total;
           
           let itemPrice = Number(product.basePrice);
@@ -92,10 +123,8 @@ export const useCartStore = create<CartState>()(
             if (sizeDef) itemPrice = Number(sizeDef.price);
           }
 
-          // 2. Gunakan perbandingan Number yang aman
           if (Array.isArray(cartItem.selectedAddOns) && product.categorizedAddons) {
             cartItem.selectedAddOns.forEach((id: any) => {
-              // Kita iterasi setiap kategori untuk mencari addon yang cocok
               product.categorizedAddons?.forEach((category: any) => {
                 const addonData = category.addons?.find((a: any) => Number(a.id) === Number(id));
                 if (addonData) {
@@ -110,7 +139,7 @@ export const useCartStore = create<CartState>()(
       },
     }),
     {
-      name: 'evokasir-cart-v2', // Ganti nama storage agar tidak bentrok dengan versi lama
+      name: 'evokasir-multi-cart', // Ganti nama agar bersih dari cache lama
     }
   )
 );

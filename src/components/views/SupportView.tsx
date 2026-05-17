@@ -14,10 +14,17 @@ interface Facility {
   icon?: string; 
 }
 
+// 🔴 1. Tambahkan Interface FAQ
+interface FAQ {
+  q: string;
+  a: string;
+}
+
 interface MitraSettings {
   wifiSSID?: string;
   wifiPassword?: string;
   facilities?: Facility[];
+  faqs?: FAQ[]; // 🔴 2. Masukkan ke dalam MitraSettings
 }
 
 export default function SupportView() {
@@ -28,25 +35,30 @@ export default function SupportView() {
   const [settings, setSettings] = useState<MitraSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 1. Fetching Data Dinamis
+  // Fetching Data Dinamis
   useEffect(() => {
     const fetchSettings = async () => {
       if (!slug) return;
       try {
         const res = await fetch(`/api/settings?slug=${slug}`);
         const data = await res.json();
-        console.log(data);
         
         if (data.success) {
-          // Asumsi struktur respons: { success: true, data: { wifiSSID: '...', wifiPassword: '...', facilities: '[...]' } }
+          // Parse string JSON dari database menjadi Array Object
           const parsedFacilities = data.data.facilities 
             ? (typeof data.data.facilities === 'string' ? JSON.parse(data.data.facilities) : data.data.facilities) 
+            : [];
+            
+          // 🔴 3. Lakukan parsing yang sama untuk FAQ
+          const parsedFaqs = data.data.faqs 
+            ? (typeof data.data.faqs === 'string' ? JSON.parse(data.data.faqs) : data.data.faqs) 
             : [];
 
           setSettings({
             wifiSSID: data.data.wifiSSID,
             wifiPassword: data.data.wifiPassword,
-            facilities: parsedFacilities
+            facilities: parsedFacilities,
+            faqs: parsedFaqs // 🔴 4. Simpan ke state
           });
         }
       } catch (error) {
@@ -63,10 +75,7 @@ export default function SupportView() {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 4000);
   };
-
-  const handlePulseWaiter = () => showToast('Waiter Notified! Tim kami segera menuju meja Anda.');
   
-  // 2. Action Dinamis untuk WiFi
   const handleWifi = () => {
     if (settings?.wifiSSID && settings?.wifiPassword) {
       showToast(`WiFi: ${settings.wifiSSID} | Pass: ${settings.wifiPassword}`);
@@ -74,21 +83,6 @@ export default function SupportView() {
       showToast('Informasi WiFi tidak tersedia saat ini.');
     }
   };
-
-  const faqs = [
-    { 
-      q: "Jam Operasional", 
-      a: "Buka setiap hari mulai pukul 08:00 hingga 23:00 WIB. Last order untuk makanan utama pukul 22:00 WIB." 
-    },
-    { 
-      q: "Metode Pembayaran", 
-      a: "Kami menerima pembayaran via QRIS dan Cash. Pembayaran dilakukan di kasir (Kecuali QRIS)." 
-    },
-    { 
-      q: "Reservasi & Event", 
-      a: "Untuk pemesanan grup di atas 10 orang atau penyewaan VIP Room / Private Event, silakan hubungi manajemen kami." 
-    }
-  ];
 
   if (isLoading) {
     return (
@@ -101,7 +95,11 @@ export default function SupportView() {
     );
   }
 
-  // 3. Helper untuk memetakan nama icon dari database ke komponen icon Lucide
+  // 🔴 5. Update deteksi untuk menyembunyikan section
+  const hasWifiInfo = !!(settings?.wifiSSID && settings?.wifiPassword);
+  const hasFacilities = !!(settings?.facilities && settings.facilities.length > 0);
+  const hasFaqs = !!(settings?.faqs && settings.faqs.length > 0);
+
   const getIconComponent = (iconName?: string) => {
     switch (iconName?.toLowerCase()) {
       case 'map': case 'mappin': return <MapPin className="w-5 h-5 text-emerald-300" />;
@@ -109,7 +107,7 @@ export default function SupportView() {
       case 'phone': case 'stopkontak': return <Phone className="w-5 h-5 text-emerald-300" />;
       case 'shield': case 'toilet': return <ShieldAlert className="w-5 h-5 text-emerald-300" />;
       case 'wifi': return <Wifi className="w-5 h-5 text-emerald-300" />;
-      default: return <CheckCircle2 className="w-5 h-5 text-emerald-300" />; // Fallback icon
+      default: return <CheckCircle2 className="w-5 h-5 text-emerald-300" />; 
     }
   };
 
@@ -122,13 +120,9 @@ export default function SupportView() {
             initial={{ opacity: 0, y: -60 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -60 }}
-            className="fixed top-6 left-1/2 -translate-x-1/2 z-10 bg-stone-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 text-sm font-bold whitespace-nowrap"
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-stone-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 text-sm font-bold whitespace-nowrap"
           >
-            <motion.span
-              animate={{ rotate: [0, -15, 15, -10, 10, 0] }}
-              transition={{ duration: 0.6 }}
-              className="text-xl"
-            >
+            <motion.span animate={{ rotate: [0, -15, 15, -10, 10, 0] }} transition={{ duration: 0.6 }} className="text-xl">
               👋
             </motion.span>
             <span>{toastMessage}</span>
@@ -155,56 +149,38 @@ export default function SupportView() {
         </p>
       </header>
 
-      {/* The Concierge Action Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-16">
-         {[
-          //  { 
-          //    title: "Panggil Waiter", 
-          //    desc: "Butuh bantuan langsung di meja?",
-          //    cta: "Panggil",
-          //    icon: MessageCircle,
-          //    onClick: handlePulseWaiter,
-          //  },
-           { 
-             title: "Akses WiFi", 
-             desc: "Tetap terhubung dengan internet.",
-             cta: "Lihat Sandi",
-             icon: Wifi,
-             onClick: handleWifi,
-           }
-         ].map((card) => (
+      {hasWifiInfo && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-16">
            <motion.div 
-             key={card.title}
              whileHover={{ y: -4 }}
              className="bg-white p-6 rounded-3xl shadow-sm border border-stone-100 flex flex-col items-center text-center transition-all"
            >
              <div className="w-14 h-14 bg-emerald-50 text-[#0E5C37] rounded-full flex items-center justify-center mb-6">
-                <card.icon className="w-6 h-6" />
+                <Wifi className="w-6 h-6" />
              </div>
-             <h3 className="text-lg font-bold text-stone-900 mb-2">{card.title}</h3>
-             <p className="text-xs text-stone-500 mb-6 leading-relaxed">{card.desc}</p>
+             <h3 className="text-lg font-bold text-stone-900 mb-2">Akses WiFi</h3>
+             <p className="text-xs text-stone-500 mb-6 leading-relaxed">Tetap terhubung dengan internet.</p>
              <button
-               onClick={card.onClick}
+               onClick={handleWifi}
                className="w-full py-3 bg-stone-50 text-stone-700 border border-stone-100 rounded-xl text-xs font-bold uppercase hover:bg-[#0E5C37] hover:text-white transition-all active:scale-95 shadow-sm"
              >
-               {card.cta}
+               Lihat Sandi
              </button>
            </motion.div>
-         ))}
-      </div>
+        </div>
+      )}
 
-      {/* 4. Fasilitas Section Dinamis */}
-      <section className="mb-16">
-         <div className="bg-[#0E5C37] text-white p-8 rounded-[2rem] relative overflow-hidden shadow-xl shadow-emerald-900/10">
-            <div className="absolute -bottom-10 -right-10 opacity-10">
-              <ShieldAlert className="w-48 h-48" />
-            </div>
+      {hasFacilities && (
+        <section className="mb-16">
+           <div className="bg-[#0E5C37] text-white p-8 rounded-[2rem] relative overflow-hidden shadow-xl shadow-emerald-900/10">
+              <div className="absolute -bottom-10 -right-10 opacity-10">
+                <ShieldAlert className="w-48 h-48" />
+              </div>
 
-            <h2 className="text-2xl font-black uppercase tracking-tight mb-8 relative z-10">Fasilitas <br/> Restoran</h2>
-            
-            {settings?.facilities && settings.facilities.length > 0 ? (
+              <h2 className="text-2xl font-black uppercase tracking-tight mb-8 relative z-10">Fasilitas <br/> Restoran</h2>
+              
               <div className="grid grid-cols-2 gap-6 relative z-10">
-                 {settings.facilities.map((fac, index) => (
+                 {settings.facilities!.map((fac, index) => (
                    <div key={index} className="flex flex-col gap-2">
                      {getIconComponent(fac.icon || fac.name)}
                      <p className="font-bold text-sm">{fac.name}</p>
@@ -212,33 +188,41 @@ export default function SupportView() {
                    </div>
                  ))}
               </div>
-            ) : (
-              <p className="text-xs text-emerald-100/70 relative z-10">
-                Informasi fasilitas belum diperbarui oleh manajemen.
-              </p>
-            )}
-         </div>
-      </section>
+           </div>
+        </section>
+      )}
 
-      {/* Informasi Umum / FAQ Section */}
-      <section>
-         <div className="mb-8">
-            <h3 className="text-[10px] font-bold uppercase tracking-[0.3em] text-stone-400 mb-2">Informasi Umum</h3>
-            <h2 className="text-2xl font-black uppercase text-stone-900 leading-tight">Pertanyaan<br/>Sering Diajukan</h2>
-         </div>
-         
-         <div className="space-y-4">
-           {faqs.map((faq) => (
-             <div key={faq.q} className="bg-white p-6 rounded-2xl shadow-sm border border-stone-100">
-               <div className="flex items-center gap-3 mb-3">
-                 <Clock className="w-4 h-4 text-[#0E5C37]" />
-                 <h4 className="text-sm font-bold text-stone-900 uppercase">{faq.q}</h4>
+      {hasFaqs && (
+        <section>
+           <div className="mb-8">
+              <h3 className="text-[10px] font-bold uppercase tracking-[0.3em] text-stone-400 mb-2">Informasi Umum</h3>
+              <h2 className="text-2xl font-black uppercase text-stone-900 leading-tight">Pertanyaan<br/>Sering Diajukan</h2>
+           </div>
+           
+           <div className="space-y-4">
+             {/* 🔴 6. Mapping langsung dari settings.faqs */}
+             {settings.faqs!.map((faq) => (
+               <div key={faq.q} className="bg-white p-6 rounded-2xl shadow-sm border border-stone-100">
+                 <div className="flex items-center gap-3 mb-3">
+                   <Clock className="w-4 h-4 text-[#0E5C37]" />
+                   <h4 className="text-sm font-bold text-stone-900 uppercase">{faq.q}</h4>
+                 </div>
+                 <p className="text-xs text-stone-500 leading-relaxed">{faq.a}</p>
                </div>
-               <p className="text-xs text-stone-500 leading-relaxed">{faq.a}</p>
-             </div>
-           ))}
-         </div>
-      </section>
+             ))}
+           </div>
+        </section>
+      )}
+
+      {!hasWifiInfo && !hasFacilities && !hasFaqs && (
+        <div className="flex flex-col items-center justify-center text-center opacity-40 py-20">
+          <ShieldAlert className="w-12 h-12 text-stone-300 mb-4" />
+          <p className="text-xs font-bold text-stone-500 uppercase tracking-widest">
+            Informasi layanan belum dikonfigurasi.
+          </p>
+        </div>
+      )}
+
     </div>
   );
 }

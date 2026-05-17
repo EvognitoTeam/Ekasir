@@ -64,8 +64,8 @@ export default function MenuEditor() {
             className={`bg-white p-5 rounded-[2rem] border border-stone-100 shadow-sm transition-all ${!item.isAvailable ? 'opacity-80' : ''}`}
           >
              <div className="flex items-start gap-4">
-                <div className="w-16 h-16 rounded-2xl overflow-hidden flex-shrink-0 border border-stone-50">
-                   <img src={item.image} alt={item.name} className={`w-full h-full object-cover transition-all ${!item.isAvailable ? 'grayscale' : ''}`} />
+                <div className="w-20 h-20 rounded-2xl overflow-hidden flex-shrink-0 border border-stone-100 shadow-sm">
+                   <img src={item.image} alt={item.name} className={`w-full h-full object-cover transition-all duration-500 ${!item.isAvailable ? 'grayscale opacity-50' : ''}`} />
                 </div>
                 
                 <div className="flex-1 min-w-0">
@@ -83,7 +83,7 @@ export default function MenuEditor() {
                         }`}
                       >
                          <Power className="w-3.5 h-3.5" />
-                         <span className="text-[10px] font-label uppercase tracking-widest leading-none pt-0.5">
+                         <span className="text-[10px] font-label uppercase tracking-widest leading-none">
                             {item.isAvailable ? 'Active' : 'Depleted'}
                          </span>
                       </button>

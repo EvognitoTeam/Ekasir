@@ -48,7 +48,7 @@ export const users = mysqlTable("users", {
   phone: varchar("phone", { length: 15 }),
   remember_token: varchar("remember_token", { length: 100 }),
   mitra_id: bigint("mitra_id", { mode: "number", unsigned: true }).notNull(),
-  is_login: boolean("is_login").default(false).notNull(),
+  is_login: boolean("is_login").default(false),
   login_at: timestamp("login_at"),
   role: mysqlEnum("role", ['Owner', 'Cashier', 'User']).default('User').notNull(),
   token: varchar("token", { length: 40 }),
@@ -290,6 +290,7 @@ export const settings = mysqlTable('settings', {
   wifiPassword: varchar('wifi_password', { length: 100 }),
 
   facility: json("facility"), 
+  faq: json("faq"), 
 
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow().onUpdateNow(),

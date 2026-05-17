@@ -29,8 +29,9 @@ import { MenuItem } from '@/types/menu';
 import { useMenuFilter } from '@/hooks/useMenuFilter';
 
 import { Store, ChevronLeft } from 'lucide-react';
+import AdminDashboardView from '@/components/views/AdminDashboardView';
 
-type ViewState = 'menu' | 'roasts' | 'history' | 'help' | 'profile' | 'checkout' | 'tracking' | 'coupons';
+type ViewState = 'menu' | 'roasts' | 'history' | 'help' | 'profile' | 'checkout' | 'tracking' | 'coupons' | 'dashboard';
 
 export default function Home() { 
   const params = useParams();
@@ -112,13 +113,14 @@ export default function Home() {
   };
 
   const handleAddToCart = (
+    slug: string,
     item: MenuItem, 
     selections: any, 
     quantity: number, 
     options?: any, 
     sku_code?: string
   ) => {
-    addItem(item, selections, quantity, options, sku_code);
+    addItem(slug, item, selections, quantity, options, sku_code);
     setIsDetailOpen(false);
   };
 
@@ -204,6 +206,12 @@ export default function Home() {
                 {currentView === 'coupons' && (
                   <div className="h-full overflow-y-auto">
                     <CouponView onBack={() => setCurrentView('profile')} />
+                  </div>
+                )}
+                
+                {currentView === 'dashboard' && (
+                  <div className="h-full overflow-y-auto">
+                    <AdminDashboardView onBack={() => setCurrentView('dashboard')} />
                   </div>
                 )}
 

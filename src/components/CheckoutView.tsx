@@ -491,7 +491,9 @@ export default function CheckoutView({ onBack, onSuccess }: Props) {
   const params = useParams();
   const slug = params.mitraSlug as string;
 
-  const { items: cartItems, removeItem, updateQuantity, clearCart } = useCartStore();
+  const { getCartBySlug, removeItem, updateQuantity, clearCart } = useCartStore();
+  const cartItems = getCartBySlug(slug); // Ambil cart khusus toko ini
+
   const { items: menuItems } = useMenuStore();
   const { createOrder } = useOrderStore();
   const { userId, isLoggedIn } = useAuthStore(); 
