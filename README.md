@@ -46,7 +46,7 @@ ekasir adalah platform Point of Sales (POS) berbasis **Software as a Service (Sa
 
 ---
 
-## 🛠️ Lisensi & Hak Cipta
+## 🛡️ Lisensi & Hak Cipta
 
 Proyek ini adalah sistem closed-source komersial yang dikembangkan untuk operasi bisnis SaaS.
 Hak Cipta © 2026 Evognito Team. All Rights Reserved.
