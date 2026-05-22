@@ -36,9 +36,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default function MitraLayout({ children }: Props) {
+export default function MitraLayout({
+  children,
+}: Props) {
   return (
     <>
+      <link
+        rel="stylesheet"
+        href="https://unpkg.com/react-quill@1.3.3/dist/quill.snow.css"
+      />
+
       {children}
     </>
   );

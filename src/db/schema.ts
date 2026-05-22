@@ -295,3 +295,27 @@ export const settings = mysqlTable('settings', {
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow().onUpdateNow(),
 });
+
+// TABEL BAHAN BAKU (Master Inventory)
+export const materials = mysqlTable('materials', {
+  id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
+  mitra_id: bigint('mitra_id', { mode: 'number', unsigned: true }).notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  image: text('image'),
+  unit: varchar('unit', { length: 50 }).notNull(), // Contoh: 'gram', 'ml', 'pcs'
+  stock: decimal('stock', { precision: 10, scale: 2 }).default('0'), // Jumlah saat ini
+  low_stock_threshold: decimal('low_stock_threshold', { precision: 10, scale: 2 }).default('0'),
+  cost_per_unit: decimal('cost_per_unit', { precision: 10, scale: 2 }).default('0'),
+  created_at: timestamp('created_at').defaultNow(),
+  updated_at: timestamp('updated_at').defaultNow().onUpdateNow(),
+});
+
+// TABEL RESEP (BOM - Bill of Materials)
+// Menghubungkan Produk ke Bahan Baku
+export const productRecipes = mysqlTable('product_recipes', {
+  id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
+  mitra_id: bigint('mitra_id', { mode: 'number', unsigned: true }).notNull(),
+  product_id: int('product_id').notNull(), // ID dari tabel products
+  material_id: int('material_id').notNull(), // ID dari tabel materials
+  amount_needed: decimal('amount_needed', { precision: 10, scale: 2 }).notNull(), // Berapa banyak bahan dipakai per 1 porsi
+});

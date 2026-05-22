@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; // 🔴 Tambahin useEffect
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, Eye, EyeOff, Loader2, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
@@ -11,6 +11,25 @@ export default function LoginView() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // 🔴 TANGKAP ERROR DARI URL MIDDLEWARE
+  useEffect(() => {
+    // Pake window.location biar aman dari error 'Suspense Boundary' Next.js
+    const searchParams = new URLSearchParams(window.location.search);
+    const urlError = searchParams.get('error');
+
+    if (urlError) {
+      if (urlError === 'not_authorized') {
+        setError('Akses ditolak. Anda tidak memiliki izin untuk halaman tersebut.');
+      } else if (urlError === 'session_expired') {
+        setError('Sesi Anda telah berakhir. Silakan masuk kembali.');
+      } else if (urlError === 'invalid_tenant') {
+        setError('Akses ditolak. Anda mencoba masuk ke dashboard toko yang salah.');
+      } else {
+        setError('Terjadi kesalahan otentikasi. Silakan masuk kembali.');
+      }
+    }
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,18 +43,32 @@ export default function LoginView() {
     setIsLoading(true);
 
     try {
-      // TODO: Ganti dengan logika/API login kamu yang sebenarnya
-      // Contoh: await login(email, password);
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Simulasi loading jaringan
+      // 1. Tembak API Login (Tanpa mengirimkan slug)
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          email: email.trim(), 
+          password 
+        }),
+      });
 
-      // Dummy cek error (Hapus nanti jika sudah pakai API asli)
-      if (email !== 'admin@evognito.com') {
-        throw new Error('Email atau kata sandi salah.');
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Login gagal. Periksa kembali email dan kata sandi Anda.');
       }
 
-      console.log('Login sukses:', { email });
-      // Redirect ke dashboard atau menu utama di sini
-      // window.location.href = '/dashboard';
+      // 2. Login Sukses! Cookie sudah tertanam otomatis.
+      // Ambil slug toko milik user dari response API, lalu redirect ke dashboard admin
+      const storeSlug = data.user.slug;
+      
+      if (storeSlug) {
+        window.location.href = `/${storeSlug}/dashboard`;
+      } else {
+        // Fallback jika user biasa (bukan owner) yang mencoba login di sini
+        window.location.href = '/'; 
+      }
 
     } catch (err: any) {
       setError(err.message || 'Terjadi kesalahan saat login.');
@@ -71,7 +104,7 @@ export default function LoginView() {
         {/* Form Section */}
         <div className="px-8 pb-10">
           
-          {/* Notifikasi Error */}
+          {/* Notifikasi Error (Otomatis muncul kalau state error terisi) */}
           <AnimatePresence mode="wait">
             {error && (
               <motion.div 
@@ -101,7 +134,7 @@ export default function LoginView() {
                   value={email}
                   onChange={(e) => {
                     setEmail(e.target.value);
-                    setError('');
+                    setError(''); // Hilangkan error saat user mulai ngetik lagi
                   }}
                   placeholder="admin@bisnis.com" 
                   className="w-full bg-stone-50/50 border border-stone-200 rounded-xl py-3.5 pl-11 pr-4 text-sm font-medium text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#0E5C37]/20 focus:border-[#0E5C37] transition-all placeholder:text-stone-300" 
@@ -127,7 +160,7 @@ export default function LoginView() {
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);
-                    setError('');
+                    setError(''); // Hilangkan error saat user mulai ngetik lagi
                   }}
                   placeholder="••••••••" 
                   className="w-full bg-stone-50/50 border border-stone-200 rounded-xl py-3.5 pl-11 pr-12 text-sm font-medium text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#0E5C37]/20 focus:border-[#0E5C37] transition-all placeholder:text-stone-300" 

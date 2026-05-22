@@ -89,6 +89,7 @@ export async function GET(request: NextRequest) {
         image: p.image || '',
         basePrice: Number(p.price),
         isAvailable: p.status === 1,
+        stock: p.stock,
         // Kirim categorizedAddons, bukan addons biasa
         categorizedAddons: categorizedAddons
       };

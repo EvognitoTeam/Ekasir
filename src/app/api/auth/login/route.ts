@@ -1,14 +1,11 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
 import { users, mitra } from '@/db/schema'; 
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
-
-// 🔴 1. Import jose dan cookies
 import { SignJWT } from 'jose';
-import { cookies } from 'next/headers';
 
-// 🔴 2. Kunci rahasia untuk enkripsi JWT
+// Kunci rahasia untuk enkripsi JWT
 const SECRET_KEY = new TextEncoder().encode(
   process.env.JWT_SECRET || 'rahasia-super-aman-evokasir-2026'
 );
@@ -16,54 +13,33 @@ const SECRET_KEY = new TextEncoder().encode(
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, password, slug } = body;
+    const { email, password, slug } = body; // 'slug' sekarang bersifat opsional di request body
 
-    // 1. Validasi Input Dasar
-    if (!email || !password || !slug) {
+    // 1. Validasi Input Utama
+    if (!email || !password) {
       return NextResponse.json(
-        { success: false, message: 'Data login tidak lengkap' }, 
+        { success: false, message: 'Email dan kata sandi wajib diisi' }, 
         { status: 400 }
       );
     }
 
-    // 2. Cari Mitra berdasarkan slug dari URL
-    const foundMitra = await db
-      .select()
-      .from(mitra)
-      .where(eq(mitra.mitra_slug, slug))
-      .limit(1);
-
-    if (foundMitra.length === 0) {
-      return NextResponse.json(
-        { success: false, message: 'Toko/Mitra tidak ditemukan' }, 
-        { status: 404 }
-      );
-    }
-
-    const currentMitra = foundMitra[0];
-
-    // 3. Cari User berdasarkan Email DAN Mitra ID
+    // 2. Cari User berdasarkan Email terlebih dahulu
     const foundUsers = await db
       .select()
       .from(users)
-      .where(
-        and(
-          eq(users.email, email),
-          eq(users.mitra_id, currentMitra.id) 
-        )
-      )
+      .where(eq(users.email, email))
       .limit(1);
 
     if (foundUsers.length === 0) {
       return NextResponse.json(
-        { success: false, message: 'Akun tidak terdaftar di toko ini. Silakan daftar terlebih dahulu.' }, 
+        { success: false, message: 'Akun tidak terdaftar. Silakan periksa kembali email Anda.' }, 
         { status: 401 }
       );
     }
 
     const user = foundUsers[0];
 
-    // 4. Verifikasi Password dengan Bcrypt
+    // 3. Verifikasi Password dengan Bcrypt
     const isPasswordValid = await bcrypt.compare(password, user.password);
 
     if (!isPasswordValid) {
@@ -73,11 +49,37 @@ export async function POST(request: Request) {
       );
     }
 
-    // 🔴 5. Buat JWT (Session Data yang akan disimpan di Cookie)
+    // 4. Ambil data Mitra berdasarkan mitra_id milik user untuk mendapatkan slug aslinya
+    const foundMitra = await db
+      .select()
+      .from(mitra)
+      .where(eq(mitra.id, user.mitra_id))
+      .limit(1);
+
+    if (foundMitra.length === 0) {
+      return NextResponse.json(
+        { success: false, message: 'Toko/Mitra tidak ditemukan untuk akun ini' }, 
+        { status: 404 }
+      );
+    }
+
+    const currentMitra = foundMitra[0];
+
+    // 5. PROTEKSI MULTI-TENANT
+    // Jika login dilakukan dari halaman spesifik toko (slug ada), pastikan kecocokannya.
+    // Aturan ini dikecualikan untuk role 'User' biasa (pelanggan) agar bisa fleksibel bertransaksi.
+    if (slug && currentMitra.mitra_slug !== slug && user.role !== 'User') {
+      return NextResponse.json(
+        { success: false, message: 'Akun Anda tidak terdaftar sebagai staf di toko ini.' }, 
+        { status: 403 }
+      );
+    }
+
+    // 6. Buat JWT dengan menyertakan slug asli dari database
     const token = await new SignJWT({
       userId: user.id,
       mitraId: user.mitra_id,
-      slug: slug, // Sisipkan slug ke dalam session untuk identifikasi toko
+      slug: currentMitra.mitra_slug, 
       role: user.role,
       name: user.name,
       email: user.email
@@ -87,6 +89,7 @@ export async function POST(request: Request) {
       .setExpirationTime('7d') // Sesi aktif selama 7 hari
       .sign(SECRET_KEY);
 
+    // 7. Buat Objek Response (Sertakan properti slug untuk kebutuhan redirect frontend global)
     const response = NextResponse.json({
       success: true,
       message: 'Login berhasil',
@@ -96,20 +99,20 @@ export async function POST(request: Request) {
         email: user.email,
         phone: user.phone,
         role: user.role,
-        mitra_id: user.mitra_id 
+        mitra_id: user.mitra_id,
+        slug: currentMitra.mitra_slug // Dikembalikan agar LoginView global tahu arah redirect
       }
     });
 
-    // 🔴 6. Suntikkan JWT ke dalam HTTP-Only Cookie browser
+    // 8. Suntikkan JWT ke dalam HTTP-Only Cookie browser
     response.cookies.set('ekasir_session', token, {
-      httpOnly: true, // Tidak bisa diakses oleh JavaScript frontend (Anti-XSS)
-      secure: process.env.NODE_ENV === 'production', // Wajib HTTPS di production
-      sameSite: 'lax', // Anti-CSRF
-      maxAge: 60 * 60 * 24 * 7, // 7 hari dalam format detik
-      path: '/', // Cookie berlaku di seluruh halaman aplikasi
+      httpOnly: true, 
+      secure: process.env.NODE_ENV === 'production', 
+      sameSite: 'lax', 
+      maxAge: 60 * 60 * 24 * 7, 
+      path: '/', 
     });
 
-    // 7. Kembalikan data sukses (Frontend tidak perlu menyimpan token ini, karena cookie sudah bekerja otomatis)
     return response;
 
   } catch (error) {

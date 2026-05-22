@@ -1,3 +1,11 @@
+// 🔴 1. IMPORT DRIZZLE & SCHEMA KAMU
+import { InferSelectModel } from 'drizzle-orm';
+import { products, categories } from '@/db/schema'; // Sesuaikan path ini jika folder skemamu berbeda
+
+// 🔴 2. EKSTRAK TIPE ASLI DARI DATABASE
+export type DbProduct = InferSelectModel<typeof products>;
+export type DbCategory = InferSelectModel<typeof categories>;
+
 export interface TableSession {
   tableId: string;
   sessionId: string;
@@ -54,34 +62,26 @@ export interface MenuItemMeta {
   recommended_pairings: string[];
 }
 
-export interface MenuItem {
-  id: string;
-  categoryId: string;
-  name: string;
-  description: string;
-  image: string;
-  basePrice: number;
-  tags: ('best-seller' | 'new' | 'popular')[];
-  isAvailable: boolean;
-  addons?: { id: number; name: string; price: number }[]; 
-  
-  // 🔴 INI BARIS YANG DITAMBAHKAN UNTUK MENGATASI ERROR
-  categorizedAddons?: any[]; 
-  
-  addOnGroups: AddOnGroup[];
-  sensoryProfile?: SensoryProfile[];
-  sommelierNotes?: string;
-  provenance?: string;
-  pairingId?: string;
-  meta?: MenuItemMeta; // Strict POS authoritative mapping
+// 🔴 3. HYBRID TYPE UNTUK MENU ITEM
+// Omit: "Singkirkan kolom DB ini karena kita mau ubah wujudnya di Frontend"
+export interface MenuItem extends Omit<DbProduct, 'id' | 'price' | 'status' | 'categories_id' | 'addon_id'> {
+  // Properti hasil translasi dari API (Override dari DB)
+  id: string;                  // Frontend lebih gampang olah ID sebagai string
+  categoryId: string;          // Translasi dari categories_id
+  basePrice: number;           // Translasi dari price
+  isAvailable: boolean;        // Translasi dari status (1/0 -> true/false)
+  status: number | boolean | string;
+  addonGroups: number[];       // Translasi dari addon_id (JSON string -> Array)
+
+  // Properti tambahan khusus UI (View Model)
+  categorizedAddons?: any[];   // Hasil grouping addon dari backend untuk Pop-up
+  meta?: Partial<MenuItemMeta>; // Data meta custom (Barista Spec, Sizes, dll)
 }
 
-export interface Category {
+// 🔴 4. HYBRID TYPE UNTUK CATEGORY
+export interface Category extends Omit<DbCategory, 'id'> {
   id: string;
-  name: string;
-  slug: string;
-  icon?: string;
-  sortOrder: number;
+  items?: MenuItem[]; // Array anak menu untuk fitur mapping di katalog (seperti di RoastGalleryView)
 }
 
 export interface POSOptions {
@@ -95,12 +95,12 @@ export interface POSOptions {
 }
 
 export interface CartItem {
-  id: string; // Unique instance ID for the cart
+  id: string; 
   menuItemId: string;
   quantity: number;
   selectedAddOns: number[];
   notes?: string;
-  options?: POSOptions; // Normalized payload dictating the POS order
+  options?: POSOptions; 
   sku_code?: string;
 }
 

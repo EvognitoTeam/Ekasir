@@ -1,9 +1,9 @@
 "use client";
 
-import { MenuItem } from '../../types/menu';
-import { ChevronRight, Coffee } from 'lucide-react';
+import { MenuItem } from '@/types/menu';
+import { ChevronRight, Coffee, ImageIcon } from 'lucide-react';
 import { useMenuStore } from '@/store/menu.store'; 
-import { formatPrice } from '../../utils/formatters';
+import { formatPrice } from '@/utils/formatters';
 
 interface Props {
   items: MenuItem[];
@@ -18,47 +18,72 @@ const toRoman = (num: number) => {
 
 // 2. Sub-komponen Card Portofolio Editorial (Disesuaikan untuk Mobile)
 function PortfolioCard({ item, onClick, aspect = 'aspect-[4/5]' }: { item: MenuItem, onClick: () => void, aspect?: string }) {
-  const imageUrl = item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c';
+  // 🔴 LOGIKA STOK & KETERSEDIAAN
+  const stockNum = item.stock !== null && item.stock !== undefined && item.stock !== '' ? Number(item.stock) : null;
+  const isSoldOut = !item.isAvailable || (stockNum !== null && stockNum <= 0);
+  const isLowStock = stockNum !== null && stockNum > 0 && stockNum <= 5; // Ubah angka 5 sesuai kebutuhan ambang batas
 
   return (
     <div 
-      onClick={onClick}
-      // 🔴 Ditambahkan: break-inside-avoid agar kotak tidak terpotong antar kolom
-      // 🔴 Ditambahkan: rounded-2xl agar lebih modern dan enak dilihat di HP
-      className="group relative w-full overflow-hidden bg-stone-900 cursor-pointer mb-3 rounded-2xl break-inside-avoid shadow-sm"
+      // 🔴 Kunci klik jika Sold Out
+      onClick={() => !isSoldOut && onClick()}
+      className={`group relative w-full overflow-hidden bg-stone-900 mb-3 rounded-2xl break-inside-avoid shadow-sm transition-all duration-300 ${
+        isSoldOut ? 'opacity-60 grayscale cursor-not-allowed' : 'cursor-pointer'
+      }`}
     >
-      <div className={`w-full ${aspect} relative overflow-hidden`}>
-        <img 
-          src={imageUrl} 
-          alt={item.name} 
-          className="absolute inset-0 w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-all duration-700 group-hover:scale-105"
-        />
+      <div className={`relative w-full ${aspect} shrink-0 bg-stone-100 overflow-hidden flex items-center justify-center`}>
+        
+        {item.image ? (
+          <img 
+            src={item.image.startsWith('blob:') ? item.image : "/" + item.image} 
+            alt={item.name} 
+            className="absolute inset-0 w-full h-full object-cover opacity-95 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700"
+          />
+        ) : (
+          <ImageIcon className="w-12 h-12 text-stone-300 z-0" />
+        )}
+
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent pointer-events-none" />
+        
+        {/* 🔴 BADGE LOW STOCK */}
+        {isLowStock && !isSoldOut && (
+          <div className="absolute top-3 left-3 bg-rose-500/90 backdrop-blur-sm text-white px-2.5 py-1 rounded-md flex items-center gap-1 z-20 shadow-md">
+            <AlertCircle className="w-3 h-3" />
+            <span className="text-[9px] font-black uppercase tracking-wider">Sisa {stockNum}</span>
+          </div>
+        )}
+
+        {/* 🔴 OVERLAY SOLD OUT */}
+        {isSoldOut && (
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center z-20 transition-all">
+            <span className="bg-stone-900/90 text-white text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest border border-stone-700 shadow-xl">
+              Sold Out
+            </span>
+          </div>
+        )}
       </div>
       
-      {/* 🔴 Padding dikurangi menjadi p-4 agar lega di layar kecil */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 flex flex-col justify-end pointer-events-none">
+      <div className="absolute bottom-0 left-0 right-0 p-4 flex flex-col justify-end pointer-events-none z-10">
         <div className="flex flex-col items-start mb-1.5 gap-0.5">
-          {/* 🔴 Ukuran teks judul diperkecil jadi text-sm */}
           <h3 className="text-white text-sm font-bold font-sans uppercase tracking-wide leading-tight line-clamp-2">
             {item.name}
           </h3>
-          {/* 🔴 Ukuran teks harga diperkecil */}
           <span className="text-emerald-400 text-[10px] font-sans font-bold whitespace-nowrap relative z-10">
             {formatPrice(item.basePrice || 0)}
           </span>
         </div>
         
-        {/* 🔴 Ukuran deskripsi diperkecil jadi text-[9px] */}
         <div 
           className="text-stone-300 text-[9px] leading-relaxed font-sans line-clamp-2 mb-2"
           dangerouslySetInnerHTML={{ __html: item.description || '' }}
         />
 
-        <div className="flex items-center gap-1 text-[#0E5C37] opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-auto mt-1">
-          <span className="text-[9px] uppercase font-bold tracking-widest text-white">Discover</span>
-          <ChevronRight className="w-3 h-3 text-white" />
-        </div>
+        {!isSoldOut && (
+          <div className="flex items-center gap-1 text-[#0E5C37] opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-auto mt-1">
+            <span className="text-[9px] uppercase font-bold tracking-widest text-white">Select</span>
+            <ChevronRight className="w-3 h-3 text-white" />
+          </div>
+        )}
       </div>
     </div>
   );

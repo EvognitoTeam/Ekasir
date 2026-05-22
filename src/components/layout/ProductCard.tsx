@@ -1,4 +1,5 @@
 import { MenuItem } from '../../types/menu';
+import { ChevronRight, Coffee, ImageIcon, AlertCircle } from 'lucide-react';
 
 interface Props {
   item: MenuItem;
@@ -6,58 +7,75 @@ interface Props {
 }
 
 export default function ProductCard({ item, onClick }: Props) {
-  const isSoldOut = !item.isAvailable;
+  // 1. Fungsi Helper di luar komponen agar tidak mendefinisikan ulang fungsi setiap render
+  const checkIsAvailable = (status: any): boolean => {
+    return status === true || status === 1 || status === '1' || status === 'true';
+  };
 
-  // 1. UBAH GAMBAR DEFAULT DI SINI
-  // Kamu bisa menggantinya dengan URL gambarmu sendiri atau path lokal seperti '/images/default-menu.jpg'
-  const DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80'; 
+  // 2. Normalisasi Status & Stok
+  const isStatusActive = checkIsAvailable(item.status);
+  const isAvailableFlag = Boolean(item.isAvailable); 
+  const isReallyAvailable = isStatusActive || isAvailableFlag;
+
+  const stockNum = item.stock !== null && item.stock !== undefined && item.stock !== '' ? Number(item.stock) : null;
   
-  // Jika item.image dari database kosong (null), langsung pakai default
-  const imageSrc = item.image || DEFAULT_IMAGE;
+  // 3. Status Sold Out: Jika salah satu penanda tidak tersedia ATAU stok <= 0
+  const isSoldOut = !isReallyAvailable || (stockNum !== null && stockNum <= 0);
+  
+  // 4. Badge Low Stock (Hanya muncul jika stok sisa 1-5 dan barang tidak sold out)
+  const isLowStock = stockNum !== null && stockNum > 0 && stockNum <= 5;
+
+  const handleCardClick = () => {
+    if (!isSoldOut) onClick(item);
+  };
 
   return (
     <div
-      onClick={() => !isSoldOut && onClick(item)}
-      className={`w-full flex flex-col bg-white rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-stone-100 overflow-hidden transition-all duration-300 ${
-        isSoldOut ? 'opacity-50 grayscale cursor-not-allowed' : 'cursor-pointer active:scale-[0.98]'
+      onClick={handleCardClick}
+      className={`w-full flex flex-col bg-white rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-stone-100 overflow-hidden transition-all duration-300 relative ${
+        isSoldOut ? 'opacity-60 grayscale cursor-not-allowed pointer-events-none' : 'cursor-pointer active:scale-[0.98]'
       }`}
     >
       {/* Product Image */}
-      <div className="w-full pt-[75%] flex-shrink-0 bg-stone-50 relative overflow-hidden">
-        <img
-          src={imageSrc}
-          alt={item.name}
-          className="absolute inset-0 w-full h-full object-cover"
-          onError={(e) => {
-            e.currentTarget.src = DEFAULT_IMAGE;
-          }}
-        />
-        {!item.isAvailable && (
-           <div className="absolute inset-0 bg-white/50 backdrop-blur-[2px] flex items-center justify-center">
-             <span className="bg-stone-800 text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-               Sold Out
-             </span>
-           </div>
+      <div className="relative w-full aspect-[4/3] shrink-0 bg-stone-100 overflow-hidden flex items-center justify-center">
+        {item.image ? (
+          <img 
+            src={item.image.startsWith('blob:') ? item.image : "/" + item.image} 
+            alt={item.name} 
+            className="absolute inset-0 w-full h-full object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700"
+          />
+        ) : (
+          <ImageIcon className="w-12 h-12 text-stone-300" />
+        )}
+
+        {isLowStock && !isSoldOut && (
+          <div className="absolute top-2 left-2 bg-rose-500 text-white px-2 py-1 rounded flex items-center gap-1 z-20 shadow-sm">
+            <AlertCircle className="w-2.5 h-2.5" />
+            <span className="text-[9px] font-black uppercase tracking-wider leading-none">Sisa {stockNum}</span>
+          </div>
+        )}
+
+        {isSoldOut && (
+          <div className="absolute inset-0 bg-white/50 backdrop-blur-[2px] flex items-center justify-center z-20">
+            <span className="bg-stone-900/90 text-white text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest border border-stone-800">
+              Sold Out
+            </span>
+          </div>
         )}
       </div>
 
       {/* Product Information */}
       <div className="p-3 flex flex-col flex-1 justify-between">
         <div>
-          {/* Saya hilangkan fixed height (h-[38px]) agar tidak bertabrakan dengan deskripsi di bawahnya */}
           <h3 className="text-[13px] font-bold text-stone-900 leading-snug line-clamp-2 mb-1 font-sans">
             {item.name}
           </h3>
-          
-          {/* 2. RENDER HTML DESKRIPSI DI SINI */}
           {item.description && (
             <div 
-              className="text-[11px] text-stone-500 font-sans line-clamp-2 mb-2 leading-relaxed prose prose-sm max-w-none"
-              // Ini adalah cara React membaca format HTML (seperti <b>, <i>, <p>, dll)
+              className="text-[11px] text-stone-500 font-sans line-clamp-2 mb-2 leading-relaxed prose prose-sm"
               dangerouslySetInnerHTML={{ __html: item.description }} 
             />
           )}
-          
           <p className="text-[13px] font-bold text-stone-900 font-sans mt-auto">
             Rp{(item.basePrice).toLocaleString('id-ID')}
           </p>
@@ -67,11 +85,11 @@ export default function ProductCard({ item, onClick }: Props) {
           disabled={isSoldOut}
           className={`mt-3 w-full py-1.5 rounded-md text-xs font-bold transition-colors font-sans ${
             isSoldOut 
-              ? 'border border-stone-200 text-stone-400 bg-stone-50' 
+              ? 'border border-stone-200 text-stone-400 bg-stone-50 cursor-not-allowed' 
               : 'border border-[#14532d] text-[#14532d] bg-white active:bg-stone-50'
           }`}
         >
-          Add
+          {isSoldOut ? 'Habis' : 'Add to Cart'}
         </button>
       </div>
     </div>
