@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
+import Image from 'next/image'; // 🔴 1. Import next/image
 import { Category, MenuItem } from '../../types/menu';
 
 interface Props {
@@ -20,7 +21,7 @@ function CategoryCard({
   index: number;
 }) {
   const previewImages = items
-    .filter(i => i.isAvailable)
+    .filter(i => i.isAvailable && i.image) // Pastikan hanya ambil yang isAvailable DAN punya image
     .slice(0, 2)
     .map(i => i.image);
 
@@ -28,6 +29,9 @@ function CategoryCard({
   const half = Math.ceil(words.length / 2);
   const line1 = words.slice(0, half).join(' ');
   const line2 = words.slice(half).join(' ');
+
+  // Gambar default/fallback
+  const fallbackImage = 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?auto=format&fit=crop&w=200&q=60';
 
   return (
     <motion.button
@@ -44,13 +48,12 @@ function CategoryCard({
           className="absolute right-2 bottom-[-10px] text-[86px] font-black leading-none select-none pointer-events-none uppercase"
           style={{ color: 'rgba(0,0,0,0.04)', letterSpacing: '-0.04em' }}
         >
-          {words[0]}
+          {words}
         </span>
 
         {/* + icon */}
         <span
-          className="absolute top-4 left-4 text-2xl font-black leading-none"
-          style={{ color: 'var(--color-primary)' }}
+          className="absolute top-4 left-4 text-2xl font-black leading-none text-[#0E5C37]"
         >
           +
         </span>
@@ -62,8 +65,7 @@ function CategoryCard({
           </p>
           {line2 && (
             <p
-              className="text-[22px] font-black leading-tight uppercase tracking-tight"
-              style={{ color: 'var(--color-primary)' }}
+              className="text-[22px] font-black leading-tight uppercase tracking-tight text-[#0E5C37]"
             >
               {line2}
             </p>
@@ -72,29 +74,34 @@ function CategoryCard({
 
         {/* Food images — stacked on right */}
         <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center">
-          {previewImages.map((src, i) => (
-            <div
-              key={i}
-              className="w-[90px] h-[90px] rounded-2xl overflow-hidden border-2 border-white shadow-md flex-shrink-0"
-              style={{ marginLeft: i > 0 ? '-18px' : '0', zIndex: previewImages.length - i }}
-            >
-              <img
-                src={src}
-                alt=""
-                className="w-full h-full object-cover"
-                onError={e => {
-                  e.currentTarget.src =
-                    'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?auto=format&fit=crop&w=200&q=60';
-                }}
-              />
-            </div>
-          ))}
+          {previewImages.map((src, i) => {
+            // 🔴 Periksa apakah src valid (string url atau path lokal), jika tidak pakai fallback
+            const imageSrc = src || fallbackImage;
+            
+            return (
+              <div
+                key={i}
+                className="w-[90px] h-[90px] rounded-2xl overflow-hidden border-2 border-white shadow-md flex-shrink-0 relative"
+                style={{ marginLeft: i > 0 ? '-18px' : '0', zIndex: previewImages.length - i }}
+              >
+                {/* 🔴 2. Ganti <img> dengan <Image> */}
+                {/* next/image wajib tau width dan height kecuali pakai fill */}
+                <Image
+                  src={imageSrc}
+                  alt={category.name}
+                  fill
+                  sizes="90px"
+                  className="object-cover"
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
 
       {/* Caption row */}
       <div className="px-4 py-2.5 border-t border-stone-100 flex items-center justify-between">
-        <span className="text-[10px] font-label uppercase tracking-wider text-stone-500">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
           {category.name}
         </span>
         <div className="flex items-center gap-1.5">
@@ -111,21 +118,24 @@ export default function CategoryList({ categories, allItems, onSelectCategory }:
     <section className="px-4 pt-2 pb-4 space-y-3">
       {/* Section label */}
       <div className="flex items-center gap-3 pt-2 pb-0.5">
-        <div className="w-6 h-px" style={{ backgroundColor: 'var(--color-primary)', opacity: 0.4 }} />
-        <p className="text-[10px] font-label uppercase tracking-[0.25em]" style={{ color: 'var(--color-on-surface-variant)' }}>
+        <div className="w-6 h-px bg-[#0E5C37] opacity-40" />
+        <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-stone-500">
           Category List
         </p>
       </div>
 
       {categories.map((category, i) => {
-        const catItems = allItems.filter(item => item.categoryId === category.id);
+        // 🔴 3. FIX TYPE ERROR: Pastikan tipe datanya sama-sama string
+        const catItems = allItems.filter(item => item.categoryId?.toString() === category.id?.toString());
+        
         if (catItems.length === 0) return null;
+        
         return (
           <CategoryCard
             key={category.id}
             category={category}
             items={catItems}
-            onClick={() => onSelectCategory(category.id)}
+            onClick={() => onSelectCategory(category.id.toString())} // 🔴 Pastikan lempar string
             index={i}
           />
         );

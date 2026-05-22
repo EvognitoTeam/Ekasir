@@ -1,3 +1,6 @@
+"use client"; // Wajib pakai ini karena kita pakai useParams dan Zustand
+
+import { useParams } from 'next/navigation'; // 🔴 1. Import useParams
 import { useCartStore } from '../../store/cart.store';
 import { 
   BookOpen, Coffee, HelpCircle, User, MoveRight, ShoppingBag, Circle, Globe
@@ -8,11 +11,19 @@ interface Props {
   onViewChange: (view: 'menu' | 'roasts' | 'history' | 'help' | 'profile') => void;
   activeView: string;
   onOpenCart: () => void;
-  mitraName?: string; // Tambahan prop untuk nama kedai
+  mitraName?: string; 
 }
 
 export default function Sidebar({ onViewChange, activeView, onOpenCart, mitraName = "Kedai" }: Props) {
-  const { items: cartItems } = useCartStore();
+  // 🔴 2. Ambil slug dari URL otomatis
+  const params = useParams();
+  const slug = params?.slug as string;
+
+  // 🔴 3. Panggil data keranjang secara dinamis berdasarkan slug
+  // Reaktif: Bakal otomatis re-render setiap kali keranjang di toko INI berubah
+  const cartItems = useCartStore((state) => state.cartsBySlug[slug] || []); 
+  
+  // Hitung total item
   const cartCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
 
   const navItems = [
@@ -34,7 +45,7 @@ export default function Sidebar({ onViewChange, activeView, onOpenCart, mitraNam
            <span className="text-[10px] font-label uppercase tracking-[0.4em] opacity-30 italic">Vol. IV Edition</span>
         </div>
         
-        <h1 className="text-4xl font-display leading-[0.85] tracking-tighter mb-4 pr-12 text-[var(--color-primary)]">
+        <h1 className="text-4xl font-display leading-[0.85] tracking-tighter mb-4 pr-12 text-[#0E5C37]">
           {mitraName}.
         </h1>
         <div className="flex items-center gap-4">
@@ -61,10 +72,10 @@ export default function Sidebar({ onViewChange, activeView, onOpenCart, mitraNam
                    <div className={`transition-all duration-500 ${
                      isActive ? 'translate-x-0' : '-translate-x-2'
                    }`}>
-                      <Icon className={`w-4 h-4 ${isActive ? 'text-[var(--color-primary)]' : ''}`} />
+                      <Icon className={`w-4 h-4 ${isActive ? 'text-[#0E5C37]' : ''}`} />
                    </div>
                    <span className={`text-[11px] font-label uppercase tracking-widest font-bold transition-colors ${
-                     isActive ? 'text-[var(--color-primary)]' : ''
+                     isActive ? 'text-[#0E5C37]' : ''
                    }`}>
                      {item.label}
                    </span>
@@ -73,7 +84,7 @@ export default function Sidebar({ onViewChange, activeView, onOpenCart, mitraNam
                 {isActive ? (
                   <motion.div 
                     layoutId="active-indicator"
-                    className="w-1.5 h-1.5 bg-[var(--color-primary)] rounded-full shadow-[0_0_10px_rgba(78,52,46,0.3)]"
+                    className="w-1.5 h-1.5 bg-[#0E5C37] rounded-full shadow-[0_0_10px_rgba(14,92,55,0.3)]"
                   />
                 ) : (
                   <MoveRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity -translate-x-4 group-hover:translate-x-0 duration-500" />
@@ -114,7 +125,7 @@ export default function Sidebar({ onViewChange, activeView, onOpenCart, mitraNam
           </div>
           <div className="flex items-center gap-2 relative z-10">
              <span className="w-4 h-px bg-white/20 group-hover:w-8 transition-all duration-700" />
-             <span className="text-[10px] font-label font-bold text-[var(--color-primary)]">{cartCount}</span>
+             <span className="text-[10px] font-label font-bold text-emerald-400">{cartCount}</span>
           </div>
         </button>
       </footer>

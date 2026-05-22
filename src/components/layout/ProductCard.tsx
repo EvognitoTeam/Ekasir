@@ -17,7 +17,7 @@ export default function ProductCard({ item, onClick }: Props) {
   const isAvailableFlag = Boolean(item.isAvailable); 
   const isReallyAvailable = isStatusActive || isAvailableFlag;
 
-  const stockNum = item.stock !== null && item.stock !== undefined && item.stock !== '' ? Number(item.stock) : null;
+  const stockNum = item.stock !== null && item.stock !== undefined ? Number(item.stock) : null;
   
   // 3. Status Sold Out: Jika salah satu penanda tidak tersedia ATAU stok <= 0
   const isSoldOut = !isReallyAvailable || (stockNum !== null && stockNum <= 0);

@@ -25,7 +25,7 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
   const [totalPrice, setTotalPrice] = useState(item.basePrice);
 
   // 🔴 LOGIKA STOK & KETERSEDIAAN
-  const stockNum = item.stock !== null && item.stock !== undefined && item.stock !== '' ? Number(item.stock) : 0;
+  const stockNum = item.stock !== null && item.stock !== undefined ? Number(item.stock) : 0;
   const isSoldOut = (item.isAvailable === false) || (stockNum <= 0);
   const isLowStock = !isSoldOut && stockNum > 0 && stockNum <= 5; 
 

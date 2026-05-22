@@ -38,7 +38,7 @@ export default function OrderLedger() {
   });
 
   const totalFiltered = filtered
-    .filter(o => o.status === 'completed')
+    .filter(o => o.status === 'ready')
     .reduce((sum, o) => sum + o.totalPrice, 0);
 
   const exportToTSV = () => {
@@ -210,11 +210,11 @@ export default function OrderLedger() {
                           <div className="bg-white border border-stone-200 rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-stone-500 shadow-sm">
                             Meja {order.tableId}
                           </div>
-                          {order.orderType && (
+                          {/* {order.orderType && (
                             <div className="bg-white border border-stone-200 rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-stone-500 shadow-sm">
                               {order.orderType === 'takeaway' ? 'Take Away' : 'Dine In'}
                             </div>
-                          )}
+                          )} */}
                         </div>
                         
                         {/* Breakdown Item */}

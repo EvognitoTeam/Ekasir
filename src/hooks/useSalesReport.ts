@@ -28,7 +28,7 @@ export function useSalesReport(orders: Order[], filter: TimeFilter, customRange?
 
   const filteredOrders = getFilteredOrders();
   const filteredExpenses = getFilteredExpenses();
-  const completedOrders = filteredOrders.filter(o => o.status === 'completed');
+  const completedOrders = filteredOrders.filter(o => o.status === 'ready');
 
   // Metrik Utama Keuangan
   const totalRevenue = completedOrders.reduce((sum, o) => sum + o.totalPrice, 0);
@@ -81,7 +81,7 @@ export function useSalesReport(orders: Order[], filter: TimeFilter, customRange?
   ];
 
   // Laporan Pembatalan
-  const cancelledOrders = filteredOrders.filter(o => o.status === 'cancelled');
+  const cancelledOrders = filteredOrders.filter(o => o.status === 'failed');
   const cancelCount = cancelledOrders.length;
 
   return {

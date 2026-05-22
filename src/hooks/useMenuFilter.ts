@@ -10,7 +10,7 @@ export function useMenuFilter() {
     return items.filter(item => {
       const matchesCategory = selectedCategoryId ? item.categoryId === selectedCategoryId : true;
       const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            item.description.toLowerCase().includes(searchQuery.toLowerCase());
+                            item.description?.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesCategory && matchesSearch;
     });
   }, [items, searchQuery, selectedCategoryId]);

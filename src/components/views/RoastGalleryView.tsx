@@ -1,7 +1,7 @@
 "use client";
 
 import { MenuItem } from '@/types/menu';
-import { ChevronRight, Coffee, ImageIcon } from 'lucide-react';
+import { ChevronRight, Coffee, ImageIcon, AlertCircle } from 'lucide-react';
 import { useMenuStore } from '@/store/menu.store'; 
 import { formatPrice } from '@/utils/formatters';
 
@@ -19,7 +19,7 @@ const toRoman = (num: number) => {
 // 2. Sub-komponen Card Portofolio Editorial (Disesuaikan untuk Mobile)
 function PortfolioCard({ item, onClick, aspect = 'aspect-[4/5]' }: { item: MenuItem, onClick: () => void, aspect?: string }) {
   // 🔴 LOGIKA STOK & KETERSEDIAAN
-  const stockNum = item.stock !== null && item.stock !== undefined && item.stock !== '' ? Number(item.stock) : null;
+  const stockNum = item.stock !== null && item.stock !== undefined ? Number(item.stock) : null;
   const isSoldOut = !item.isAvailable || (stockNum !== null && stockNum <= 0);
   const isLowStock = stockNum !== null && stockNum > 0 && stockNum <= 5; // Ubah angka 5 sesuai kebutuhan ambang batas
 

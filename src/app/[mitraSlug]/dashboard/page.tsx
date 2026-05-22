@@ -79,7 +79,7 @@ export default function AdminDashboardView({ onBack }: Props) {
     // Hitung Revenue (Prioritaskan totalAfterDiscount)
     const targetRevenue = targetOrders
       .filter(o => o.status === 'confirmed')
-      .reduce((sum, o) => sum + (Number(o.totalAfterDiscount) || Number(o.totalPrice) || 0), 0);
+      .reduce((sum, o) => sum + (Number(o.totalPrice) || 0), 0);
     
     // Hitung Order Count
     const targetOrderCount = targetOrders.length;
@@ -97,7 +97,7 @@ export default function AdminDashboardView({ onBack }: Props) {
   const targetOrders = orderHistory.filter(o => isSameDay(new Date(o.createdAt), targetDate));
   const targetRevenue = targetOrders
     .filter(o => o.status === 'confirmed')
-    .reduce((sum, o) => sum + (o.totalAfterDiscount || o.totalPrice), 0);
+    .reduce((sum, o) => sum + (o.totalPrice), 0);
   
   const targetOrderCount = targetOrders.length;
   const depleted = menuItems.filter(m => !m.isAvailable).length;

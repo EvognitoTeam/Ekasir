@@ -69,7 +69,7 @@ export default function CategoryBar({ categories, selectedCategoryId, onSelectCa
             </button>
 
             {categories.map((category) => {
-              const Icon = categoryIcons[category.slug] || Coffee;
+              const Icon = categoryIcons[category.name] || Coffee;
               const isActive = selectedCategoryId === category.id;
 
               return (

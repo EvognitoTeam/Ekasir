@@ -644,7 +644,7 @@ export default function CheckoutView({ onBack, onSuccess }: Props) {
         } else {
           // Jika Cash
           createOrder(orderData as any);
-          clearCart();
+          clearCart(slug);
           onSuccess();
         }
       } else {
@@ -661,7 +661,7 @@ export default function CheckoutView({ onBack, onSuccess }: Props) {
   const handleFinishQris = () => {
     if (currentOrderPayload) {
       createOrder(currentOrderPayload);
-      clearCart();
+      clearCart(slug);
       onSuccess();
     }
   };

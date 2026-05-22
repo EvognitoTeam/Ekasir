@@ -1,5 +1,7 @@
 import { motion } from 'framer-motion';
 import { MenuItem } from '../../types/menu';
+import Image from 'next/image'; // 🔴 1. Import Next.js Image
+import { Image as ImageIcon } from 'lucide-react'; // 🔴 2. Import Icon buat fallback
 
 interface HeroSectionProps {
   featuredItem: MenuItem;
@@ -13,16 +15,33 @@ export default function HeroSection({ featuredItem, onExplore }: HeroSectionProp
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8, ease: [0.33, 1, 0.68, 1] }}
-        className="relative rounded-[2.5rem] md:rounded-[3.5rem] overflow-hidden aspect-[4/5] md:aspect-[21/9] md:max-h-[500px] shadow-2xl group"
+        className="relative rounded-[2.5rem] md:rounded-[3.5rem] overflow-hidden aspect-[4/5] md:aspect-[21/9] md:max-h-[500px] shadow-2xl group flex items-center justify-center bg-stone-50"
       >
-        <img 
-          src={featuredItem.image} 
-          alt={featuredItem.name} 
-          className="absolute inset-0 w-full h-full object-cover transition-transform duration-[1.5s] ease-out group-hover:scale-110"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-[var(--color-on-surface)]/90 via-[var(--color-on-surface)]/30 to-transparent" />
+        {/* 🔴 3. Logic Conditional Rendering: Gambar Utama vs Placeholder Icon */}
+        {featuredItem.image ? (
+          <Image 
+            src={featuredItem.image} 
+            alt={featuredItem.name} 
+            fill // 🔴 Wajib pakai fill karena parent-nya relative & ukurannya dinamis
+            priority // 🔴 KUNCI PERFORMA LCP: Ini elemen Hero, wajib di-load paling pertama!
+            sizes="(max-width: 768px) 100vw, 90vw" // Hint responsif buat browser
+            className="object-cover transition-transform duration-[1.5s] ease-out group-hover:scale-110"
+          />
+        ) : (
+          // Placeholder estetik kalau ga ada gambar
+          <div className="flex flex-col items-center gap-4 text-stone-200">
+            <ImageIcon className="w-24 h-24 md:w-32 md:h-32" strokeWidth={1} />
+            <span className="text-xs font-bold uppercase tracking-[0.3em] text-stone-300">
+              Image Reimagining
+            </span>
+          </div>
+        )}
+
+        {/* Gradient Overlay - Pastikan z-index aman (default 0) di atas gambar fill */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[var(--color-on-surface)]/90 via-[var(--color-on-surface)]/30 to-transparent z-10" />
         
-        <div className="absolute inset-0 p-8 md:p-20 flex flex-col justify-end text-white">
+        {/* Content Container - z-20 agar di atas gradient */}
+        <div className="absolute inset-0 p-8 md:p-20 flex flex-col justify-end text-white z-20">
           <motion.div
             initial={{ opacity: 0, x: -30 }}
             animate={{ opacity: 1, x: 0 }}

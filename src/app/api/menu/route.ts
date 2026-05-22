@@ -335,7 +335,7 @@ export async function POST(request: Request) {
         await db.insert(addons).values({
           mitra_id: Number(payload.mitraId),
           name: formData.get('name') as string,
-          price: Number(formData.get('price')),
+          price: String(formData.get('price')),
           category_id: Number(
             formData.get('category_id')
           )

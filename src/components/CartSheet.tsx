@@ -3,8 +3,9 @@ import { useParams } from 'next/navigation';
 import { useCartStore } from '../store/cart.store';
 import { useMenuStore } from '../store/menu.store';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus, Minus, Trash2, ShoppingBag, Sparkles, Receipt, ArrowRight } from 'lucide-react';
+import { X, Plus, Minus, Trash2, ShoppingBag, Sparkles, Receipt, ArrowRight, ImageIcon } from 'lucide-react';
 import { CartItem, MenuItem } from '../types/menu';
+import Image from 'next/image';
 
 interface Props {
   isOpen: boolean;
@@ -124,6 +125,7 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
                     const labels: string[] = [];
 
                     if (item.options && product.meta) {
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
                       const sizeDef = product.meta.sizes?.find((s: any) => s.label === item.options!.size);
                       if (sizeDef) unitPrice = Number(sizeDef.price);
                       if (item.options.size) labels.push(item.options.size);
@@ -131,8 +133,11 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
                     }
 
                     if (Array.isArray(item.selectedAddOns) && product.categorizedAddons) {
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
                       item.selectedAddOns.forEach((id: any) => {
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         product.categorizedAddons?.forEach((group: any) => {
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
                           const addon = group.addons.find((a: any) => Number(a.id) === Number(id));
                           if (addon) {
                             unitPrice += Number(addon.price);
@@ -144,8 +149,26 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
 
                     return (
                       <motion.div key={item.id} layout className="flex gap-4 group">
-                        <div className="w-20 h-20 rounded-2xl overflow-hidden flex-shrink-0 border border-stone-100 shadow-sm">
-                          <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                        <div className="w-20 h-20 rounded-2xl overflow-hidden flex-shrink-0 border border-stone-100 shadow-sm relative">
+                          <div className="relative w-full h-full">
+                            {product.image ? (
+                              <Image
+                                src={
+                                  product.image.startsWith('/')
+                                    ? product.image
+                                    : `/${product.image}`
+                                }
+                                alt={product.name}
+                                fill
+                                sizes="200px"
+                                className="object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-stone-100">
+                                <ImageIcon className="w-5 h-5 text-stone-400" />
+                              </div>
+                            )}
+                          </div>
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex justify-between items-start">
