@@ -3,10 +3,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams } from 'next/navigation';
-import { 
-  MessageCircle, CreditCard, Wifi, MapPin, CheckCircle2, 
-  Clock, Phone, Wind, ShieldAlert, Loader2 
-} from 'lucide-react';
+// 🔴 1. Import semua ikon agar fungsi ikon dinamis (dari database) bisa dirender
+import * as Icons from 'lucide-react';
 
 interface Facility {
   name: string;
@@ -14,22 +12,22 @@ interface Facility {
   icon?: string; 
 }
 
-// 🔴 1. Tambahkan Interface FAQ
+// 🔴 2. Sesuaikan interface dengan format JSON dari form admin lu sebelumnya
 interface FAQ {
-  q: string;
-  a: string;
+  question: string;
+  answer: string;
 }
 
 interface MitraSettings {
   wifiSSID?: string;
   wifiPassword?: string;
-  facilities?: Facility[];
-  faqs?: FAQ[]; // 🔴 2. Masukkan ke dalam MitraSettings
+  facility?: Facility[];
+  faqs?: FAQ[]; 
 }
 
 export default function SupportView() {
   const params = useParams();
-  const slug = (params.mitraSlug as string) || "";
+  const slug = (params.mitraSlug as string) || (params.slug as string) || "";
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [settings, setSettings] = useState<MitraSettings | null>(null);
@@ -44,21 +42,28 @@ export default function SupportView() {
         const data = await res.json();
         
         if (data.success) {
-          // Parse string JSON dari database menjadi Array Object
-          const parsedFacilities = data.data.facilities 
-            ? (typeof data.data.facilities === 'string' ? JSON.parse(data.data.facilities) : data.data.facilities) 
-            : [];
-            
-          // 🔴 3. Lakukan parsing yang sama untuk FAQ
-          const parsedFaqs = data.data.faqs 
-            ? (typeof data.data.faqs === 'string' ? JSON.parse(data.data.faqs) : data.data.faqs) 
-            : [];
+          // 🔴 3. Parsing aman: pastikan tidak melakukan JSON.parse pada array atau null
+          let parsedFacilities: Facility[] = [];
+          if (Array.isArray(data.data.facility)) {
+             parsedFacilities = data.data.facility; // Drizzle biasanya mereturn array langsung kalau tipenya JSON
+          } else if (typeof data.data.facility === 'string') {
+             try { parsedFacilities = JSON.parse(data.data.facility); } catch(e) {}
+          }
+          // console.log(data.data.facility);
+          
+          let parsedFaqs: FAQ[] = [];
+          if (Array.isArray(data.data.faq)) {
+            parsedFaqs = data.data.faq;
+          } else if (typeof data.data.faq === 'string') {
+            try { parsedFaqs = JSON.parse(data.data.faq); } catch(e) {}
+          }
+          // console.log(data.data.faq);
 
           setSettings({
             wifiSSID: data.data.wifiSSID,
             wifiPassword: data.data.wifiPassword,
-            facilities: parsedFacilities,
-            faqs: parsedFaqs // 🔴 4. Simpan ke state
+            facility: parsedFacilities,
+            faqs: parsedFaqs 
           });
         }
       } catch (error) {
@@ -84,10 +89,23 @@ export default function SupportView() {
     }
   };
 
+  // 🔴 4. Komponen Helper untuk merender ikon Lucide secara dinamis dari string
+  const DynamicIcon = ({ iconName, className }: { iconName?: string, className?: string }) => {
+    // Pastikan Icon Component valid dan namanya CapitalCase
+    const IconComponent = iconName ? Icons[iconName as keyof typeof Icons] : null;
+    
+    // Fallback icon jika kosong atau salah ketik
+    if (!IconComponent) {
+      return <Icons.CheckCircle2 className={className || "w-5 h-5 text-emerald-300"} />;
+    }
+    
+    return <IconComponent className={className || "w-5 h-5 text-emerald-300"} />;
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#F7F8FA]">
-        <Loader2 className="w-10 h-10 text-[#0E5C37] animate-spin mb-4" />
+        <Icons.Loader2 className="w-10 h-10 text-[#0E5C37] animate-spin mb-4" />
         <p className="text-xs font-bold text-stone-400 uppercase tracking-widest text-center">
             Memuat Layanan...
         </p>
@@ -95,21 +113,9 @@ export default function SupportView() {
     );
   }
 
-  // 🔴 5. Update deteksi untuk menyembunyikan section
   const hasWifiInfo = !!(settings?.wifiSSID && settings?.wifiPassword);
-  const hasFacilities = !!(settings?.facilities && settings.facilities.length > 0);
+  const hasFacilities = !!(settings?.facility && settings.facility.length > 0);
   const hasFaqs = !!(settings?.faqs && settings.faqs.length > 0);
-
-  const getIconComponent = (iconName?: string) => {
-    switch (iconName?.toLowerCase()) {
-      case 'map': case 'mappin': return <MapPin className="w-5 h-5 text-emerald-300" />;
-      case 'wind': return <Wind className="w-5 h-5 text-emerald-300" />;
-      case 'phone': case 'stopkontak': return <Phone className="w-5 h-5 text-emerald-300" />;
-      case 'shield': case 'toilet': return <ShieldAlert className="w-5 h-5 text-emerald-300" />;
-      case 'wifi': return <Wifi className="w-5 h-5 text-emerald-300" />;
-      default: return <CheckCircle2 className="w-5 h-5 text-emerald-300" />; 
-    }
-  };
 
   return (
     <div className="py-8 px-6 bg-[#F7F8FA] min-h-full">
@@ -126,7 +132,7 @@ export default function SupportView() {
               👋
             </motion.span>
             <span>{toastMessage}</span>
-            <CheckCircle2 className="w-5 h-5 ml-2 text-[#0E5C37]" />
+            <Icons.CheckCircle2 className="w-5 h-5 ml-2 text-[#0E5C37]" />
           </motion.div>
         )}
       </AnimatePresence>
@@ -149,6 +155,7 @@ export default function SupportView() {
         </p>
       </header>
 
+      {/* Akses WiFi Card */}
       {hasWifiInfo && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-16">
            <motion.div 
@@ -156,7 +163,7 @@ export default function SupportView() {
              className="bg-white p-6 rounded-3xl shadow-sm border border-stone-100 flex flex-col items-center text-center transition-all"
            >
              <div className="w-14 h-14 bg-emerald-50 text-[#0E5C37] rounded-full flex items-center justify-center mb-6">
-                <Wifi className="w-6 h-6" />
+                <Icons.Wifi className="w-6 h-6" />
              </div>
              <h3 className="text-lg font-bold text-stone-900 mb-2">Akses WiFi</h3>
              <p className="text-xs text-stone-500 mb-6 leading-relaxed">Tetap terhubung dengan internet.</p>
@@ -170,19 +177,21 @@ export default function SupportView() {
         </div>
       )}
 
+      {/* Fasilitas Grid */}
       {hasFacilities && (
         <section className="mb-16">
            <div className="bg-[#0E5C37] text-white p-8 rounded-[2rem] relative overflow-hidden shadow-xl shadow-emerald-900/10">
               <div className="absolute -bottom-10 -right-10 opacity-10">
-                <ShieldAlert className="w-48 h-48" />
+                <Icons.Building2 className="w-48 h-48" />
               </div>
 
               <h2 className="text-2xl font-black uppercase tracking-tight mb-8 relative z-10">Fasilitas <br/> Restoran</h2>
               
               <div className="grid grid-cols-2 gap-6 relative z-10">
-                 {settings.facilities!.map((fac, index) => (
+                 {settings.facility!.map((fac, index) => (
                    <div key={index} className="flex flex-col gap-2">
-                     {getIconComponent(fac.icon || fac.name)}
+                     {/* 🔴 5. Render icon dinamis dari DB */}
+                     <DynamicIcon iconName={fac.icon} />
                      <p className="font-bold text-sm">{fac.name}</p>
                      <p className="text-[10px] text-emerald-100/70">{fac.description}</p>
                    </div>
@@ -192,6 +201,7 @@ export default function SupportView() {
         </section>
       )}
 
+      {/* FAQ List */}
       {hasFaqs && (
         <section>
            <div className="mb-8">
@@ -200,23 +210,23 @@ export default function SupportView() {
            </div>
            
            <div className="space-y-4">
-             {/* 🔴 6. Mapping langsung dari settings.faqs */}
-             {settings.faqs!.map((faq) => (
-               <div key={faq.q} className="bg-white p-6 rounded-2xl shadow-sm border border-stone-100">
+             {settings.faqs!.map((faq, index) => (
+               <div key={index} className="bg-white p-6 rounded-2xl shadow-sm border border-stone-100">
                  <div className="flex items-center gap-3 mb-3">
-                   <Clock className="w-4 h-4 text-[#0E5C37]" />
-                   <h4 className="text-sm font-bold text-stone-900 uppercase">{faq.q}</h4>
+                   <Icons.HelpCircle className="w-4 h-4 text-[#0E5C37]" />
+                   <h4 className="text-sm font-bold text-stone-900 uppercase">{faq.question}</h4>
                  </div>
-                 <p className="text-xs text-stone-500 leading-relaxed">{faq.a}</p>
+                 <p className="text-xs text-stone-500 leading-relaxed">{faq.answer}</p>
                </div>
              ))}
            </div>
         </section>
       )}
 
+      {/* Fallback Jika Kosong Semua */}
       {!hasWifiInfo && !hasFacilities && !hasFaqs && (
         <div className="flex flex-col items-center justify-center text-center opacity-40 py-20">
-          <ShieldAlert className="w-12 h-12 text-stone-300 mb-4" />
+          <Icons.ShieldAlert className="w-12 h-12 text-stone-300 mb-4" />
           <p className="text-xs font-bold text-stone-500 uppercase tracking-widest">
             Informasi layanan belum dikonfigurasi.
           </p>

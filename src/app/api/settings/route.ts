@@ -10,6 +10,7 @@ export async function GET(request: Request) {
   if (!slug) {
     return NextResponse.json({ success: false, message: 'Slug diperlukan' }, { status: 400 });
   }
+  // console.log(slug);
 
   try {
     // 1. Cari Mitra berdasarkan Slug
@@ -37,7 +38,8 @@ export async function GET(request: Request) {
       // 🔴 Tambahan nilai default untuk WiFi & Fasilitas
       wifiSSID: '',
       wifiPassword: '',
-      facilities: null
+      facilities: null,
+      faq: null,
     };
 
     // Jika data settings ditemukan, timpa nilai default dengan data asli
@@ -51,13 +53,12 @@ export async function GET(request: Request) {
         serviceRate: dbSettings.serviceRate ?? 0,
         isTaxIncluded: dbSettings.isTaxIncluded ?? 0,
         
-        // 🔴 Tangkap data WiFi dan Fasilitas
-        // (Pastikan properti ini pakai nama yang sesuai dengan di src/db/schema.ts)
-        // Saya buat fallback nama jika kamu pakai camelCase atau snake_case di schema.
         wifiSSID: dbSettings.wifiSSID || '',
         wifiPassword: dbSettings.wifiPassword || '',
-        facilities: dbSettings.facility || null
+        facility: dbSettings.facility || null,
+        faq: dbSettings.faq || null
       };
+      console.log(data);
     }
 
     return NextResponse.json({ success: true, data });
@@ -77,9 +78,10 @@ export async function PUT(request: Request) {
 
   try {
     const body = await request.json();
-    const { taxRate, serviceRate, isTaxIncluded, wifiSSID, wifiPassword } = body;
+    // 🔴 1. Tangkap facilities dan faq dari body
+    const { taxRate, serviceRate, is_tax_included, wifiSSID, wifiPassword, facilities, faq } = body;
 
-    // 1. Cari Mitra berdasarkan slug untuk mendapatkan id asli
+    // 2. Cari Mitra berdasarkan slug untuk mendapatkan id asli
     const foundMitra = await db.select().from(mitra).where(eq(mitra.mitra_slug, slug)).limit(1);
     if (foundMitra.length === 0) {
       return NextResponse.json({ success: false, message: 'Mitra tidak ditemukan' }, { status: 404 });
@@ -87,26 +89,34 @@ export async function PUT(request: Request) {
     
     const mitraId = foundMitra[0].id;
 
-    // 2. Cek apakah row settings untuk mitra ini sudah pernah dibuat
+    // 3. Cek apakah row settings untuk mitra ini sudah pernah dibuat
     const foundSettings = await db.select().from(settings).where(eq(settings.mitraId, mitraId)).limit(1);
+    console.log("Data diterima API:", body);
 
     if (foundSettings.length === 0) {
       // Jika belum ada data sama sekali, lakukan INSERT
       await db.insert(settings).values({
         mitraId: mitraId,
         taxRate: Number(taxRate || 0),
-        isTaxIncluded: Number(isTaxIncluded || 0),
-        wifiSSID: wifiSSID || '',
-        wifiPassword: wifiPassword || ''
+        serviceRate: Number(serviceRate || 0), // 🔴 Diperbaiki: Dimasukkan ke DB
+        isTaxIncluded: Number(is_tax_included || 0), // 🔴 Diperbaiki: Fallback jadi 0
+        wifiSSID: wifiSSID || null,
+        wifiPassword: wifiPassword || null,
+        facility: facilities || [], // 🔴 2. Masukkan array fasilitas (sesuai nama kolom Drizzle)
+        faq: faq || [],             // 🔴 3. Masukkan array FAQ
+        createdAt: new Date()
       });
     } else {
       // Jika sudah ada, lakukan UPDATE
       await db.update(settings)
         .set({
           taxRate: Number(taxRate || 0),
-          isTaxIncluded: Number(isTaxIncluded || 0),
-          wifiSSID: wifiSSID || '',
-          wifiPassword: wifiPassword || '',
+          serviceRate: Number(serviceRate || 0), // 🔴 Diperbaiki: Dimasukkan ke DB
+          isTaxIncluded: Number(is_tax_included || 0), // 🔴 Diperbaiki: Fallback jadi 0
+          wifiSSID: wifiSSID || null,
+          wifiPassword: wifiPassword || null,
+          facility: facilities || [], // 🔴 2. Masukkan array fasilitas
+          faq: faq || [],             // 🔴 3. Masukkan array FAQ
           updatedAt: new Date()
         })
         .where(eq(settings.mitraId, mitraId));

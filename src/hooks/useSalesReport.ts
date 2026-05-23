@@ -68,16 +68,10 @@ export function useSalesReport(orders: Order[], filter: TimeFilter, customRange?
     orders: count
   }));
 
-  // Laporan Tipe Pesanan
-  let dineIn = 0;
-  let takeAway = 0;
-  filteredOrders.forEach(o => {
-    if (o.orderType === 'takeaway') takeAway++;
-    else dineIn++;
-  });
+  // 🔴 Laporan Tipe Pesanan (Diset 0 sesuai permintaan)
   const orderTypeData = [
-    { name: 'Dine In', value: dineIn },
-    { name: 'Take Away', value: takeAway }
+    { name: 'Dine In', value: 0 },
+    { name: 'Take Away', value: 0 }
   ];
 
   // Laporan Pembatalan

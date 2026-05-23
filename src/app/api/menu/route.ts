@@ -300,7 +300,8 @@ export async function POST(request: Request) {
     if (entity === 'category') {
       await db.insert(categories).values({
         mitra_id: Number(payload.mitraId),
-        name: formData.get('name') as string
+        name: formData.get('name') as string,
+        createdAt: new Date()
       });
 
       return NextResponse.json({
@@ -322,7 +323,8 @@ export async function POST(request: Request) {
           isRequired:
             Number(formData.get('is_required')) || 0,
           maxSelected:
-            Number(formData.get('max_selected')) || 1
+            Number(formData.get('max_selected')) || 1,
+          createdAt: new Date()
         });
 
         return NextResponse.json({
@@ -338,7 +340,8 @@ export async function POST(request: Request) {
           price: String(formData.get('price')),
           category_id: Number(
             formData.get('category_id')
-          )
+          ),
+          createdAt: new Date()
         });
 
         return NextResponse.json({
@@ -439,7 +442,8 @@ export async function POST(request: Request) {
           status: 1,
           addon_id: JSON.parse(
             (formData.get('addon_ids') as string) || '[]'
-          )
+          ),
+          createdAt: new Date()
         })
         .$returningId();
 
@@ -455,7 +459,8 @@ export async function POST(request: Request) {
             mitra_id: Number(payload.mitraId),
             product_id: productId,
             material_id: Number(r.materialId),
-            amount_needed: r.amount.toString()
+            amount_needed: r.amount.toString(),
+            createdAt: new Date()
           }))
         );
       }

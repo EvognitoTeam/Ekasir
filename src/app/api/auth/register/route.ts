@@ -65,7 +65,8 @@ export async function POST(req: Request) {
       });
 
       await tx.insert(settings).values({
-        mitraId: newMitraId
+        mitraId: newMitraId,
+        createdAt: new Date()
       });
       
     });
