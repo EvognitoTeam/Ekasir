@@ -36,6 +36,7 @@ export async function GET(request: Request) {
       success: true,
       user: {
         name: payload.name,
+        email: payload.email,
         role: payload.role
       }
     });

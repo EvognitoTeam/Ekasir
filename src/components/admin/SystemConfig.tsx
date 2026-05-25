@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 // 🔴 1. Import SEMUA ikon dari lucide pakai alias Icons (Biar bisa dinamis)
 import * as Icons from 'lucide-react';
 
-type TabType = 'finance' | 'profile' | 'wifi' | 'info';
+type TabType = 'finance' | 'owner' | 'mitra' | 'bank' | 'wifi' | 'info';
 
 export default function SystemConfig() {
   const params = useParams();
@@ -15,6 +15,11 @@ export default function SystemConfig() {
 
   const [formData, setFormData] = useState({
     cafeName: '',
+    mitraAddress: '',
+    mitraWelcome: '',
+    bankName: '',
+    bankNumber: '0',
+    bankOwner: '',
     taxRate: '0',
     serviceRate: '0',
     isTaxIncluded: 0 as 0 | 1, 
@@ -23,6 +28,44 @@ export default function SystemConfig() {
     facilities: [] as Array<{ icon: string; name: string; description: string }>,
     faq: [] as Array<{ question: string; answer: string }>,
   });
+
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+
+  const [ownerProfile, setOwnerProfile] = useState({
+    name: '',
+    email: '',
+    role: '',
+  });
+
+  const bankOptions = [
+    'BCA',
+    'BRI',
+    'BNI',
+    'Mandiri',
+    'BSI',
+    'CIMB Niaga',
+    'BTN',
+    'Permata Bank',
+    'Danamon',
+    'OCBC NISP',
+    'Maybank',
+    'Panin Bank',
+    'Bank Jago',
+    'SeaBank',
+    'Neo Bank',
+    'Allo Bank',
+    'Bank Mega',
+  ];
+
+  const [showBankDropdown, setShowBankDropdown] = useState(false);
+
+  const filteredBanks = bankOptions.filter((bank) =>
+    bank.toLowerCase().includes(formData.bankName.toLowerCase())
+  );
   
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -33,35 +76,74 @@ export default function SystemConfig() {
 
     const fetchSettings = async () => {
       try {
+        // ================= SETTINGS =================
         const response = await fetch(`/api/settings?slug=${slug}`);
         const result = await response.json();
-        
+
+        // ================= PROFILE LOGIN =================
+        const profileRes = await fetch(`/api/auth/me?slug=${slug}`);
+        const profileResult = await profileRes.json();
+
+        console.log(result);
+
+        if (profileResult.success && profileResult.user) {
+          setOwnerProfile({
+            name: profileResult.user.name || 'John Doe',
+            email: profileResult.user.email || 'John Doe',
+            role: profileResult.user.role || 'John Doe',
+          });
+        }
+
         if (result.success && result.data) {
           const rawFacilities = result.data.facility || result.data.facilities || [];
-          const parsedFacilities = Array.isArray(rawFacilities) 
-            ? rawFacilities.map((f: any) => typeof f === 'string' ? { icon: 'Check', name: f, description: '' } : f)
+
+          const parsedFacilities = Array.isArray(rawFacilities)
+            ? rawFacilities.map((f: any) =>
+                typeof f === 'string'
+                  ? { icon: 'Check', name: f, description: '' }
+                  : f
+              )
             : [];
 
           const rawFaq = result.data.faq || [];
+
           const parsedFaq = Array.isArray(rawFaq)
-            ? rawFaq.map((f: any) => typeof f === 'string' ? { question: f, answer: '' } : f)
+            ? rawFaq.map((f: any) =>
+                typeof f === 'string'
+                  ? { question: f, answer: '' }
+                  : f
+              )
             : [];
 
-          const dbTaxIncluded = result.data.is_tax_included ?? result.data.isTaxIncluded ?? 0;
+          const dbTaxIncluded =
+            result.data.is_tax_included ??
+            result.data.isTaxIncluded ??
+            0;
 
           setFormData({
             cafeName: result.data.cafeName || '',
+            mitraAddress: result.data.mitraAddress || '',
+            mitraWelcome: result.data.mitraWelcome || '',
+
+            bankName: result.data.bankName || '',
+            bankNumber: result.data.bankNumber || '',
+            bankOwner: result.data.bankOwner || '',
+
             taxRate: (result.data.taxRate || 0).toString(),
             serviceRate: (result.data.serviceRate || 0).toString(),
-            isTaxIncluded: Number(dbTaxIncluded) === 1 ? 1 : 0, 
+
+            isTaxIncluded:
+              Number(dbTaxIncluded) === 1 ? 1 : 0,
+
             wifiSSID: result.data.wifiSSID || '',
             wifiPassword: result.data.wifiPassword || '',
+
             facilities: parsedFacilities,
             faq: parsedFaq,
           });
         }
       } catch (error) {
-        console.error("Gagal mengambil pengaturan:", error);
+        console.error('Gagal mengambil pengaturan:', error);
       } finally {
         setIsLoading(false);
       }
@@ -77,21 +159,30 @@ export default function SystemConfig() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          taxRate: Number(formData.taxRate),
-          serviceRate: Number(formData.serviceRate),
-          is_tax_included: formData.isTaxIncluded, 
-          wifiSSID: formData.wifiSSID,
-          wifiPassword: formData.wifiPassword,
-          facilities: formData.facilities,
-          faq: formData.faq,
-        }),
+        taxRate: Number(formData.taxRate),
+        serviceRate: Number(formData.serviceRate),
+        is_tax_included: formData.isTaxIncluded,
+
+        mitraAddress: formData.mitraAddress,
+        mitraWelcome: formData.mitraWelcome,
+
+        bankName: formData.bankName,
+        bankNumber: formData.bankNumber,
+        bankOwner: formData.bankOwner,
+
+        wifiSSID: formData.wifiSSID,
+        wifiPassword: formData.wifiPassword,
+
+        facilities: formData.facilities,
+        faq: formData.faq,
+      }),
       });
 
       if (response.ok) {
         setIsSaved(true);
         setTimeout(() => setIsSaved(false), 3000);
 
-        const channel = new BroadcastChannel('bersejuk-order-sync');
+        const channel = new BroadcastChannel('ekasir-order-sync');
         channel.postMessage({ type: 'STATUS_UPDATE', __secureToken: 'bsjk-secure-v1' });
         setTimeout(() => channel.close(), 100);
       }
@@ -160,10 +251,47 @@ export default function SystemConfig() {
       </div>
 
       <div className="flex overflow-x-auto no-scrollbar gap-2 border-b border-stone-200 pb-2">
-        <TabButton active={activeTab === 'finance'} onClick={() => setActiveTab('finance')} icon={<Icons.CreditCard className="w-4 h-4" />} label="Keuangan" />
-        <TabButton active={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<Icons.Building2 className="w-4 h-4" />} label="Mitra" />
-        <TabButton active={activeTab === 'wifi'} onClick={() => setActiveTab('wifi')} icon={<Icons.Wifi className="w-4 h-4" />} label="WiFi" />
-        <TabButton active={activeTab === 'info'} onClick={() => setActiveTab('info')} icon={<Icons.HelpCircle className="w-4 h-4" />} label="Fasilitas & FAQ" />
+        <TabButton
+          active={activeTab === 'finance'}
+          onClick={() => setActiveTab('finance')}
+          icon={<Icons.CreditCard className="w-4 h-4" />}
+          label="Keuangan"
+        />
+
+        <TabButton
+          active={activeTab === 'owner'}
+          onClick={() => setActiveTab('owner')}
+          icon={<Icons.User className="w-4 h-4" />}
+          label="Profile"
+        />
+
+        <TabButton
+          active={activeTab === 'mitra'}
+          onClick={() => setActiveTab('mitra')}
+          icon={<Icons.Building2 className="w-4 h-4" />}
+          label="Mitra"
+        />
+
+        <TabButton
+          active={activeTab === 'bank'}
+          onClick={() => setActiveTab('bank')}
+          icon={<Icons.Landmark className="w-4 h-4" />}
+          label="Bank"
+        />
+
+        <TabButton
+          active={activeTab === 'wifi'}
+          onClick={() => setActiveTab('wifi')}
+          icon={<Icons.Wifi className="w-4 h-4" />}
+          label="WiFi"
+        />
+
+        <TabButton
+          active={activeTab === 'info'}
+          onClick={() => setActiveTab('info')}
+          icon={<Icons.HelpCircle className="w-4 h-4" />}
+          label="Fasilitas & FAQ"
+        />
       </div>
 
       <div className="min-h-[300px]">
@@ -249,23 +377,409 @@ export default function SystemConfig() {
           </div>
         )}
 
-        {/* ================= TAB: PROFIL MITRA ================= */}
-        {activeTab === 'profile' && (
+        {/* ================= TAB: PROFILE OWNER ================= */}
+        {activeTab === 'owner' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+
+            <div className="bg-stone-50 border border-stone-200 rounded-3xl p-5 space-y-5">
+              <div>
+                <h2 className="text-sm font-bold text-stone-800">
+                  Informasi Akun
+                </h2>
+
+                <p className="text-xs text-stone-500 mt-1">
+                  Data akun owner yang sedang login.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 pl-1">
+                    Nama Owner
+                  </label>
+
+                  <div className="relative">
+                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300">
+                      <Icons.User2 className="w-4 h-4" />
+                    </div>
+
+                    <input
+                      type="text"
+                      disabled
+                      value={ownerProfile.name}
+                      className="w-full bg-stone-100 border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-stone-500 outline-none cursor-not-allowed shadow-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 pl-1">
+                    Role
+                  </label>
+
+                  <div className="relative">
+                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300">
+                      <Icons.Shield className="w-4 h-4" />
+                    </div>
+
+                    <input
+                      type="text"
+                      disabled
+                      value={ownerProfile.role}
+                      className="w-full bg-stone-100 border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-stone-500 outline-none cursor-not-allowed shadow-sm"
+                    />
+                  </div>
+                </div>
+
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 pl-1">
+                  Email Login
+                </label>
+
+                <div className="relative">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300">
+                    <Icons.Mail className="w-4 h-4" />
+                  </div>
+
+                  <input
+                    type="email"
+                    disabled
+                    value={ownerProfile.email}
+                    className="w-full bg-stone-100 border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-stone-500 outline-none cursor-not-allowed shadow-sm"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-stone-50 border border-stone-200 rounded-3xl p-5 space-y-5">
+              <div>
+                <h2 className="text-sm font-bold text-stone-800">
+                  Ganti Password
+                </h2>
+
+                <p className="text-xs text-stone-500 mt-1">
+                  Kosongkan jika tidak ingin mengganti password.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 pl-1">
+                    Password Lama
+                  </label>
+
+                  <div className="relative">
+                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300">
+                      <Icons.Lock className="w-4 h-4" />
+                    </div>
+
+                    <input
+                      type="password"
+                      value={passwordData.currentPassword}
+                      onChange={(e) =>
+                        setPasswordData(prev => ({
+                          ...prev,
+                          currentPassword: e.target.value,
+                        }))
+                      }
+                      className="w-full bg-white border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm font-medium outline-none shadow-sm focus:border-[#0E5C37]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 pl-1">
+                      Password Baru
+                    </label>
+
+                    <div className="relative">
+                      <div className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300">
+                        <Icons.KeyRound className="w-4 h-4" />
+                      </div>
+
+                      <input
+                        type="password"
+                        value={passwordData.newPassword}
+                        onChange={(e) =>
+                          setPasswordData(prev => ({
+                            ...prev,
+                            newPassword: e.target.value,
+                          }))
+                        }
+                        className="w-full bg-white border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm font-medium outline-none shadow-sm focus:border-[#0E5C37]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 pl-1">
+                      Konfirmasi Password
+                    </label>
+
+                    <div className="relative">
+                      <div className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300">
+                        <Icons.ShieldCheck className="w-4 h-4" />
+                      </div>
+
+                      <input
+                        type="password"
+                        value={passwordData.confirmPassword}
+                        onChange={(e) =>
+                          setPasswordData(prev => ({
+                            ...prev,
+                            confirmPassword: e.target.value,
+                          }))
+                        }
+                        className="w-full bg-white border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm font-medium outline-none shadow-sm focus:border-[#0E5C37]"
+                      />
+                    </div>
+                  </div>
+
+                </div>
+
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* ================= TAB: MITRA ================= */}
+        {activeTab === 'mitra' && (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+
+            <div className="grid grid-cols-2 gap-4">
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 pl-1">
+                  Nama Bisnis / Kafe
+                </label>
+
+                <div className="relative">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300">
+                    <Icons.Coffee className="w-4 h-4" />
+                  </div>
+
+                  <input
+                    type="text"
+                    disabled
+                    value={formData.cafeName}
+                    className="w-full bg-stone-100 border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-stone-500 outline-none cursor-not-allowed shadow-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 pl-1">
+                  Welcome Message
+                </label>
+
+                <div className="relative">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300">
+                    <Icons.MessageSquare className="w-4 h-4" />
+                  </div>
+
+                  <input
+                    type="text"
+                    value={formData.mitraWelcome}
+                    onChange={(e) =>
+                      setFormData(prev => ({
+                        ...prev,
+                        mitraWelcome: e.target.value,
+                      }))
+                    }
+                    className="w-full bg-white border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm font-medium text-stone-700 outline-none shadow-sm focus:border-[#0E5C37]"
+                  />
+                </div>
+              </div>
+
+            </div>
+
             <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 pl-1">Nama Bisnis / Kafe</label>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 pl-1">
+                Address
+              </label>
+
               <div className="relative">
                 <div className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300">
-                  <Icons.Coffee className="w-4 h-4" />
+                  <Icons.MapPin className="w-4 h-4" />
                 </div>
-                <input 
-                  type="text" disabled
-                  className="w-full bg-stone-100 border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-stone-500 outline-none cursor-not-allowed shadow-sm"
-                  value={formData.cafeName}
+
+                <textarea
+                  rows={3}
+                  value={formData.mitraAddress}
+                  onChange={(e) =>
+                    setFormData(prev => ({
+                      ...prev,
+                      mitraAddress: e.target.value,
+                    }))
+                  }
+                  className="w-full bg-white border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm text-stone-700 outline-none shadow-sm focus:border-[#0E5C37]"
                 />
               </div>
-              <p className="text-[10px] text-stone-400 pl-2">Nama mitra hanya dapat diubah melalui Master Admin.</p>
             </div>
+
+          </div>
+        )}
+
+        {/* ================= TAB: BANK ================= */}
+        {activeTab === 'bank' && (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 pl-1">
+                  Nama Bank
+                </label>
+
+                {/* 🔴 Wajib relative di sini sebagai jangkar utama Dropdown */}
+                <div className="relative">
+
+                  {/* ICON */}
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300 pointer-events-none z-10">
+                    <Icons.Landmark className="w-4 h-4" />
+                  </div>
+
+                  {/* INPUT */}
+                  <input
+                    type="text"
+                    placeholder="Pilih atau ketik nama bank..."
+                    value={formData.bankName}
+                    onFocus={() => setShowBankDropdown(true)}
+                    onChange={(e) => {
+                      setFormData((prev) => ({
+                        ...prev,
+                        bankName: e.target.value,
+                      }));
+                      setShowBankDropdown(true);
+                    }}
+                    className="w-full bg-white border border-stone-200 rounded-2xl py-4 pl-12 pr-12 text-sm font-medium outline-none shadow-sm transition-all focus:border-[#0E5C37] focus:ring-4 focus:ring-[#0E5C37]/5"
+                  />
+
+                  {/* CHEVRON */}
+                  <button
+                    type="button"
+                    onClick={() => setShowBankDropdown((prev) => !prev)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 transition-colors"
+                  >
+                    <Icons.ChevronDown
+                      className={`w-4 h-4 transition-transform ${
+                        showBankDropdown ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {/* DROPDOWN */}
+                  {showBankDropdown && (
+                    // 🔴 'absolute left-0 right-0 top-full' sekarang ngunci pas ke lebar div.relative parent-nya
+                    <div className="absolute left-0 right-0 top-full mt-2 z-50">
+                      <div className="bg-white border border-stone-200 rounded-2xl shadow-xl overflow-hidden backdrop-blur-xl">
+                        <div className="max-h-60 overflow-y-auto p-1.5 custom-scrollbar">
+                          {filteredBanks.length > 0 ? (
+                            filteredBanks.map((bank) => (
+                              <button
+                                key={bank}
+                                type="button"
+                                onClick={() => {
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    bankName: bank,
+                                  }));
+                                  setShowBankDropdown(false);
+                                }}
+                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[#0E5C37]/5 transition-all group"
+                              >
+                                <div className="w-9 h-9 rounded-lg bg-stone-100 flex items-center justify-center shrink-0 group-hover:bg-[#0E5C37]/10 transition-all">
+                                  <Icons.Building2 className="w-4 h-4 text-stone-500 group-hover:text-[#0E5C37]" />
+                                </div>
+                                <div className="text-left">
+                                  <p className="text-sm font-bold text-stone-800 leading-none mb-1">
+                                    {bank}
+                                  </p>
+                                  <p className="text-[10px] text-stone-400 uppercase tracking-wider font-bold">
+                                    Bank Transfer
+                                  </p>
+                                </div>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-4 py-6 text-center flex flex-col items-center justify-center">
+                              <Icons.Building className="w-8 h-8 text-stone-200 mb-2" />
+                              <p className="text-sm font-bold text-stone-700">
+                                Gunakan &quot;{formData.bankName}&quot;
+                              </p>
+                              <p className="text-[11px] text-stone-400 mt-1 max-w-[200px] leading-relaxed">
+                                Bank tidak ada di daftar. Nama ini tetap akan disimpan.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <p className="text-[10px] text-stone-400 pl-1 mt-1">
+                  Pilih bank dari daftar atau ketik manual jika tidak tersedia.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 pl-1">
+                  Nomor Rekening
+                </label>
+
+                <div className="relative">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300">
+                    <Icons.CreditCard className="w-4 h-4" />
+                  </div>
+
+                  <input
+                    type="text"
+                    value={formData.bankNumber}
+                    onChange={(e) =>
+                      setFormData(prev => ({
+                        ...prev,
+                        bankNumber: e.target.value,
+                      }))
+                    }
+                    className="w-full bg-white border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm font-medium outline-none shadow-sm focus:border-[#0E5C37]"
+                  />
+                </div>
+              </div>
+
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 pl-1">
+                Nama Pemilik Rekening
+              </label>
+
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300">
+                  <Icons.UserCircle2 className="w-4 h-4" />
+                </div>
+
+                <input
+                  type="text"
+                  value={formData.bankOwner}
+                  onChange={(e) =>
+                    setFormData(prev => ({
+                      ...prev,
+                      bankOwner: e.target.value,
+                    }))
+                  }
+                  className="w-full bg-white border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm font-medium outline-none shadow-sm focus:border-[#0E5C37]"
+                />
+              </div>
+            </div>
+
           </div>
         )}
 
