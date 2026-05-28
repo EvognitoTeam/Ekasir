@@ -70,40 +70,23 @@ export default function AdminDashboardView({ onBack }: Props) {
 
   const stats = useMemo(() => {
     const targetDate = overviewDate === 'today' ? new Date() : subDays(new Date(), 1);
-    
-    // Filter orders berdasarkan tanggal target
-    const targetOrders = orderHistory.filter(o => 
-      o.createdAt && isSameDay(new Date(o.createdAt), targetDate)
-    );
 
-    // Hitung Revenue (Prioritaskan totalAfterDiscount)
+    // Filter dengan pengecekan aman agar tidak ada undefined
+    const targetOrders = orderHistory.filter((o) => {
+      if (!o.createdAt) return false;
+      return isSameDay(new Date(o.createdAt), targetDate);
+    });
+
     const targetRevenue = targetOrders
-      .filter(o => o.status === 'confirmed')
+      .filter((o) => o.status === 'confirmed')
       .reduce((sum, o) => sum + (Number(o.totalPrice) || 0), 0);
-    
-    // Hitung Order Count
+
     const targetOrderCount = targetOrders.length;
-    
-    // Hitung Menu Nonaktif (Sold Out)
-    const depleted = menuItems.filter(m => !m.isAvailable || Number(m.stock) <= 0).length;
-    
-    // Hitung Stok Menipis
-    const lowStock = materials.filter(m => Number(m.stock) <= Number(m.lowStockThreshold)).length;
+    const depleted = menuItems.filter((m) => !m.isAvailable || Number(m.stock) <= 0).length;
+    const lowStock = materials.filter((m) => Number(m.stock) <= Number(m.lowStockThreshold)).length;
 
     return { targetRevenue, targetOrderCount, depleted, lowStock };
-  }, [orderHistory, menuItems, materials, overviewDate]); // Data akan ter-update otomatis jika store ini berubah
-
-  const targetDate = overviewDate === 'today' ? new Date() : subDays(new Date(), 1);
-  const targetOrders = orderHistory.filter(o => isSameDay(new Date(o.createdAt), targetDate));
-  const targetRevenue = targetOrders
-    .filter(o => o.status === 'confirmed')
-    .reduce((sum, o) => sum + (o.totalPrice), 0);
-  
-  const targetOrderCount = targetOrders.length;
-  const depleted = menuItems.filter(m => !m.isAvailable).length;
-  const lowStock = materials.filter(m => m.stock <= m.lowStockThreshold).length;
-
-
+  }, [orderHistory, menuItems, materials, overviewDate]);
 
   return (
     <div className="flex flex-col h-full min-h-screen bg-[#f8f9fa] font-sans antialiased text-stone-900 w-full overflow-hidden">
