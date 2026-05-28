@@ -20,6 +20,7 @@ export default function LoginView() {
 
     if (urlError) {
       if (urlError === 'not_authorized') {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setError('Akses ditolak. Anda tidak memiliki izin untuk halaman tersebut.');
       } else if (urlError === 'session_expired') {
         setError('Sesi Anda telah berakhir. Silakan masuk kembali.');
@@ -43,31 +44,43 @@ export default function LoginView() {
     setIsLoading(true);
 
     try {
-      // 1. Tembak API Login (Tanpa mengirimkan slug)
+      // LOGIN API
       const response = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email: email.trim(), 
-          password 
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(data.message || 'Login gagal. Periksa kembali email dan kata sandi Anda.');
+        throw new Error(
+          data.message ||
+            'Login gagal. Periksa kembali email dan kata sandi Anda.'
+        );
       }
 
-      // 2. Login Sukses! Cookie sudah tertanam otomatis.
-      // Ambil slug toko milik user dari response API, lalu redirect ke dashboard admin
-      const storeSlug = data.user.slug;
-      
-      if (storeSlug) {
+      // AMBIL DATA USER
+      const storeSlug = data.user?.slug;
+      const role = data.user?.role;
+
+      if (!storeSlug) {
+        throw new Error('Slug toko tidak ditemukan.');
+      }
+
+      // REDIRECT BERDASARKAN ROLE
+      if (role === 'Owner') {
         window.location.href = `/${storeSlug}/dashboard`;
+      } else if (role === 'Cashier') {
+        window.location.href = `/${storeSlug}/cashier`;
       } else {
-        // Fallback jika user biasa (bukan owner) yang mencoba login di sini
-        window.location.href = '/'; 
+        // fallback role lain
+        window.location.href = '/';
       }
 
     } catch (err: any) {

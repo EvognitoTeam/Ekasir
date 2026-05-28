@@ -84,7 +84,7 @@ export default function SystemConfig() {
         const profileRes = await fetch(`/api/auth/me?slug=${slug}`);
         const profileResult = await profileRes.json();
 
-        console.log(result);
+        // console.log(result);
 
         if (profileResult.success && profileResult.user) {
           setOwnerProfile({

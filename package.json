@@ -1,6 +1,6 @@
 {
   "name": "ekasir",
-  "version": "0.1.0",
+  "version": "0.5.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -24,6 +24,7 @@
     "postcss": "^8.5.10",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-icons": "^5.6.0",
     "react-quill-new": "^3.8.3",
     "recharts": "^3.8.1",
     "sharp": "^0.34.5",

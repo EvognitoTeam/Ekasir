@@ -139,7 +139,7 @@ export const useCartStore = create<CartState>()(
       },
     }),
     {
-      name: 'evokasir-multi-cart', // Ganti nama agar bersih dari cache lama
+      name: 'ekasir-multi-cart', // Ganti nama agar bersih dari cache lama
     }
   )
 );

@@ -99,19 +99,45 @@ export interface CartItem {
   menuItemId: string;
   quantity: number;
   selectedAddOns: number[];
+  selectedAddOnsDetails?: number[];
   notes?: string;
   options?: POSOptions; 
   sku_code?: string;
 }
 
 export interface Order {
-  id: string;
-  tableId: string;
+  id: string | number; // Bisa string (mock) atau number (dari DB)
+  order_code?: string; // Kode unik struk dari DB
+  
+  // Meja
+  tableId?: string; // Fallback sistem lama
+  table_number?: number | string; // Dari DB
+  table_name?: string; // Dari DB
+  
   items: CartItem[];
-  subtotal: number;
-  tax: number;
-  serviceCharge: number;
-  totalPrice: number;
-  status: 'pending' | 'confirmed' | 'preparing' | 'ready' | 'failed';
-  createdAt: string;
+  
+  // Harga
+  subtotal?: number;
+  tax?: number;
+  serviceCharge?: number;
+  totalPrice?: number; // Dari format camelCase kasir
+  total_price?: number | string; // Dari DB asli
+  
+  // Status & Tipe Pesanan
+  status: 'pending' | 'confirmed' | 'preparing' | 'ready' | 'failed' | 'cancelled' | 'completed';
+  orderType?: 'dine-in' | 'takeaway' | string;
+  
+  // Pembayaran
+  paymentStatus?: '1' | '2' | '3' | '4' | 'paid' | 'pending'; // 2/paid = Lunas
+  paymentMethod?: 'cash' | 'qris' | string;
+  payment_method?: 'cash' | 'qris';
+  
+  // Identitas & Catatan
+  customerName?: string;
+  name?: string; // Nama dari DB asli
+  adminNotes?: string;
+  
+  // Waktu
+  createdAt?: string | Date;
+  created_at?: string | Date; // Dari DB asli
 }

@@ -17,7 +17,7 @@ export const useTableStore = create<TableState>()(
       clearTable: () => set({ tableCode: null, tableName: null }),
     }),
     {
-      name: 'evokasir-table-session', // Nama key di LocalStorage
+      name: 'ekasir-table-session', // Nama key di LocalStorage
     }
   )
 );

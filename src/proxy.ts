@@ -14,18 +14,28 @@ export async function proxy(request: NextRequest) {
   // /slug/dashboard/xxx
   // /slug/cashier
   // /slug/cashier/xxx
-  const match = path.match(/^\/([^\/]+)\/(dashboard|cashier)(\/.*)?$/);
+  const match = path.match(
+    /^\/([^\/]+)\/(dashboard|cashier)(\/.*)?$/
+  );
 
   // Route publik
   if (!match) {
     return NextResponse.next();
   }
 
-  // Ambil slug dari regex
-  const requestedSlug = match[1];
+  // =========================
+  // DATA URL
+  // =========================
 
-  // Ambil token
-  const token = request.cookies.get('ekasir_session')?.value;
+  const requestedSlug = match[1];
+  const requestedArea = match[2]; // dashboard | cashier
+
+  // =========================
+  // TOKEN
+  // =========================
+
+  const token =
+    request.cookies.get('ekasir_session')?.value;
 
   // Belum login
   if (!token) {
@@ -35,22 +45,36 @@ export async function proxy(request: NextRequest) {
   }
 
   try {
-    // Verify JWT
-    const { payload } = await jwtVerify(token, SECRET_KEY);
+    // =========================
+    // VERIFY JWT
+    // =========================
 
-    // Role validation
+    const { payload } = await jwtVerify(
+      token,
+      SECRET_KEY
+    );
+
     const userRole = payload.role as string;
+    const userSlug = payload.slug as string;
+
+    // =========================
+    // VALID ROLE
+    // =========================
 
     const allowedRoles = ['Owner', 'Cashier'];
 
     if (!allowedRoles.includes(userRole)) {
       return NextResponse.redirect(
-        new URL('/login?error=not_authorized', request.url)
+        new URL(
+          '/login?error=not_authorized',
+          request.url
+        )
       );
     }
 
-    // Tenant isolation
-    const userSlug = payload.slug as string;
+    // =========================
+    // VALID SLUG
+    // =========================
 
     if (!userSlug) {
       console.error(
@@ -58,7 +82,10 @@ export async function proxy(request: NextRequest) {
       );
 
       const response = NextResponse.redirect(
-        new URL('/login?error=invalid_tenant', request.url)
+        new URL(
+          '/login?error=invalid_tenant',
+          request.url
+        )
       );
 
       response.cookies.delete('ekasir_session');
@@ -66,18 +93,52 @@ export async function proxy(request: NextRequest) {
       return response;
     }
 
-    // Validasi slug tenant
+    // Tenant isolation
     if (requestedSlug !== userSlug) {
       console.warn(
         `⚠️ Akses ilegal: ${userSlug} mencoba akses ${requestedSlug}`
       );
+
+      // Redirect sesuai role
+      if (userRole === 'Cashier') {
+        return NextResponse.redirect(
+          new URL(`/${userSlug}/cashier`, request.url)
+        );
+      }
 
       return NextResponse.redirect(
         new URL(`/${userSlug}/dashboard`, request.url)
       );
     }
 
-    // Semua aman
+    // =========================
+    // ROLE ACCESS CONTROL
+    // =========================
+
+    // CASHIER buka dashboard
+    if (
+      userRole === 'Cashier' &&
+      requestedArea === 'dashboard'
+    ) {
+      return NextResponse.redirect(
+        new URL(`/${userSlug}/cashier`, request.url)
+      );
+    }
+
+    // OWNER buka cashier
+    if (
+      userRole === 'Owner' &&
+      requestedArea === 'cashier'
+    ) {
+      return NextResponse.redirect(
+        new URL(`/${userSlug}/dashboard`, request.url)
+      );
+    }
+
+    // =========================
+    // AMAN
+    // =========================
+
     return NextResponse.next();
 
   } catch (error) {
@@ -87,7 +148,10 @@ export async function proxy(request: NextRequest) {
     );
 
     const response = NextResponse.redirect(
-      new URL('/login?error=session_expired', request.url)
+      new URL(
+        '/login?error=session_expired',
+        request.url
+      )
     );
 
     response.cookies.delete('ekasir_session');
