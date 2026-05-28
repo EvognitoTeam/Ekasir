@@ -27,6 +27,7 @@ export default function OrderLedger() {
   const [showFilters, setShowFilters] = useState(false);
 
   const filtered = orderHistory.filter(o => {
+    if (!o.createdAt) return false;
     const date = new Date(o.createdAt);
     const now = new Date();
     const dateOk =
@@ -38,8 +39,8 @@ export default function OrderLedger() {
   });
 
   const totalFiltered = filtered
-    .filter(o => o.status === 'ready')
-    .reduce((sum, o) => sum + o.totalPrice, 0);
+  .filter(o => o.status === 'ready')
+  .reduce((sum, o) => sum + (Number(o.totalPrice) || 0), 0);
 
   const exportToTSV = () => {
     if (filtered.length === 0) return;
@@ -49,14 +50,26 @@ export default function OrderLedger() {
         const product = menuItems.find(m => m.id === item.menuItemId);
         return `${product?.name || 'Unknown'} (x${item.quantity})`;
       }).join('; ');
-      return [order.id, `T-${order.tableId}`, new Date(order.createdAt).toLocaleString('id-ID'), order.status, itemBreakdown, order.totalPrice];
+      
+      // 🔴 Perbaikan: Gunakan fallback || new Date() untuk menghindari error undefined
+      const timestamp = new Date(order.createdAt || new Date()).toLocaleString('id-ID');
+      
+      return [
+        order.id, 
+        `T-${order.tableId}`, 
+        timestamp, 
+        order.status, 
+        itemBreakdown, 
+        order.totalPrice || 0 // 🔴 Tambahkan fallback 0 jika totalPrice undefined
+      ];
     });
+    
     const tsvContent = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
     const blob = new Blob(['\uFEFF', tsvContent], { type: 'text/tab-separated-values;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `ledger_${new Date().toISOString().split('T')}.tsv`;
+    link.download = `ledger_${new Date().toISOString().split('T')[0]}.tsv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
