@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -16,15 +16,16 @@ import {
   AlertTriangle,
   DollarSign,
   ShoppingBag,
+  Clock,
 } from 'lucide-react';
-import MenuEditor from '../../../components/admin/MenuEditor';
-import OrderLedger from '../../../components/admin/OrderLedger';
-import SystemConfig from '../../../components/admin/SystemConfig';
-import AnalyticsPanel from '../../../components/admin/AnalyticsPanel';
-import InventoryPanel from '../../../components/admin/InventoryPanel';
-import { useOrderStore } from '../../../store/order.store';
-import { useMenuStore } from '../../../store/menu.store';
-import { useInventoryStore } from '../../../store/inventory.store';
+import MenuEditor from '@/components/admin/MenuEditor';
+import OrderLedger from '@/components/admin/OrderLedger';
+import SystemConfig from '@/components/admin/SystemConfig';
+import AnalyticsPanel from '@/components/admin/AnalyticsPanel';
+import InventoryPanel from '@/components/admin/InventoryPanel';
+import { useOrderStore } from '@/store/order.store';
+import { useMenuStore } from '@/store/menu.store';
+import { useInventoryStore } from '@/store/inventory.store';
 import { isSameDay, subDays } from 'date-fns';
 
 
@@ -48,6 +49,32 @@ export default function AdminDashboardView({ onBack }: Props) {
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [overviewDate, setOverviewDate] = useState<'today' | 'yesterday'>('today');
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 🔴 1. State dan Effect untuk Jam Real-time (WIB)
+  const [currentTime, setCurrentTime] = useState<string>('');
+
+  useEffect(() => {
+    // Fungsi untuk update jam
+    const updateClock = () => {
+      const now = new Date();
+      const timeString = now.toLocaleTimeString('id-ID', {
+        timeZone: 'Asia/Jakarta',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+      setCurrentTime(`${timeString} WIB`);
+    };
+
+    // Panggil sekali pas awal render
+    updateClock();
+    
+    // Set interval tiap detik
+    const timerId = setInterval(updateClock, 1000);
+    
+    // Cleanup interval kalau komponen di-unmount
+    return () => clearInterval(timerId);
+  }, []);
 
   const navigateTo = (tab: AdminTab) => {
     setActiveTab(tab);
@@ -115,9 +142,19 @@ export default function AdminDashboardView({ onBack }: Props) {
 
           {/* Bagian Kanan: Indikator Sistem */}
           <div className="text-right flex flex-col items-end">
-            <div className="flex items-center gap-1.5 mb-1">
-              <ShieldCheck className="w-3.5 h-3.5 text-[#0E5C37]" />
-              <p className="text-[11px] font-bold text-stone-900 uppercase tracking-widest leading-none">Master Terminal</p>
+            <div className="flex items-center gap-3 mb-1">
+              {/* 🔴 2. Tampilkan Jam di Sini */}
+              {currentTime && (
+                <div className="flex items-center gap-1 text-stone-500 bg-stone-50 px-2 py-0.5 rounded border border-stone-100 hidden sm:flex">
+                  <Clock className="w-3 h-3" />
+                  <span className="text-[10px] font-bold font-mono tracking-widest leading-none">{currentTime}</span>
+                </div>
+              )}
+              
+              <div className="flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#0E5C37]" />
+                <p className="text-[11px] font-bold text-stone-900 uppercase tracking-widest leading-none">Master Terminal</p>
+              </div>
             </div>
             {activeTab === 'overview' ? (
               <span className="text-[9px] uppercase tracking-[0.3em] text-[#0E5C37] font-bold block leading-none">Admin Protocol</span>

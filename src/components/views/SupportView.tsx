@@ -91,14 +91,15 @@ export default function SupportView() {
 
   // 🔴 4. Komponen Helper untuk merender ikon Lucide secara dinamis dari string
   const DynamicIcon = ({ iconName, className }: { iconName?: string, className?: string }) => {
-    // Pastikan Icon Component valid dan namanya CapitalCase
-    const IconComponent = iconName ? Icons[iconName as keyof typeof Icons] : null;
+    // Gunakan 'as any' untuk melewati pemeriksaan tipe statis yang terlalu ketat pada dynamic lookup
+    const IconComponent = iconName ? (Icons as any)[iconName] : null;
     
-    // Fallback icon jika kosong atau salah ketik
+    // Fallback icon jika tidak ditemukan
     if (!IconComponent) {
       return <Icons.CheckCircle2 className={className || "w-5 h-5 text-emerald-300"} />;
     }
     
+    // Render komponen secara dinamis
     return <IconComponent className={className || "w-5 h-5 text-emerald-300"} />;
   };
 

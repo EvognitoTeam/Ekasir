@@ -10,3 +10,8 @@ export const formatPrice = (price: number) => {
   .format(price)
   .replace(/\s/g, '');
 };
+
+export const getWIBDate = () => {
+  const now = new Date();
+  return new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+};

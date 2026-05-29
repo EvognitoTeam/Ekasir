@@ -97,6 +97,7 @@ export interface POSOptions {
 export interface CartItem {
   id: string; 
   menuItemId: string;
+  product_id?: number | string; // 🔴 Tambahkan baris ini
   quantity: number;
   selectedAddOns: number[];
   selectedAddOnsDetails?: number[];

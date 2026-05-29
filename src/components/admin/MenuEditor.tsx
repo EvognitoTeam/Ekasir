@@ -93,6 +93,7 @@ export default function MenuEditor() {
   }, [slug, setMenu]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchAllData();
     initializeDefaultMaterials();
   }, [fetchAllData, initializeDefaultMaterials]);
@@ -302,6 +303,12 @@ export default function MenuEditor() {
       
       // Beritahu API backend, entitas apa yang sedang kita proses (menu / category / addon)
       formData.append('entity', activeTab); 
+
+      // 🔴 MASUKIN CONSOLE.LOG NYA DI SINI! 🔴
+      // console.log("=== DEBUGGING SIMPAN DATA ===");
+      // console.log("1. Tab yang sedang aktif (activeTab):", activeTab);
+      // console.log("2. Nilai 'entity' di FormData:", formData.get('entity'));
+      // console.log("=============================");
 
       if (activeTab === 'menu') {
         formData.append('name', formMenu.name);
@@ -696,7 +703,6 @@ export default function MenuEditor() {
                       {/* List Bahan Terpilih */}
                       <div className="space-y-2">
                           {formMenu.recipes.map((r, i) => (
-                            
                               <div key={i} className="flex justify-between items-center p-3 bg-stone-50 rounded-xl border">
                                 {/* <pre className="text-[8px] text-red-500">
                                     {JSON.stringify(r)}

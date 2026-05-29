@@ -19,11 +19,13 @@ export function useSalesReport(orders: Order[], filter: TimeFilter, customRange?
   };
 
   const getFilteredOrders = () => {
-    return orders.filter(o => isDateInRange(new Date(o.createdAt)));
+    // 🔴 Perbaikan: Filter out data yang tidak memiliki createdAt
+    return orders.filter(o => o.createdAt && isDateInRange(new Date(o.createdAt)));
   };
 
   const getFilteredExpenses = () => {
-    return expenses.filter(e => isDateInRange(new Date(e.timestamp)));
+    // 🔴 Perbaikan: Filter out data yang tidak memiliki timestamp
+    return expenses.filter(e => e.timestamp && isDateInRange(new Date(e.timestamp)));
   };
 
   const filteredOrders = getFilteredOrders();
@@ -31,24 +33,24 @@ export function useSalesReport(orders: Order[], filter: TimeFilter, customRange?
   const completedOrders = filteredOrders.filter(o => o.status === 'ready');
 
   // Metrik Utama Keuangan
-  const totalRevenue = completedOrders.reduce((sum, o) => sum + o.totalPrice, 0);
+  const totalRevenue = completedOrders.reduce((sum, o) => sum + (Number(o.totalPrice) || 0), 0);
   const totalTransactions = completedOrders.length;
   const averageOrderValue = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
   
-  const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalExpenses = filteredExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
   const netProfit = totalRevenue - totalExpenses;
 
   // Laporan Menu Terlaris
   const topItemsMap: Record<string, { name: string; quantity: number; revenue: number }> = {};
   completedOrders.forEach(order => {
     order.items.forEach(item => {
-      const product = menuItems.find(m => m.id === item.menuItemId);
+      const product = menuItems.find(m => String(m.id) === String(item.menuItemId));
       if (product) {
         if (!topItemsMap[product.id]) {
           topItemsMap[product.id] = { name: product.name, quantity: 0, revenue: 0 };
         }
         topItemsMap[product.id].quantity += item.quantity;
-        topItemsMap[product.id].revenue += (product.basePrice * item.quantity);
+        topItemsMap[product.id].revenue += (Number(product.basePrice) * item.quantity);
       }
     });
   });
@@ -59,8 +61,11 @@ export function useSalesReport(orders: Order[], filter: TimeFilter, customRange?
   for (let i = 0; i < 24; i++) hourlyDataMap[i] = 0;
   
   filteredOrders.forEach(order => {
-    const hour = getHours(new Date(order.createdAt));
-    hourlyDataMap[hour]++;
+    // 🔴 Perbaikan: Cek lagi sebelum getHours
+    if (order.createdAt) {
+      const hour = getHours(new Date(order.createdAt));
+      hourlyDataMap[hour]++;
+    }
   });
   
   const hourlyData = Object.entries(hourlyDataMap).map(([hour, count]) => ({

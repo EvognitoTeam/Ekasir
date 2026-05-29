@@ -23,7 +23,7 @@ export default function OrderLedger() {
   const { items: menuItems } = useMenuStore();
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | number | null>(null);
   const [showFilters, setShowFilters] = useState(false);
 
   const filtered = orderHistory.filter(o => {
@@ -179,7 +179,7 @@ export default function OrderLedger() {
               >
                 {/* Header Row (Tampil sebaris di layar Desktop) */}
                 <button
-                  onClick={() => setExpandedId(isExpanded ? null : order.id)}
+                  onClick={() => setExpandedId(isExpanded ? null : String(order.id))}
                   className="w-full p-4 lg:px-6 lg:py-5 flex items-center justify-between hover:bg-stone-50/50 transition-colors"
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-6 text-left">
@@ -192,7 +192,16 @@ export default function OrderLedger() {
                     <div className="flex items-center gap-2 text-stone-400">
                       <Calendar className="w-3.5 h-3.5" />
                       <span className="text-[10px] font-bold uppercase tracking-widest">
-                        {new Date(order.createdAt).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        {order.createdAt ? (
+                          new Date(order.createdAt).toLocaleString('id-ID', { 
+                            day: '2-digit', 
+                            month: 'short', 
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                          })
+                        ) : (
+                          "-"
+                        )}
                       </span>
                     </div>
                   </div>
@@ -249,20 +258,25 @@ export default function OrderLedger() {
                         {/* Ringkasan Biaya */}
                         <div className="border-t border-stone-200/60 mt-4 pt-3 space-y-2">
                           <div className="flex justify-between text-xs text-stone-500">
-                            <span>Subtotal</span><span className="font-medium">{formatPrice(order.subtotal)}</span>
+                            <span>Subtotal</span>
+                            <span className="font-medium">{formatPrice(order.subtotal ?? 0)}</span>
                           </div>
                           <div className="flex justify-between text-xs text-stone-500">
-                            <span>Pajak</span><span className="font-medium">{formatPrice(order.tax)}</span>
+                            <span>Pajak</span>
+                            <span className="font-medium">{formatPrice(order.tax ?? 0)}</span>
                           </div>
                           <div className="flex justify-between text-xs text-stone-500">
-                            <span>Service Charge</span><span className="font-medium">{formatPrice(order.serviceCharge)}</span>
+                            <span>Service Charge</span>
+                            <span className="font-medium">{formatPrice(order.serviceCharge ?? 0)}</span>
                           </div>
                           <div className="flex justify-between items-end pt-3 border-t border-stone-200 mt-2">
                             <div className="flex items-center gap-1.5 mb-1">
                               <Tag className="w-3.5 h-3.5 text-stone-400" />
                               <span className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Total Transaksi</span>
                             </div>
-                            <span className="text-xl md:text-2xl font-black text-[#0E5C37]">{formatPrice(order.totalPrice)}</span>
+                            <span className="text-xl md:text-2xl font-black text-[#0E5C37]">
+                              {formatPrice(order.totalPrice ?? 0)}
+                            </span>
                           </div>
                         </div>
                         

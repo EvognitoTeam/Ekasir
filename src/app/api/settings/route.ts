@@ -4,6 +4,7 @@ import { mitra, settings } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 import { jwtVerify } from 'jose';
+import { getWIBDate } from '@/utils/formatters';
 
 const SECRET_KEY = new TextEncoder().encode(
   process.env.JWT_SECRET ||
@@ -188,8 +189,11 @@ export async function PUT(request: Request) {
 
   try {
     const body = await request.json();
-    // 🔴 1. Tangkap facilities dan faq dari body
-    const { taxRate, serviceRate, is_tax_included, wifiSSID, wifiPassword, facilities, faq } = body;
+    // 🔴 1. Tangkap SEMUA data dari body (Settings + Mitra)
+    const { 
+      taxRate, serviceRate, is_tax_included, wifiSSID, wifiPassword, facilities, faq,
+      bankName, bankNumber, bankOwner, cafeName, mitraAddress, mitraWelcome 
+    } = body;
 
     // 2. Cari Mitra berdasarkan slug untuk mendapatkan id asli
     const foundMitra = await db.select().from(mitra).where(eq(mitra.mitra_slug, slug)).limit(1);
@@ -199,35 +203,54 @@ export async function PUT(request: Request) {
     
     const mitraId = foundMitra[0].id;
 
-    // 3. Cek apakah row settings untuk mitra ini sudah pernah dibuat
+    // 🔴 3. UPDATE DATA DI TABEL MITRA (Info Bank & Kafe)
+    await db.update(mitra)
+      .set({
+        bank_name: bankName || null,
+        no_rek: bankNumber || null,
+        // 🔴 Bikin otomatis capslock pakai toUpperCase()
+        nama_rek: bankOwner ? bankOwner.toUpperCase() : null, 
+        
+        // 🔴 Tambahan timestamp
+        rek_added_at: getWIBDate(),
+        updatedAt: getWIBDate(), // Pastikan di schema lu namanya 'updated_at' atau 'updatedAt'
+        
+        mitra_name: cafeName || foundMitra[0].mitra_name,
+        mitra_address: mitraAddress || foundMitra[0].mitra_address,
+        mitra_welcome: mitraWelcome || foundMitra[0].mitra_welcome,
+      })
+      .where(eq(mitra.id, mitraId));
+
+
+    // 4. Cek apakah row settings untuk mitra ini sudah pernah dibuat
     const foundSettings = await db.select().from(settings).where(eq(settings.mitraId, mitraId)).limit(1);
-    console.log("Data diterima API:", body);
+    // console.log("Data diterima API:", body);
 
     if (foundSettings.length === 0) {
       // Jika belum ada data sama sekali, lakukan INSERT
       await db.insert(settings).values({
         mitraId: mitraId,
         taxRate: Number(taxRate || 0),
-        serviceRate: Number(serviceRate || 0), // 🔴 Diperbaiki: Dimasukkan ke DB
-        isTaxIncluded: Number(is_tax_included || 0), // 🔴 Diperbaiki: Fallback jadi 0
+        serviceRate: Number(serviceRate || 0), 
+        isTaxIncluded: Number(is_tax_included || 0), 
         wifiSSID: wifiSSID || null,
         wifiPassword: wifiPassword || null,
-        facility: facilities || [], // 🔴 2. Masukkan array fasilitas (sesuai nama kolom Drizzle)
-        faq: faq || [],             // 🔴 3. Masukkan array FAQ
-        createdAt: new Date()
+        facility: facilities || [], 
+        faq: faq || [],             
+        createdAt: getWIBDate(),
       });
     } else {
       // Jika sudah ada, lakukan UPDATE
       await db.update(settings)
         .set({
           taxRate: Number(taxRate || 0),
-          serviceRate: Number(serviceRate || 0), // 🔴 Diperbaiki: Dimasukkan ke DB
-          isTaxIncluded: Number(is_tax_included || 0), // 🔴 Diperbaiki: Fallback jadi 0
+          serviceRate: Number(serviceRate || 0), 
+          isTaxIncluded: Number(is_tax_included || 0), 
           wifiSSID: wifiSSID || null,
           wifiPassword: wifiPassword || null,
-          facility: facilities || [], // 🔴 2. Masukkan array fasilitas
-          faq: faq || [],             // 🔴 3. Masukkan array FAQ
-          updatedAt: new Date()
+          facility: facilities || [], 
+          faq: faq || [],             
+          updatedAt: getWIBDate(),
         })
         .where(eq(settings.mitraId, mitraId));
     }

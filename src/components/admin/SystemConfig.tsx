@@ -767,15 +767,15 @@ export default function SystemConfig() {
                 </div>
 
                 <input
-                  type="text"
+                  type="text" 
                   value={formData.bankOwner}
                   onChange={(e) =>
                     setFormData(prev => ({
                       ...prev,
-                      bankOwner: e.target.value,
+                      bankOwner: e.target.value.toUpperCase(),
                     }))
                   }
-                  className="w-full bg-white border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm font-medium outline-none shadow-sm focus:border-[#0E5C37]"
+                  className="w-full bg-white border border-stone-200 rounded-2xl py-4 pl-12 pr-4 text-sm font-medium outline-none shadow-sm focus:border-[#0E5C37] uppercase"
                 />
               </div>
             </div>

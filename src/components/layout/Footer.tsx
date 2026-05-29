@@ -1,4 +1,4 @@
-import { Instagram, Facebook, MapPin, Phone, Clock } from 'lucide-react';
+import {  MapPin, Phone, Clock } from 'lucide-react';
 
 interface FooterProps {
   mitraName?: string;

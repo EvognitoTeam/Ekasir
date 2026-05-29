@@ -227,7 +227,7 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
                     border: '1px solid #FDE68A', padding: '2px 8px', borderRadius: '5px',
                     marginTop: '4px', fontStyle: 'italic', display: 'inline-block'
                   }}>
-                    "{cartItem.notes}"
+                    &quot;{cartItem.notes}&quot;
                   </p>
                 )}
               </div>
@@ -251,10 +251,10 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
                   border: '1.5px solid #0E5C37', fontSize: '12px', outline: 'none',
                   color: '#1c1c19'
                 }}
-                onKeyDown={e => { if (e.key === 'Enter') { onUpdateNote?.(order.id, noteInput); setIsEditingNote(false); } }}
+                onKeyDown={e => { if (e.key === 'Enter') { onUpdateNote?.(String(order.id), noteInput); setIsEditingNote(false); } }}
               />
               <button 
-                onClick={() => { onUpdateNote?.(order.id, noteInput); setIsEditingNote(false); }}
+                onClick={() => { onUpdateNote?.(String(order.id), noteInput); setIsEditingNote(false); }}
                 style={{ 
                   padding: '8px 12px', borderRadius: '8px', background: '#0E5C37', 
                   color: '#fff', fontSize: '12px', fontWeight: 700, border: 'none', cursor: 'pointer' 
@@ -337,7 +337,7 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
                   }
                 }).then((result) => {
                   if (result.isConfirmed) {
-                    onUpdateStatus(order.id, 'cancelled' as any);
+                    onUpdateStatus(String(order.id), 'cancelled' as any);
                     Swal.fire({
                       title: 'Dibatalkan!',
                       text: `Pesanan #${displayId} telah dibatalkan.`,
@@ -376,7 +376,7 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
                 {order.status === 'pending' && (
                   paymentMethodUi === 'cash' && paymentStatusUi !== 'LUNAS' ? (
                     <button
-                      onClick={() => onUpdateStatus(order.id, 'confirmed', '2')} 
+                      onClick={() => onUpdateStatus(String(order.id), 'confirmed', '2')} 
                       style={{
                         width: '100%', padding: '11px 16px', borderRadius: '10px',
                         background: 'linear-gradient(135deg, #D97706, #B45309)',
@@ -390,7 +390,7 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
                     </button>
                   ) : (
                     <button
-                      onClick={() => onUpdateStatus(order.id, 'confirmed')}
+                      onClick={() => onUpdateStatus(String(order.id), 'confirmed')}
                       style={{
                         width: '100%', padding: '11px 16px', borderRadius: '10px',
                         background: 'linear-gradient(135deg, #0E5C37, #065F46)',
@@ -407,7 +407,7 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
 
                 {order.status === 'confirmed' && (
                   <button
-                    onClick={() => onUpdateStatus(order.id, 'preparing')}
+                    onClick={() => onUpdateStatus(String(order.id), 'preparing')}
                     style={{
                       width: '100%', padding: '11px 16px', borderRadius: '10px',
                       background: 'linear-gradient(135deg, #7C3AED, #6D28D9)',
@@ -423,7 +423,7 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
 
                 {order.status === 'preparing' && (
                   <button
-                    onClick={() => onUpdateStatus(order.id, 'ready')}
+                    onClick={() => onUpdateStatus(String(order.id), 'ready')}
                     style={{
                       width: '100%', padding: '11px 16px', borderRadius: '10px',
                       background: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
@@ -439,7 +439,7 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
 
                 {order.status === 'ready' && (
                   <button
-                    onClick={() => onUpdateStatus(order.id, 'completed')}
+                    onClick={() => onUpdateStatus(String(order.id), 'completed')}
                     style={{
                       width: '100%', padding: '11px 16px', borderRadius: '10px',
                       background: 'linear-gradient(135deg, #1c1c19, #3a3a35)',

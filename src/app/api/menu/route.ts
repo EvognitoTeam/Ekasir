@@ -11,6 +11,8 @@ import fs from 'fs';
 import { numeric } from 'drizzle-orm/pg-core';
 import sharp from 'sharp';
 
+export const dynamic = 'force-dynamic';
+
 const SECRET_KEY = new TextEncoder().encode(
   process.env.JWT_SECRET || 'rahasia-super-aman-evokasir-2026'
 );
@@ -441,7 +443,7 @@ export async function POST(request: Request) {
           image: imagePath,
           status: 1,
           addon_id: JSON.parse(
-            (formData.get('addon_ids') as string) || '[]'
+            (formData.get('addon_id') as string) || '[]'
           ),
           createdAt: new Date()
         })

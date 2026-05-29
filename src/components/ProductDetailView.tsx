@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { X, MinusCircle, PlusCircle, AlertCircle, ImageIcon } from 'lucide-react';
-import { MenuItem } from '../types/menu';
+import { MenuItem } from '@/types/menu';
 import { useParams } from 'next/navigation';
+import Image from 'next/image';
 
-// 🔴 IMPORT TOAST SWEETALERT
+// IMPORT TOAST SWEETALERT
 import { Toast } from '@/utils/toast'; 
 
 interface Props {
@@ -22,19 +23,41 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
   const [quantity, setQuantity] = useState(1);
   const [selectedAddons, setSelectedAddons] = useState<number[]>([]);
   const [selectedSize, setSelectedSize] = useState(item.meta?.sizes?.[0]?.label || 'Regular');
-  const [totalPrice, setTotalPrice] = useState(item.basePrice);
+  // const [totalPrice, setTotalPrice] = useState(item.basePrice);
 
-  // 🔴 LOGIKA STOK & KETERSEDIAAN
   const stockNum = item.stock !== null && item.stock !== undefined ? Number(item.stock) : 0;
   const isSoldOut = (item.isAvailable === false) || (stockNum <= 0);
   const isLowStock = !isSoldOut && stockNum > 0 && stockNum <= 5; 
 
   // ─── Perhitungan Harga Otomatis ──────────────────────────────────────────
-  useEffect(() => {
+  // useEffect(() => {
+  //   let base = Number(item.basePrice);
+  //   let extra = 0;
+
+  //   if (item.meta && item.meta.sizes) {
+  //     const sizeDef = item.meta.sizes.find((s: any) => s.label === selectedSize);
+  //     if (sizeDef) base = Number(sizeDef.price);
+  //   }
+
+  //   if (item.categorizedAddons && Array.isArray(item.categorizedAddons)) {
+  //     selectedAddons.forEach(addonId => {
+  //       item.categorizedAddons?.forEach((group: any) => {
+  //         const addonData = group.addons?.find((a: any) => Number(a.id) === Number(addonId));
+  //         if (addonData) {
+  //           extra += Number(addonData.price);
+  //         }
+  //       });
+  //     });
+  //   }
+
+  //   setTotalPrice((base + extra) * quantity);
+  // }, [selectedSize, selectedAddons, item, quantity]);
+
+  const totalPrice = useMemo(() => {
     let base = Number(item.basePrice);
     let extra = 0;
 
-    // 1. Hitung berdasarkan Ukuran (Jika ada di meta sizes)
+    // 1. Hitung berdasarkan Ukuran
     if (item.meta && item.meta.sizes) {
       const sizeDef = item.meta.sizes.find((s: any) => s.label === selectedSize);
       if (sizeDef) base = Number(sizeDef.price);
@@ -52,7 +75,8 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
       });
     }
 
-    setTotalPrice((base + extra) * quantity);
+    // Langsung return hasilnya
+    return (base + extra) * quantity;
   }, [selectedSize, selectedAddons, item, quantity]);
 
   // ─── Logika Validasi Pilihan Wajib (isRequired) ──────────────────────────
@@ -60,7 +84,8 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
     if (!item.categorizedAddons || !Array.isArray(item.categorizedAddons)) return true;
 
     for (const group of item.categorizedAddons) {
-      const isRequired = group.is_required || group.isRequired;
+      // 🔴 Amankan pembacaan key isRequired / is_required
+      const isRequired = Boolean(group.is_required || group.isRequired);
       
       if (isRequired) {
         const groupAddonIds = group.addons.map((a: any) => Number(a.id));
@@ -75,8 +100,9 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
   const handleSelectAddon = (addonId: number, group: any) => {
-    const maxSelected = group.max_selected || 0; 
-    const isRequired = group.is_required || group.isRequired;
+    // 🔴 PERBAIKAN 1: Baca maxSelected dengan aman dari kedua versi key
+    const maxSelected = Number(group.maxSelected || group.max_selected || 0); 
+    const isRequired = Boolean(group.is_required || group.isRequired);
     const groupAddonIds = group.addons.map((a: any) => Number(a.id));
 
     setSelectedAddons(prev => {
@@ -87,6 +113,7 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
           if (!isRequired) return prev.filter(id => id !== addonId);
           return prev;
         }
+        // Bersihkan opsi lain di grup ini, lalu masukkan yang baru diklik
         const filteredPrev = prev.filter(id => !groupAddonIds.includes(id));
         return [...filteredPrev, addonId];
       } else {
@@ -137,13 +164,28 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
       <motion.div layoutId={`product-${item.id}`} className="w-full h-full flex flex-col relative z-10">
         
         {/* Header Image */}
-        <div className="w-full h-[220px] sm:h-[280px] relative bg-stone-100 flex-shrink-0">
+        <div className="w-full h-[220px] sm:h-[280px] relative bg-stone-100 flex-shrink-0 overflow-hidden">
           {item.image ? (
-            <img src={item.image.startsWith('blob:') ? item.image : "/" + item.image} alt={item.name} className="w-full h-full object-cover" />
+            <Image 
+              src={item.image.startsWith('blob:') || item.image.startsWith('http') || item.image.startsWith('/') 
+                ? item.image 
+                : `/${item.image}`
+              } 
+              alt={item.name} 
+              fill // 🔴 Ganti w-full h-full absolute inset-0 jadi 'fill'
+              className="object-cover z-0" 
+              unoptimized={item.image.startsWith('blob:')} // 🔴 Wajib untuk nampilin preview file lokal (blob)
+            />
           ) : (
-            <ImageIcon className="w-12 h-12 text-stone-300 z-0" />
+            <div className="absolute inset-0 flex items-center justify-center z-0">
+              <ImageIcon className="w-12 h-12 text-stone-300" />
+            </div>
           )}
-          <button onClick={onClose} className="absolute top-4 right-4 z-50 w-9 h-9 bg-white/90 backdrop-blur-sm text-stone-900 rounded-full flex items-center justify-center shadow-sm active:scale-95 transition-transform">
+          
+          <button 
+            onClick={onClose} 
+            className="absolute top-4 right-4 z-50 w-9 h-9 bg-white/90 backdrop-blur-sm text-stone-900 rounded-full flex items-center justify-center shadow-sm active:scale-95 transition-transform"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -164,8 +206,11 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
 
             <div className="divide-y divide-stone-100">
               {item.categorizedAddons?.map((group: any) => {
-                const isSingleChoice = group.maxSelected === 1;
-                const isRequired = group.is_required || group.isRequired;
+                // 🔴 PERBAIKAN 2: Gunakan pembacaan yang sama untuk UI
+                const maxSelected = Number(group.maxSelected || group.max_selected || 0);
+                const isSingleChoice = maxSelected === 1;
+                const isRequired = Boolean(group.isRequired || group.is_required);
+                
                 return (
                   <section key={group.categoryName} className="py-5 px-5">
                     <div className="mb-3 flex flex-col gap-1.5">
@@ -174,37 +219,34 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
                           <h3 className="text-sm font-bold text-stone-900">{group.categoryName}</h3>
                           {isRequired && <span className="bg-red-50 text-red-600 border border-red-200 text-[8px] font-bold px-1.5 py-0.5 rounded uppercase tracking-widest">Required</span>}
                         </div>
-                        <p className="text-[10px] text-stone-400 uppercase tracking-widest font-bold">{isSingleChoice ? 'Pilih 1 Opsi' : group.maxSelected > 1 ? `Pilih Maks. ${group.maxSelected}` : 'Pilihan (Opsional)'}</p>
+                        <p className="text-[10px] text-stone-400 uppercase tracking-widest font-bold">{isSingleChoice ? 'Pilih 1 Opsi' : maxSelected > 1 ? `Pilih Maks. ${maxSelected}` : 'Pilihan (Opsional)'}</p>
                       </div>
                     </div>
                     <div className="space-y-3">
-                      {group.addons?.map((addon: any) => (
-                        <label key={addon.id} className={`flex items-center justify-between p-3 border rounded-xl cursor-pointer hover:bg-stone-50 transition-all ${selectedAddons.includes(addon.id) ? 'border-[#0E5C37] bg-emerald-50' : 'border-stone-100'}`}>
-                          <div className="flex items-center gap-3">
-                            <input type={isSingleChoice ? "radio" : "checkbox"} checked={selectedAddons.includes(addon.id)} onChange={() => handleSelectAddon(addon.id, group)} className={`w-5 h-5 accent-[#0E5C37] cursor-pointer ${isSingleChoice ? 'rounded-full' : 'rounded'}`} />
-                            <span className={`text-sm font-medium ${selectedAddons.includes(addon.id) ? 'text-[#0E5C37]' : 'text-stone-700'}`}>{addon.name}</span>
-                          </div>
-                          <span className={`text-sm font-bold ${selectedAddons.includes(addon.id) ? 'text-[#0E5C37]' : 'text-stone-900'}`}>{addon.price > 0 ? `+${formatIDR(addon.price)}` : 'Gratis'}</span>
-                        </label>
-                      ))}
+                      {group.addons?.map((addon: any) => {
+                        const isSelected = selectedAddons.includes(Number(addon.id));
+                        
+                        return (
+                          <label key={addon.id} className={`flex items-center justify-between p-3 border rounded-xl cursor-pointer hover:bg-stone-50 transition-all ${isSelected ? 'border-[#0E5C37] bg-emerald-50' : 'border-stone-100'}`}>
+                            <div className="flex items-center gap-3">
+                              {/* 🔴 PERBAIKAN 3: Tambahkan name="" untuk grouping radio button HTML */}
+                              <input 
+                                type={isSingleChoice ? "radio" : "checkbox"} 
+                                name={`addon-group-${group.categoryName}`}
+                                checked={isSelected} 
+                                onChange={() => handleSelectAddon(Number(addon.id), group)} 
+                                className={`w-5 h-5 accent-[#0E5C37] cursor-pointer ${isSingleChoice ? 'rounded-full' : 'rounded'}`} 
+                              />
+                              <span className={`text-sm font-medium ${isSelected ? 'text-[#0E5C37]' : 'text-stone-700'}`}>{addon.name}</span>
+                            </div>
+                            <span className={`text-sm font-bold ${isSelected ? 'text-[#0E5C37]' : 'text-stone-900'}`}>{addon.price > 0 ? `+${formatIDR(addon.price)}` : 'Gratis'}</span>
+                          </label>
+                        );
+                      })}
                     </div>
                   </section>
                 );
               })}
-
-              {item.meta?.sizes && (
-                <section className="py-5 px-5">
-                  <h3 className="text-sm font-bold text-stone-900 mb-3">Pilih Ukuran</h3>
-                  <div className="flex gap-2">
-                    {item.meta.sizes.map((size: any) => (
-                      <button key={size.label} onClick={() => setSelectedSize(size.label)} className={`flex-1 py-3 rounded-xl border font-semibold transition-all ${selectedSize === size.label ? 'border-[#0E5C37] bg-emerald-50 text-[#0E5C37]' : 'border-stone-200 text-stone-600'}`}>
-                        {size.label}
-                        {size.volume_ml && (<span className="block text-[10px] font-normal opacity-70">{size.volume_ml}ml</span>)}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              )}
             </div>
           </div>
 

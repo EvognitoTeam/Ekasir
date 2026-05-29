@@ -3,6 +3,8 @@ import { db } from '@/db'; // Sesuaikan jika lokasi file db kamu berbeda
 import { products, mitra, categories, addons, addonCategories, tableList } from '@/db/schema';
 import { eq, isNull, and } from 'drizzle-orm';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     // 1. Tangkap slug dari URL (misal: /api/products?slug=demo)

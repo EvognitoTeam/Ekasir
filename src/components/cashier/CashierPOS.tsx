@@ -124,7 +124,7 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
         (c.notes || "") === notes
       );
       if (existing) return prev.map(c => c.id === existing.id ? { ...c, quantity: c.quantity + 1 } : c);
-      return [...prev, { id: crypto.randomUUID(), menuItemId: productId, quantity: 1, selectedAddOnsDetails: selectedAddons, notes }];
+      return [...prev, { id: crypto.randomUUID(), menuItemId: productId, quantity: 1, selectedAddOns: [], selectedAddOnsDetails: selectedAddons, notes }];
     });
   };
 
@@ -313,7 +313,7 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
                 </div>
                 <div style={{ flex: 1 }}>
                   <p style={{ margin: '0 0 4px', fontSize: '13px', fontWeight: 700, color: '#1c1c19', lineHeight: 1.3 }}>{item.name}</p>
-                  <p style={{ margin: 0, fontSize: '12px', color: '#0E5C37', fontWeight: 800 }}>{formatPrice(Number(item.basePrice || item.price))}</p>
+                  <p style={{ margin: 0, fontSize: '12px', color: '#0E5C37', fontWeight: 800 }}>{formatPrice(Number(item.basePrice))}</p>
                 </div>
                 
                 {countInCart > 0 ? (
