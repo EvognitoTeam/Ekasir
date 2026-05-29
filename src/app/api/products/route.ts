@@ -58,8 +58,20 @@ export async function GET(request: NextRequest) {
     
     // Mapping format Produk
     const formattedProducts = mitraProducts.map((p) => {
-      // 1. Ambil array ID dari kolom JSON (pastikan aman jika null)
-      const productAddonIds = Array.isArray(p.addon_id) ? p.addon_id.map(id => Number(id)) : [];
+      // 🔴 PERBAIKAN: Antisipasi kalau di server datanya terbaca sebagai String
+      let parsedAddons = p.addon_id;
+      
+      // Kalau bentuknya string (dari server), kita parse dulu jadi Array
+      if (typeof parsedAddons === 'string') {
+        try {
+          parsedAddons = JSON.parse(parsedAddons);
+        } catch (e) {
+          parsedAddons = [];
+        }
+      }
+
+      // Sekarang kita jamin dia aman untuk di-map
+      const productAddonIds = Array.isArray(parsedAddons) ? parsedAddons.map(id => Number(id)) : [];
 
       // 2. Kelompokkan Addons berdasarkan Kategori secara aman
       const categorizedAddons = allAddonCategories.map(cat => {
