@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMenuStore } from '@/store/menu.store';
 import { Order } from '@/types/menu'; 
@@ -9,10 +9,12 @@ import { formatPrice } from '@/utils/formatters';
 import CashierPOS from '@/components/cashier/CashierPOS';
 import {
   ArrowLeft, BellRing, ReceiptText, ShieldCheck, RefreshCw,
-  Sparkles, ShoppingBag, TrendingUp, RotateCcw, Coffee, Plus, Loader2
+  Sparkles, ShoppingBag, TrendingUp, RotateCcw, Coffee, Plus, Loader2, QrCode, Camera
 } from 'lucide-react';
 import AdminDashboardView from '@/components/views/AdminDashboardView';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Scanner } from '@yudiel/react-qr-scanner'; // 🔴 Import Scanner Kamera
+import { Toast } from '@/utils/toast';
 
 export default function CashierApp() {
   const params = useParams();
@@ -20,16 +22,18 @@ export default function CashierApp() {
   const slug = (params.mitraSlug as string) || (params.slug as string) || "";
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [role, setRole] = useState<'cashier' | 'owner' | null>(null);
-  const [pinInput, setPinInput] = useState('');
+  const [role, setRole] = useState<'cashier' | 'owner' | 'kitchen' | null>(null);
+  const [activeStaffName, setActiveStaffName] = useState('');
   
+  // 🔴 State untuk Scanner
+  const [isScanning, setIsScanning] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const physicalScannerBuffer = useRef(''); // Buffer buat physical scanner (tembak)
+
   const [orders, setOrders] = useState<Order[]>([]);
-  const [mitraProfile, setMitraProfile] = useState<{ name: string; pinCashier: string; pinOwner: string }>({
-    name: 'Kasir', pinCashier: '1234', pinOwner: '4321' 
-  });
+  const [mitraProfile, setMitraProfile] = useState<{ name: string }>({ name: 'Kasir' });
   const [isLoadingInitial, setIsLoadingInitial] = useState(true);
 
-  // 🔴 1. State aktif tab dengan 4 value
   const [activeTab, setActiveTab] = useState<'pending' | 'preparing' | 'ready' | 'completed'>('pending');
   const [notification, setNotification] = useState<string | null>(null);
   const [undoAction, setUndoAction] = useState<{
@@ -46,13 +50,8 @@ export default function CashierApp() {
       try {
         const resSettings = await fetch(`/api/settings?slug=${slug}`);
         const dataSettings = await resSettings.json();
-        
         if (dataSettings.success && dataSettings.data) {
-          setMitraProfile({
-            name: dataSettings.data.cafeName || 'Kasir',
-            pinCashier: '1234', 
-            pinOwner: '4321'
-          });
+          setMitraProfile({ name: dataSettings.data.cafeName || 'Kasir' });
         }
 
         const resMenu = await fetch(`/api/menu?slug=${slug}`);
@@ -62,12 +61,10 @@ export default function CashierApp() {
            const rawItems = dataMenu.items || [];
            const menuCategories = dataMenu.categories || [];
            const allAddons = dataMenu.addons || []; 
-           
            const enrichedItems = rawItems.map((item: any) => ({
                ...item,
                categorizedAddons: [{ addons: allAddons }] 
            }));
-
            setMenu(enrichedItems, menuCategories);
         }
       } catch (e) {
@@ -76,7 +73,6 @@ export default function CashierApp() {
         setIsLoadingInitial(false);
       }
     };
-    
     initApp();
   }, [slug]);
 
@@ -102,20 +98,65 @@ export default function CashierApp() {
 
   useEffect(() => {
     if (!isAuthenticated) return; 
-
     fetchOrders(); 
-
-    const interval = setInterval(() => {
-      fetchOrders();
-    }, 1000); 
-
+    const interval = setInterval(() => { fetchOrders(); }, 1000); 
     return () => clearInterval(interval);
   }, [slug, isAuthenticated]);
+
+  // 🔴 FUNGSI VALIDASI TOKEN QR CODE
+  const handleTokenScan = async (token: string) => {
+    if (isVerifying) return; // Mencegah double scan
+    setIsVerifying(true);
+    setIsScanning(false);
+
+    try {
+      const res = await fetch('/api/pos/verify-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+      });
+      const result = await res.json();
+
+      if (result.success) {
+        setRole(result.data.role); // 'owner', 'cashier', atau 'kitchen'
+        setActiveStaffName(result.data.name);
+        setIsAuthenticated(true);
+        Toast.fire({ icon: 'success', title: `Selamat Bekerja, ${result.data.name}!` });
+      } else {
+        Toast.fire({ icon: 'error', title: result.message });
+      }
+    } catch (error) {
+      Toast.fire({ icon: 'error', title: 'Gagal menghubungi server' });
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  // 🔴 SUPPORT UNTUK SCANNER FISIK (BARCODE TEMBAK)
+  useEffect(() => {
+    if (isAuthenticated || isScanning) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore kalau user lagi ngetik di input field lain
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      if (e.key === 'Enter') {
+        if (physicalScannerBuffer.current.length > 10) {
+          handleTokenScan(physicalScannerBuffer.current);
+        }
+        physicalScannerBuffer.current = ''; // Reset
+      } else if (e.key.length === 1) {
+        physicalScannerBuffer.current += e.key;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isAuthenticated, isScanning]);
 
   const executeUpdate = async (orderId: string, newStatus: Order['status'], newPaymentStatus?: Order['paymentStatus']) => {
     try {
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus, paymentStatus: newPaymentStatus || o.paymentStatus } : o));
-      
       await fetch(`/api/orders/history?slug=${slug}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -138,7 +179,6 @@ export default function CashierApp() {
   const updateOrderNote = async (orderId: string, note: string) => {
     try {
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, adminNotes: note } : o));
-      
       await fetch(`/api/orders/history?slug=${slug}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -161,7 +201,6 @@ export default function CashierApp() {
     setUndoAction(null);
   };
 
-  // 🔴 2. Counter dipisah secara spesifik untuk 4 tab
   const pendingCount   = useMemo(() => orders.filter(o => o.status === 'pending').length, [orders]);
   const preparingCount = useMemo(() => orders.filter(o => o.status === 'confirmed' || o.status === 'preparing').length, [orders]);
   const readyCount     = useMemo(() => orders.filter(o => o.status === 'ready').length, [orders]);
@@ -171,7 +210,6 @@ export default function CashierApp() {
   const totalRevenue   = useMemo(() => todayOrders.reduce((s, o) => s + (Number(o.totalPrice || o.total_price) || 0), 0), [todayOrders]);
   const totalProfit    = useMemo(() => totalRevenue * 0.45, [totalRevenue]);
 
-  // 🔴 3. Logic filter 4 tab dan Sort ID
   const filteredOrders = useMemo(() => orders.filter(o => {
     if (activeTab === 'pending')   return o.status === 'pending';
     if (activeTab === 'preparing') return o.status === 'confirmed' || o.status === 'preparing';
@@ -181,45 +219,24 @@ export default function CashierApp() {
   }).sort((a, b) => {
     const idA = Number(a.id) || 0;
     const idB = Number(b.id) || 0;
-    if (idA !== 0 && idB !== 0) {
-      return idB - idA;
-    }
+    if (idA !== 0 && idB !== 0) return idB - idA;
     const dateA = String(a.createdAt || a.created_at || 0).replace(' ', 'T');
     const dateB = String(b.createdAt || b.created_at || 0).replace(' ', 'T');
     return (new Date(dateB).getTime() || 0) - (new Date(dateA).getTime() || 0);
   }), [orders, activeTab]);
 
-  const handleNumpadClick = (value: string) => {
-    if (value === 'C') { setPinInput(''); return; }
-    if (value === 'BACK') { setPinInput(p => p.slice(0, -1)); return; }
-    if (pinInput.length >= 4) return;
-    
-    const next = pinInput + value;
-    setPinInput(next);
-    
-    if (next === mitraProfile.pinCashier) setTimeout(() => { setIsAuthenticated(true); setRole('cashier'); }, 150);
-    else if (next === mitraProfile.pinOwner) setTimeout(() => { setIsAuthenticated(true); setRole('owner'); }, 150);
-  };
-
-  const handleKeyboardInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value.replace(/\D/g, '').slice(0, 4);
-    setPinInput(val);
-    if (val === mitraProfile.pinCashier) { setIsAuthenticated(true); setRole('cashier'); }
-    else if (val === mitraProfile.pinOwner) { setIsAuthenticated(true); setRole('owner'); }
-  };
-
-  const logout = () => { setIsAuthenticated(false); setRole(null); setPinInput(''); };
+  const logout = () => { setIsAuthenticated(false); setRole(null); setActiveStaffName(''); };
 
   if (isLoadingInitial) {
     return (
       <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#f6f3ee' }}>
          <Loader2 className="w-8 h-8 animate-spin text-[#0E5C37]" />
-         <p style={{ marginTop: 16, fontSize: 12, fontWeight: 700, color: '#9CA3AF' }}>Menyiapkan Kasir...</p>
+         <p style={{ marginTop: 16, fontSize: 12, fontWeight: 700, color: '#9CA3AF' }}>Menyiapkan Sistem...</p>
       </div>
     );
   }
 
-  /* ─── PIN Screen ─── */
+  /* ─── TAMPILAN LOGIN QR CODE ─── */
   if (!isAuthenticated) {
     return (
       <div style={{
@@ -230,68 +247,64 @@ export default function CashierApp() {
         <div style={{ position: 'absolute', bottom: '-60px', left: '-60px', width: '240px', height: '240px', borderRadius: '50%', background: 'rgba(14,92,55,0.04)', pointerEvents: 'none' }} />
 
         <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, ease: [0.4,0,0.2,1] }}
-          style={{
-            width: '100%', maxWidth: '340px',
-            background: '#fff', borderRadius: '24px',
-            border: '1.5px solid #e5e2dd',
-            boxShadow: '0 24px 64px rgba(28,28,25,0.1)',
-            padding: '32px 28px', display: 'flex', flexDirection: 'column', alignItems: 'center'
-          }}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="w-full max-w-sm bg-white rounded-3xl border border-stone-200 shadow-2xl p-8 flex flex-col items-center relative z-10"
         >
-          <div style={{
-            width: '56px', height: '56px', borderRadius: '16px',
-            background: 'linear-gradient(135deg, #0E5C37, #065F46)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            marginBottom: '16px', boxShadow: '0 8px 24px rgba(14,92,55,0.25)'
-          }}>
-            <Coffee size={26} color="#fff" />
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#0E5C37] to-[#065F46] flex items-center justify-center mb-4 shadow-lg shadow-emerald-900/20">
+            <QrCode className="w-8 h-8 text-white" />
           </div>
-          <h2 style={{ fontSize: '20px', fontWeight: 800, color: '#1c1c19', margin: 0, fontFamily: 'var(--font-display)' }}>{mitraProfile.name}</h2>
-          <p style={{ fontSize: '12px', color: '#9CA3AF', margin: '4px 0 24px', textAlign: 'center' }}>Masukkan PIN untuk masuk kasir</p>
+          
+          <h2 className="text-2xl font-black text-stone-800 tracking-tight text-center font-display leading-tight">
+            {mitraProfile.name}
+          </h2>
+          <p className="text-xs text-stone-500 mt-1.5 text-center px-4">
+            Arahkan QR Code Karyawan ke kamera atau gunakan Scanner Fisik untuk masuk
+          </p>
 
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
-            {[0,1,2,3].map(i => (
-              <div key={i} style={{
-                width: '48px', height: '48px', borderRadius: '12px',
-                background: pinInput[i] ? '#0E5C37' : '#f6f3ee',
-                border: `2px solid ${pinInput[i] ? '#0E5C37' : '#e5e2dd'}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '20px', color: '#fff', transition: 'all 0.2s',
-                boxShadow: pinInput[i] ? '0 4px 12px rgba(14,92,55,0.3)' : 'none'
-              }}>
-                {pinInput[i] ? '●' : ''}
+          <div className="w-full mt-8 mb-6">
+            {isVerifying ? (
+              <div className="flex flex-col items-center justify-center p-10 bg-stone-50 rounded-2xl border border-stone-100">
+                <Loader2 className="w-10 h-10 animate-spin text-[#0E5C37] mb-3" />
+                <p className="text-xs font-bold text-stone-600 uppercase tracking-widest">Memverifikasi...</p>
               </div>
-            ))}
-          </div>
+            ) : isScanning ? (
+              <div className="rounded-2xl overflow-hidden border-4 border-dashed border-[#0E5C37]/50 p-1 relative bg-black aspect-square max-h-[250px] mx-auto w-full max-w-[250px]">
+                <Scanner 
+                  onScan={(result) => {
+                    if (result && result.length > 0) handleTokenScan(result[0].rawValue);
+                  }}
+                  components={{ audio: false, finder: false }}
+                />
+                <button 
+                  onClick={() => setIsScanning(false)}
+                  className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-red-500/80 backdrop-blur text-white text-xs font-bold rounded-full shadow-lg"
+                >
+                  Tutup Kamera
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={() => setIsScanning(true)}
+                  className="w-full py-4 rounded-2xl bg-stone-50 border border-stone-200 text-stone-600 font-bold text-sm flex flex-col items-center gap-2 hover:bg-stone-100 transition-all active:scale-95"
+                >
+                  <Camera className="w-6 h-6 text-[#0E5C37]" />
+                  Buka Kamera Web
+                </button>
+                
+                <div className="relative py-3">
+                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-stone-200" /></div>
+                  <div className="relative flex justify-center"><span className="bg-white px-3 text-[10px] uppercase tracking-widest text-stone-400 font-bold">Atau</span></div>
+                </div>
 
-          <input type="text" value={pinInput} onChange={handleKeyboardInput}
-            style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }} autoFocus />
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', width: '100%', maxWidth: '260px', marginBottom: '20px' }}>
-            {['1','2','3','4','5','6','7','8','9','C','0','BACK'].map(btn => (
-              <button key={btn} onClick={() => handleNumpadClick(btn)} style={{
-                height: '52px', borderRadius: '12px', fontSize: '16px', fontWeight: 700,
-                border: btn === 'C' ? '1.5px solid #FCA5A5' : '1.5px solid #e5e2dd',
-                background: btn === 'C' ? '#FEF2F2' : btn === 'BACK' ? '#f6f3ee' : '#fff',
-                color: btn === 'C' ? '#DC2626' : '#1c1c19',
-                cursor: 'pointer', transition: 'all 0.15s',
-                boxShadow: '0 1px 3px rgba(28,28,25,0.06)',
-              }}
-                onMouseOver={e => (e.currentTarget.style.transform = 'scale(0.96)')}
-                onMouseOut={e => (e.currentTarget.style.transform = 'scale(1)')}
-              >
-                {btn === 'BACK' ? '←' : btn}
-              </button>
-            ))}
-          </div>
-
-          <div style={{ width: '100%', paddingTop: '16px', borderTop: '1px solid #f0ede9', display: 'flex', justifyContent: 'space-around', fontSize: '11px', color: '#9CA3AF' }}>
-            <span>Kasir: <strong style={{ color: '#1c1c19' }}>{mitraProfile.pinCashier}</strong></span>
-            <span>·</span>
-            <span>Pemilik: <strong style={{ color: '#1c1c19' }}>{mitraProfile.pinOwner}</strong></span>
+                <div className="text-center p-4 bg-emerald-50/50 rounded-xl border border-emerald-100">
+                  <p className="text-[11px] font-medium text-emerald-800 leading-relaxed">
+                    Scanner fisik otomatis aktif. <br/>Langsung *Tembak* QR Code ke layar.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </motion.div>
       </div>
@@ -309,7 +322,7 @@ export default function CashierApp() {
           <div style={{ padding: '12px 20px', background: '#fff', borderTop: '1px solid #f0ede9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#5a4b44' }}>
               <ShieldCheck size={14} color="#0E5C37" />
-              <span>Dilihat sebagai Pemilik</span>
+              <span>Login: <strong className="text-stone-800">{activeStaffName}</strong> (Owner)</span>
             </div>
             <button onClick={logout} style={{ color: '#DC2626', fontWeight: 700, fontSize: '11px', background: 'none', border: 'none', cursor: 'pointer', minHeight: 'auto' }}>Keluar</button>
           </div>
@@ -318,8 +331,7 @@ export default function CashierApp() {
     );
   }
 
-  /* ─── Cashier Main View ─── */
-  // 🔴 4. Daftar Tab yang dirender ke layar
+  /* ─── Cashier / Kitchen Main View ─── */
   const TABS = [
     { id: 'pending',   label: 'Baru',           count: pendingCount   },
     { id: 'preparing', label: 'Diracik',        count: preparingCount },
@@ -382,7 +394,9 @@ export default function CashierApp() {
               <Coffee size={17} color="#fff" />
             </div>
             <div>
-              <p style={{ margin:0, fontSize:'9px', color:'#9CA3AF', fontFamily:'var(--font-label)', letterSpacing:'0.1em' }}>DAPUR & KASIR</p>
+              <p style={{ margin:0, fontSize:'9px', color:'#9CA3AF', fontFamily:'var(--font-label)', letterSpacing:'0.1em' }}>
+                POS: {role?.toUpperCase()}
+              </p>
               <h1 style={{ margin:0, fontSize:'16px', fontWeight:800, color:'#1c1c19', lineHeight:1.2, fontFamily:'var(--font-display)' }}>
                  {mitraProfile.name}
               </h1>
@@ -407,25 +421,27 @@ export default function CashierApp() {
           </div>
         </header>
 
-        <div style={{ padding:'12px 16px', background:'#fff', borderBottom:'1px solid #f0ede9', display:'flex', gap:'10px', flexShrink:0 }}>
-          {[
-            { icon: <ReceiptText size={13} />, label: 'Penjualan', value: `${todayOrders.length} nota`, color: '#5a4b44' },
-            { icon: <TrendingUp size={13} />,  label: 'Pendapatan', value: formatPrice(totalRevenue), color: '#1c1c19' },
-            { icon: <Sparkles size={13} />,    label: 'Est. Laba',  value: formatPrice(totalProfit),  color: '#0E5C37' },
-          ].map((s, i) => (
-            <div key={i} style={{
-              flex:1, padding:'10px 12px', borderRadius:'12px',
-              background:'#fafaf9', border:'1.5px solid #f0ede9',
-              boxShadow:'0 1px 4px rgba(28,28,25,0.04)'
-            }}>
-              <div style={{ display:'flex', alignItems:'center', gap:'4px', color:'#9CA3AF', marginBottom:'4px' }}>
-                {s.icon}
-                <span style={{ fontSize:'9px', fontFamily:'var(--font-label)', letterSpacing:'0.06em' }}>{s.label}</span>
+        {role === 'cashier' && (
+          <div style={{ padding:'12px 16px', background:'#fff', borderBottom:'1px solid #f0ede9', display:'flex', gap:'10px', flexShrink:0 }}>
+            {[
+              { icon: <ReceiptText size={13} />, label: 'Penjualan', value: `${todayOrders.length} nota`, color: '#5a4b44' },
+              { icon: <TrendingUp size={13} />,  label: 'Pendapatan', value: formatPrice(totalRevenue), color: '#1c1c19' },
+              { icon: <Sparkles size={13} />,    label: 'Est. Laba',  value: formatPrice(totalProfit),  color: '#0E5C37' },
+            ].map((s, i) => (
+              <div key={i} style={{
+                flex:1, padding:'10px 12px', borderRadius:'12px',
+                background:'#fafaf9', border:'1.5px solid #f0ede9',
+                boxShadow:'0 1px 4px rgba(28,28,25,0.04)'
+              }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'4px', color:'#9CA3AF', marginBottom:'4px' }}>
+                  {s.icon}
+                  <span style={{ fontSize:'9px', fontFamily:'var(--font-label)', letterSpacing:'0.06em' }}>{s.label}</span>
+                </div>
+                <p style={{ margin:0, fontSize:'12px', fontWeight:800, color:s.color, lineHeight:1 }}>{s.value}</p>
               </div>
-              <p style={{ margin:0, fontSize:'12px', fontWeight:800, color:s.color, lineHeight:1 }}>{s.value}</p>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
 
         <div style={{ padding:'10px 16px', background:'#fff', borderBottom:'1px solid #f0ede9', display:'flex', gap:'8px', flexShrink:0 }}>
           {TABS.map(tab => {
@@ -479,7 +495,7 @@ export default function CashierApp() {
             <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
               <AnimatePresence>
                 {filteredOrders.map(order => (
-                  <OrderCard key={order.id} order={order} onUpdateStatus={updateOrderStatus} onUpdateNote={updateOrderNote} role="cashier" />
+                  <OrderCard key={order.id} order={order} onUpdateStatus={updateOrderStatus} onUpdateNote={updateOrderNote} role={role || 'cashier'} />
                 ))}
               </AnimatePresence>
             </div>
@@ -493,25 +509,28 @@ export default function CashierApp() {
         }}>
           <span style={{ color:'#9CA3AF', display:'flex', alignItems:'center', gap:'5px' }}>
             <span style={{ width:6, height:6, borderRadius:'50%', background:'#10B981', display:'inline-block' }} />
-            Kasir Aktif
+            Login: <strong className="text-stone-800">{activeStaffName}</strong>
           </span>
           <button onClick={logout} style={{ color:'#DC2626', fontWeight:700, background:'none', border:'none', cursor:'pointer', fontSize:'11px', minHeight:'auto' }}>
-            Keluar Akun
+            Akhiri Sesi
           </button>
         </footer>
 
-        <button 
-          onClick={() => setIsPOSMode(true)}
-          style={{
-            position: 'absolute', bottom: '60px', right: '20px', zIndex: 40,
-            width: '56px', height: '56px', borderRadius: '16px',
-            background: 'linear-gradient(135deg, #0E5C37, #065F46)', color: '#fff',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            border: 'none', cursor: 'pointer', boxShadow: '0 8px 24px rgba(14,92,55,0.4)',
-          }}
-        >
-          <Plus size={24} />
-        </button>
+        {/* Tombol Buat Order cuma muncul buat role Cashier */}
+        {role === 'cashier' && (
+          <button 
+            onClick={() => setIsPOSMode(true)}
+            style={{
+              position: 'absolute', bottom: '60px', right: '20px', zIndex: 40,
+              width: '56px', height: '56px', borderRadius: '16px',
+              background: 'linear-gradient(135deg, #0E5C37, #065F46)', color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: 'none', cursor: 'pointer', boxShadow: '0 8px 24px rgba(14,92,55,0.4)',
+            }}
+          >
+            <Plus size={24} />
+          </button>
+        )}
 
       </div>
     </div>

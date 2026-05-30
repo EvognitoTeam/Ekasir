@@ -7,54 +7,65 @@ import {
   ArrowLeft,
   Settings,
   Package,
-  FileText,
-  TrendingUp,
-  ChevronRight,
+  BookOpen,
   ShieldCheck,
-  Menu as MenuIcon,
-  BarChart2,
-  AlertTriangle,
-  DollarSign,
-  ShoppingBag,
   Clock,
+  Tag,
+  Users,
+  Coffee,
+  AlertTriangle,
+  ShoppingBag,
+  DollarSign
 } from 'lucide-react';
+
 import MenuEditor from '@/components/admin/MenuEditor';
 import OrderLedger from '@/components/admin/OrderLedger';
 import SystemConfig from '@/components/admin/SystemConfig';
-import AnalyticsPanel from '@/components/admin/AnalyticsPanel';
 import InventoryPanel from '@/components/admin/InventoryPanel';
+import PromoManager from '@/components/admin/PromoManager'; 
+import StaffManager from '@/components/admin/StaffManager'; 
+
 import { useOrderStore } from '@/store/order.store';
 import { useMenuStore } from '@/store/menu.store';
 import { useInventoryStore } from '@/store/inventory.store';
+// import { usePromoStore } from '@/store/promo.store'; // Uncomment jika lu udah pake Zustand buat promo
 import { isSameDay, subDays } from 'date-fns';
 
+// ─── KONFIGURASI MENU DARI TEMPLATE TEMAN LU ───
+type AdminTab = 'overview' | 'menu' | 'ledger' | 'config' | 'inventory' | 'promos' | 'staff';
 
-interface Props {
-  onBack: () => void;
-}
+const TAB_TITLES: Record<AdminTab, string> = {
+  overview: 'Beranda Admin',
+  menu: 'Katalog Menu',
+  ledger: 'Order Ledger',
+  config: 'Pengaturan Sistem',
+  inventory: 'Bahan Baku',
+  promos: 'Promo & Event',
+  staff: 'Akses Staf',
+};
 
-type AdminTab = 'overview' | 'menu' | 'ledger' | 'config' | 'analytics' | 'inventory';
+const MENU_ITEMS_LIST = [
+  { tab: 'promos', title: 'Promotions', desc: 'Kelola diskon & event promosi', iconId: 'promos', color: 'linear-gradient(135deg, #F59E0B, #D97706)' },
+  { tab: 'staff', title: 'Staf & PIN', desc: 'Atur akses karyawan', iconId: 'staff', color: 'linear-gradient(135deg, #3B82F6, #2563EB)' },
+  { tab: 'menu', title: 'Katalog Menu', desc: 'Atur harga, kategori, ketersediaan', iconId: 'menu', color: 'linear-gradient(135deg, #0E5C37, #065F46)' },
+  { tab: 'ledger', title: 'Ledger Transaksi', desc: 'Riwayat & pencarian transaksi', iconId: 'ledger', color: 'linear-gradient(135deg, #8B5CF6, #7C3AED)' },
+  { tab: 'inventory', title: 'Bahan Baku', desc: 'Stok barang, notifikasi minimum', iconId: 'inventory', color: 'linear-gradient(135deg, #EC4899, #DB2777)' },
+  { tab: 'config', title: 'Konfigurasi', desc: 'Atur pajak, pajak online, mode', iconId: 'config', color: 'linear-gradient(135deg, #64748B, #475569)' },
+] as const;
 
-const formatIDR = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 })
-    .format(n)
-    .replace(/\s/g, '');
-
-export default function AdminDashboardView({ onBack }: Props) {
+export default function AdminDashboardView() {
   const params = useParams();
   const slug = (params.mitraSlug as string) || "";
-
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [overviewDate, setOverviewDate] = useState<'today' | 'yesterday'>('today');
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // 🔴 1. State dan Effect untuk Jam Real-time (WIB)
+  // ─── STATE JAM REALTIME WIB ───
   const [currentTime, setCurrentTime] = useState<string>('');
 
   useEffect(() => {
-    // Fungsi untuk update jam
     const updateClock = () => {
       const now = new Date();
       const timeString = now.toLocaleTimeString('id-ID', {
@@ -65,14 +76,8 @@ export default function AdminDashboardView({ onBack }: Props) {
       });
       setCurrentTime(`${timeString} WIB`);
     };
-
-    // Panggil sekali pas awal render
     updateClock();
-    
-    // Set interval tiap detik
     const timerId = setInterval(updateClock, 1000);
-    
-    // Cleanup interval kalau komponen di-unmount
     return () => clearInterval(timerId);
   }, []);
 
@@ -83,10 +88,8 @@ export default function AdminDashboardView({ onBack }: Props) {
 
   const handleBack = () => {
     if (activeTab === 'overview') {
-      // Jika di Overview, pulangkan ke halaman toko (slug)
       router.push(`/${slug}`); 
     } else {
-      // Jika di tab lain, kembali ke Overview
       navigateTo('overview');
     }
   };
@@ -94,74 +97,91 @@ export default function AdminDashboardView({ onBack }: Props) {
   const { orderHistory } = useOrderStore();
   const { items: menuItems } = useMenuStore();
   const { materials } = useInventoryStore();
+  // const { getActivePromotions } = usePromoStore();
 
   const stats = useMemo(() => {
     const targetDate = overviewDate === 'today' ? new Date() : subDays(new Date(), 1);
 
-    // Filter dengan pengecekan aman agar tidak ada undefined
-    const targetOrders = orderHistory.filter((o) => {
+    const targetOrders = orderHistory.filter((o: any) => {
       if (!o.createdAt) return false;
       return isSameDay(new Date(o.createdAt), targetDate);
     });
 
-    const targetRevenue = targetOrders
-      .filter((o) => o.status === 'confirmed')
-      .reduce((sum, o) => sum + (Number(o.totalPrice) || 0), 0);
-
+    const activeOrdersCount = orderHistory.filter((o: any) => o.status !== 'completed').length;
     const targetOrderCount = targetOrders.length;
-    const depleted = menuItems.filter((m) => !m.isAvailable || Number(m.stock) <= 0).length;
-    const lowStock = materials.filter((m) => Number(m.stock) <= Number(m.lowStockThreshold)).length;
+    const depleted = menuItems.filter((m: any) => !m.isAvailable || Number(m.stock) <= 0).length;
+    const lowStock = materials.filter((m: any) => Number(m.stock) <= Number(m.lowStockThreshold)).length;
+    
+    // Ganti 0 ini dengan getActivePromotions().length kalau lu udah setup Promo Store
+    const activePromoCount = 0; 
 
-    return { targetRevenue, targetOrderCount, depleted, lowStock };
+    return { targetOrderCount, activeOrdersCount, depleted, lowStock, activePromoCount };
   }, [orderHistory, menuItems, materials, overviewDate]);
 
+  const renderIcon = (iconId: string) => {
+    const cls = "w-6 h-6 text-white";
+    switch (iconId) {
+      case 'promos': return <Tag className={cls} />;
+      case 'staff': return <Users className={cls} />;
+      case 'menu': return <Coffee className={cls} />;
+      case 'ledger': return <BookOpen className={cls} />;
+      case 'inventory': return <Package className={cls} />;
+      case 'config': return <Settings className={cls} />;
+      default: return null;
+    }
+  };
+
+  const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.05 } } };
+  const itemVariants = { hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.4, 0, 0.2, 1] } } };
+
   return (
-    <div className="flex flex-col h-full min-h-screen bg-[#f8f9fa] font-sans antialiased text-stone-900 w-full overflow-hidden">
+    <div className="flex flex-col h-full min-h-screen bg-[#f8f9fa] font-sans antialiased w-full overflow-hidden">
       
-      {/* 🔴 HEADER YANG SUPER COMPACT (PADDING DIPERKECIL, FLEX SEBARIS) */}
-      <header className="bg-white border-b border-stone-100 px-6 sm:px-12 lg:px-24 py-4 sticky top-0 z-30 shadow-sm">
-        <div className="max-w-7xl mx-auto w-full flex items-center justify-between">
+      {/* ─── HEADER (EXPRESSIVE CASHIER AESTHETIC - FULL DESKTOP) ─── */}
+      <header className="relative bg-[#0E5C37] px-6 sm:px-12 lg:px-24 py-6 md:py-8 shrink-0 overflow-hidden shadow-md">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4 pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-40 h-40 bg-black opacity-10 rounded-full blur-2xl translate-y-1/3 -translate-x-1/4 pointer-events-none" />
+
+        <div className="relative max-w-7xl mx-auto w-full flex items-center justify-between z-0">
           
-          {/* Bagian Kiri: Tombol Back + Judul Sebaris */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-5">
             <button
               onClick={handleBack}
-              className="w-10 h-10 flex items-center justify-center rounded-full bg-stone-50 border border-stone-100 hover:bg-stone-200 transition-all active:scale-95 shadow-sm shrink-0"
+              className="w-11 h-11 flex items-center justify-center rounded-2xl bg-white/10 border border-white/20 text-white hover:bg-white/20 transition-all active:scale-95 shadow-sm backdrop-blur-sm shrink-0"
+              title="Kembali"
             >
-              <ArrowLeft className="w-5 h-5 text-stone-600" />
+              <ArrowLeft className="w-5 h-5" />
             </button>
-            <h1 className="text-2xl md:text-3xl font-display font-black tracking-tight text-stone-900 leading-none">
-              {activeTab === 'overview' && <>System <span className="text-[#0E5C37]">Hub.</span></>}
-              {activeTab === 'menu' && <>Menu <span className="text-[#0E5C37]">Editor.</span></>}
-              {activeTab === 'ledger' && <>Order <span className="text-[#0E5C37]">Ledger.</span></>}
-              {activeTab === 'config' && <>System <span className="text-[#0E5C37]">Config.</span></>}
-              {activeTab === 'analytics' && <>Business <span className="text-[#0E5C37]">Analytics.</span></>}
-              {activeTab === 'inventory' && <>Raw <span className="text-[#0E5C37]">Materials.</span></>}
-            </h1>
+            
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/15 border border-white/20 backdrop-blur-sm">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
+                  <span className="text-[10px] font-bold text-white uppercase tracking-widest leading-none">Administrator</span>
+                </div>
+                {activeTab !== 'overview' && (
+                   <span className="text-[10px] font-medium text-emerald-100 hidden sm:block">/ {TAB_TITLES[activeTab]}</span>
+                )}
+              </div>
+              <h1 className="text-2xl md:text-3xl font-display font-black tracking-tight text-white leading-none">
+                {TAB_TITLES[activeTab]}
+              </h1>
+            </div>
           </div>
 
-          {/* Bagian Kanan: Indikator Sistem */}
-          <div className="text-right flex flex-col items-end">
-            <div className="flex items-center gap-3 mb-1">
-              {/* 🔴 2. Tampilkan Jam di Sini */}
-              {currentTime && (
-                <div className="flex items-center gap-1 text-stone-500 bg-stone-50 px-2 py-0.5 rounded border border-stone-100 hidden sm:flex">
-                  <Clock className="w-3 h-3" />
-                  <span className="text-[10px] font-bold font-mono tracking-widest leading-none">{currentTime}</span>
-                </div>
-              )}
-              
-              <div className="flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-[#0E5C37]" />
-                <p className="text-[11px] font-bold text-stone-900 uppercase tracking-widest leading-none">Master Terminal</p>
+          <div className="text-right flex flex-col items-end justify-center">
+            {currentTime && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 mb-1.5 rounded-lg bg-black/20 border border-black/10 backdrop-blur-sm text-emerald-50 hidden sm:flex">
+                <Clock className="w-3.5 h-3.5 text-emerald-300" />
+                <span className="text-xs font-bold font-mono tracking-widest leading-none">{currentTime}</span>
               </div>
-            </div>
+            )}
             {activeTab === 'overview' ? (
-              <span className="text-[9px] uppercase tracking-[0.3em] text-[#0E5C37] font-bold block leading-none">Admin Protocol</span>
+              <span className="text-[10px] uppercase tracking-[0.2em] text-emerald-200/80 font-bold block leading-none">Pusat Kendali Operasional</span>
             ) : (
-              <div className="px-3 py-1 bg-stone-50 border border-stone-100 rounded-full flex items-center gap-1.5 shadow-sm">
-                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-[9px] uppercase tracking-widest text-stone-500 font-bold leading-none">Live Sync</span>
+              <div className="px-3 py-1 bg-white/10 border border-white/15 rounded-full flex items-center gap-1.5 shadow-inner backdrop-blur-md">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+                <span className="text-[9px] uppercase tracking-widest text-emerald-100 font-bold leading-none">Live Sync</span>
               </div>
             )}
           </div>
@@ -169,163 +189,86 @@ export default function AdminDashboardView({ onBack }: Props) {
         </div>
       </header>
 
-      {/* Content Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar px-6 sm:px-12 lg:px-24">
-        {/* 🔴 PADDING ATAS (pt-6) DIPERKECIL AGAR KONTEN NAIK */}
-        <div className="max-w-7xl mx-auto w-full h-full pt-6 pb-24">
+      {/* ─── CONTENT AREA ─── */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar px-6 sm:px-12 lg:px-24 relative z-0">
+        <div className="max-w-7xl mx-auto w-full h-full pt-8 pb-24">
           <AnimatePresence mode="wait">
             {activeTab === 'overview' && (
               <motion.div
                 key="overview"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="space-y-6" // 🔴 JARAK ANTAR BLOK DIPERKECIL
+                initial="hidden" animate="visible" exit="hidden" variants={containerVariants}
+                className="space-y-8" 
               >
-                {/* Date Toggle */}
-                <div className="flex bg-white p-1 rounded-full w-fit border border-stone-200/40 shadow-sm">
-                  <button
-                    onClick={() => setOverviewDate('yesterday')}
-                    className={`px-5 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all ${
-                      overviewDate === 'yesterday' ? 'bg-[#0E5C37] text-white shadow-md' : 'text-stone-500 hover:text-stone-700 hover:bg-stone-50'
-                    }`}
-                  >
-                    Kemarin
-                  </button>
-                  <button
-                    onClick={() => setOverviewDate('today')}
-                    className={`px-5 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest transition-all ${
-                      overviewDate === 'today' ? 'bg-[#0E5C37] text-white shadow-md' : 'text-stone-500 hover:text-stone-700 hover:bg-stone-50'
-                    }`}
-                  >
-                    Hari Ini
-                  </button>
-                </div>
-
-                {/* Grid Stats */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <button 
-                    onClick={() => navigateTo('ledger')}
-                    className="bg-white p-5 rounded-[1.5rem] border border-stone-100 shadow-sm flex flex-col items-start justify-center gap-3 text-left hover:border-emerald-200 hover:shadow-md transition-all group"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 transition-all shadow-inner">
-                      <DollarSign className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase tracking-widest text-stone-400 font-bold mb-0.5">Total Revenue</p>
-                      <p className="text-xl md:text-2xl font-black tracking-tight">
-                        {stats.targetRevenue > 0 ? formatIDR(stats.targetRevenue) : '—'}
-                      </p>
-                    </div>
-                  </button>
-
-                  <button 
-                    onClick={() => navigateTo('ledger')}
-                    className="bg-white p-5 rounded-[1.5rem] border border-stone-100 shadow-sm flex flex-col items-start justify-center gap-3 text-left hover:border-blue-200 transition-all group"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 transition-all shadow-inner">
-                      <ShoppingBag className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase tracking-widest text-stone-400 font-bold mb-0.5">Orders Confirmed</p>
-                      <p className="text-xl md:text-2xl font-black tracking-tight">{stats.targetOrderCount} Order</p>
-                    </div>
-                  </button>
-
-                  <button 
-                    onClick={() => navigateTo('menu')}
-                    className="bg-white p-5 rounded-[1.5rem] border border-stone-100 shadow-sm flex flex-col items-start justify-center gap-3 text-left hover:border-rose-200 transition-all group"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center text-rose-500 transition-all shadow-inner">
-                      <TrendingUp className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase tracking-widest text-stone-400 font-bold mb-0.5">Menu Nonaktif</p>
-                      <p className="text-xl md:text-2xl font-black tracking-tight">{stats.depleted} Item</p>
-                    </div>
-                  </button>
-
-                  <button 
-                    onClick={() => navigateTo('inventory')}
-                    className={`bg-white p-5 rounded-[1.5rem] border shadow-sm flex flex-col items-start justify-center gap-3 text-left transition-all ${stats.lowStock > 0 ? 'border-amber-200 bg-amber-50/10' : 'border-stone-100'}`}
-                  >
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-inner ${stats.lowStock > 0 ? 'bg-amber-100 text-amber-600 animate-pulse' : 'bg-stone-50 text-stone-400'}`}>
-                      <AlertTriangle className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase tracking-widest text-stone-400 font-bold mb-0.5">Stok Menipis</p>
-                      <p className={`text-xl md:text-2xl font-black tracking-tight ${stats.lowStock > 0 ? 'text-amber-600' : ''}`}>{stats.lowStock} Bahan</p>
-                    </div>
-                  </button>
-                </div>
-
-                {/* 🔴 MANAGEMENT CARDS: Padding dikurangi jadi p-5. Layoutnya dibuat mendatar (flex-row) */}
-                <div className="space-y-4 pt-2 border-t border-stone-200/50">
-                  <div className="flex items-center gap-3 pl-2">
-                     <div className="w-8 h-1 bg-[#0E5C37] rounded-full" />
-                     <p className="text-[11px] uppercase tracking-[0.3em] text-stone-500 font-bold">Management Protocols</p>
+                
+                {/* Stats Ribbon / Toggle */}
+                <motion.div variants={itemVariants} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <h2 className="text-lg font-black text-stone-800 tracking-tight">Ringkasan Data</h2>
+                  <div className="flex bg-white p-1.5 rounded-full w-fit border border-stone-200 shadow-sm">
+                    <button onClick={() => setOverviewDate('yesterday')} 
+                      className={`px-5 py-2 rounded-full text-xs font-bold uppercase tracking-widest transition-all ${overviewDate === 'yesterday' ? 'bg-[#0E5C37] text-white shadow-md' : 'text-stone-500 hover:text-stone-700 hover:bg-stone-50'}`}
+                    >Kemarin</button>
+                    <button onClick={() => setOverviewDate('today')}
+                      className={`px-5 py-2 rounded-full text-xs font-bold uppercase tracking-widest transition-all ${overviewDate === 'today' ? 'bg-[#0E5C37] text-white shadow-md' : 'text-stone-500 hover:text-stone-700 hover:bg-stone-50'}`}
+                    >Hari Ini</button>
                   </div>
+                </motion.div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {([
-                      { tab: 'analytics', icon: <BarChart2 className="w-6 h-6" />, title: 'Business Analytics', desc: 'Tren penjualan, top item & jam sibuk' },
-                      { tab: 'menu', icon: <MenuIcon className="w-6 h-6" />, title: 'Menu Editor', desc: 'Atur ketersediaan & harga menu' },
-                      { tab: 'ledger', icon: <FileText className="w-6 h-6" />, title: 'Order Ledger', desc: 'Riwayat & filter transaksi' },
-                      { tab: 'inventory', icon: <Package className="w-6 h-6" />, title: 'Raw Materials', desc: 'Pantau stok & pengeluaran' },
-                      { tab: 'config', icon: <Settings className="w-6 h-6" />, title: 'System Config', desc: 'Pajak, service charge & operasional' },
-                    ] as { tab: AdminTab; icon: JSX.Element; title: string; desc: string }[]).map(({ tab, icon, title, desc }) => (
-                      <button
-                        key={tab}
-                        onClick={() => navigateTo(tab)}
-                        className="w-full bg-white p-5 rounded-[1.5rem] border border-stone-100 shadow-sm flex items-center justify-between group hover:border-[#0E5C37] hover:shadow-md transition-all duration-300 text-left"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-xl bg-stone-50 flex items-center justify-center text-stone-400 group-hover:bg-[#0E5C37] group-hover:text-white group-hover:shadow-md transition-all shrink-0">
-                            {icon}
-                          </div>
-                          <div>
-                            <h3 className="text-base font-black tracking-tight text-stone-800 group-hover:text-[#0E5C37] transition-colors line-clamp-1">{title}</h3>
-                            <p className="text-xs text-stone-500 font-medium line-clamp-1 mt-0.5">{desc}</p>
-                          </div>
+                {/* Stats Cards (Sesuai List Teman) */}
+                <motion.div variants={itemVariants} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                  {[
+                    { label: 'Total Order', value: stats.targetOrderCount, color: 'text-stone-800', bg: 'bg-white' },
+                    { label: 'Antrean Aktif', value: stats.activeOrdersCount, color: 'text-[#0E5C37]', bg: 'bg-emerald-50/50' },
+                    { label: 'Menu Habis', value: stats.depleted, color: stats.depleted > 0 ? 'text-red-600' : 'text-stone-800', bg: 'bg-white' },
+                    { label: 'Stok Menipis', value: stats.lowStock, color: stats.lowStock > 0 ? 'text-amber-600' : 'text-stone-800', bg: stats.lowStock > 0 ? 'bg-amber-50/30' : 'bg-white' },
+                    { label: 'Promo Aktif', value: stats.activePromoCount, color: 'text-blue-600', bg: 'bg-blue-50/50' }
+                  ].map((stat, i) => (
+                    <div key={i} className={`${stat.bg} p-5 rounded-[1.5rem] border border-stone-100 shadow-sm flex flex-col items-start justify-center gap-1`}>
+                      <span className="text-[10px] uppercase tracking-widest text-stone-400 font-bold">{stat.label}</span>
+                      <span className={`text-2xl md:text-3xl font-black tracking-tight ${stat.color}`}>{stat.value}</span>
+                    </div>
+                  ))}
+                </motion.div>
+
+                <div className="pt-4 border-t border-stone-200/60">
+                  <h2 className="text-lg font-black text-stone-800 tracking-tight mb-4">Modul Manajemen</h2>
+                </div>
+
+                {/* Module Cards Grid (Dengan Warna Gradien Dinamis) */}
+                <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {MENU_ITEMS_LIST.map((item) => (
+                    <motion.button
+                      whileHover={{ scale: 1.02, y: -4 }}
+                      whileTap={{ scale: 0.98 }}
+                      key={item.tab}
+                      onClick={() => navigateTo(item.tab as AdminTab)}
+                      className="bg-white p-5 rounded-[1.5rem] border border-stone-100 shadow-sm flex items-center justify-between group transition-all hover:shadow-md hover:border-stone-200 text-left"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div 
+                          className="w-12 h-12 rounded-xl flex items-center justify-center shadow-inner transition-transform group-hover:scale-110 shrink-0" 
+                          style={{ background: item.color }}
+                        >
+                          {renderIcon(item.iconId)}
                         </div>
-                        <ChevronRight className="w-5 h-5 text-stone-300 group-hover:text-[#0E5C37] group-hover:translate-x-1 transition-all shrink-0 ml-2" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                        <div>
+                          <h3 className="text-base font-black text-stone-800 tracking-tight mb-0.5">{item.title}</h3>
+                          <p className="text-xs text-stone-500 font-medium leading-snug line-clamp-1">{item.desc}</p>
+                        </div>
+                      </div>
+                    </motion.button>
+                  ))}
+                </motion.div>
               </motion.div>
             )}
 
-            {/* Komponen-komponen panel lainnya */}
-            {activeTab === 'analytics' && (
-              <motion.div key="analytics" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full">
-                <AnalyticsPanel />
-              </motion.div>
-            )}
+            {/* Render Tab Konten Dinamis */}
+            {activeTab === 'menu' && <motion.div key="menu" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}><MenuEditor /></motion.div>}
+            {activeTab === 'ledger' && <motion.div key="ledger" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}><OrderLedger /></motion.div>}
+            {activeTab === 'inventory' && <motion.div key="inventory" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}><InventoryPanel /></motion.div>}
+            {activeTab === 'promos' && <motion.div key="promos" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}><PromoManager /></motion.div>}
+            {activeTab === 'config' && <motion.div key="config" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}><SystemConfig /></motion.div>}
+            {activeTab === 'staff' && <motion.div key="staff" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}><StaffManager /></motion.div>}
 
-            {activeTab === 'menu' && (
-              <motion.div key="menu" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full">
-                <MenuEditor />
-              </motion.div>
-            )}
-
-            {activeTab === 'ledger' && (
-              <motion.div key="ledger" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full">
-                <OrderLedger />
-              </motion.div>
-            )}
-
-            {activeTab === 'inventory' && (
-              <motion.div key="inventory" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full">
-                <InventoryPanel />
-              </motion.div>
-            )}
-
-            {activeTab === 'config' && (
-              <motion.div key="config" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full">
-                <SystemConfig />
-              </motion.div>
-            )}
           </AnimatePresence>
         </div>
       </div>

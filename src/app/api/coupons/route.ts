@@ -3,6 +3,8 @@ import { db } from '@/db'; // Sesuaikan path database Drizzle kamu
 import { mitra, coupon } from '@/db/schema'; // Sesuaikan path skema
 import { eq, and, gt, lt, or, isNull } from 'drizzle-orm';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const slug = searchParams.get('slug');

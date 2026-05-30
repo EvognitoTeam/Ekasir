@@ -17,6 +17,7 @@ import Header from '@/components/layout/Header';
 import CategoryBar from '@/components/layout/CategoryBar';
 import MenuGrid from '@/components/layout/MenuGrid';
 import Footer from '@/components/layout/Footer';
+import PromoBanner, { CouponData } from '@/components/layout/PromoBanner';
 import FloatingCart from '@/components/cart/FloatingCart';
 import BottomNav from '@/components/layout/BottomNav';
 import RoastGalleryView from '@/components/views/RoastGalleryView';
@@ -47,6 +48,8 @@ export default function Home() {
   const [mitraName, setMitraName] = useState("Memuat...");
   const [mitraAddress, setMitraAddress] = useState("Memuat alamat...");
   const [mitraWelcome, setMitraWelcome] = useState("Memuat Welcome...");
+
+  const [dataPromos, setDataPromos] = useState<CouponData[]>([]);
   
   // App Navigation
   const [currentView, setCurrentView] = useState<ViewState>('menu');
@@ -104,6 +107,24 @@ export default function Home() {
       }
     };
 
+    const fetchCoupons = async () => {
+      try {
+        const res = await fetch(`/api/coupons?slug=${slug}`);
+        const result = await res.json();
+        
+        if (result.success) {
+          // Filter lagi di sisi klien buat mastiin kupon belum abis
+          const availableCoupons = result.data.filter((c: CouponData) => 
+            c.max_use === 0 || c.already_used < c.max_use
+          );
+          setDataPromos(availableCoupons);
+        }
+      } catch (error) {
+        console.error("Gagal load kupon:", error);
+      }
+    };
+
+    fetchCoupons();
     fetchMitraData();
   }, [slug, setMenu, searchParams, setTable]); 
 
@@ -159,7 +180,7 @@ export default function Home() {
       <div className="w-full max-w-[480px] h-[100dvh] bg-[var(--color-surface)] relative overflow-hidden flex flex-col">
           {isMainShellView && (
             <div className="flex-1 overflow-hidden">
-              <main className="pb-[120px] overflow-y-auto h-full custom-scrollbar relative bg-[var(--color-surface)]">
+              <main className="pb-[110px] overflow-y-auto h-full custom-scrollbar relative bg-[var(--color-surface)]">
                 <Header 
                   onOpenSearch={() => setIsSearchOpen(true)} 
                   mitraName={mitraName} 
@@ -171,6 +192,10 @@ export default function Home() {
                       categories={categories}
                       selectedCategoryId={selectedCategoryId}
                       onSelectCategory={setSelectedCategoryId}
+                    />
+                    <PromoBanner 
+                      activePromos={dataPromos} 
+                      onNavigate={(coupon) => console.log('Klik', coupon.title)}
                     />
                     <MenuGrid 
                       items={filteredItems}

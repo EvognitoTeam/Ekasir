@@ -147,7 +147,7 @@ export default function MenuGrid({ items, categories, selectedCategoryId, isLoad
 
   // Default mode: group all items into categorical horizontal sliders
   return (
-    <main className="pb-32 flex flex-col gap-2 bg-[#F4F4F5] min-h-screen">
+    <main className="flex flex-col gap-2 bg-[#F4F4F5] min-h-screen">
       {categories.map(category => {
         const categoryItems = items.filter(item => item.categoryId === category.id);
         if (categoryItems.length === 0) return null;

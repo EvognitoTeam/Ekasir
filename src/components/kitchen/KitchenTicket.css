@@ -1,0 +1,206 @@
+.kitchen-ticket {
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  border: 2px solid #e5e2dd;
+}
+
+.kitchen-ticket.warning {
+  border-color: #FCD34D;
+  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.15);
+}
+
+.kitchen-ticket.urgent {
+  border-color: #EF4444;
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.15);
+}
+
+.kitchen-ticket-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  border-bottom: 2px solid #e5e2dd;
+  background: #fcfcfc;
+}
+
+.kitchen-ticket.warning .kitchen-ticket-header { background: #FEF3C7; border-bottom-color: #FCD34D; }
+.kitchen-ticket.urgent .kitchen-ticket-header { background: #FEF2F2; border-bottom-color: #FCA5A5; }
+
+.kitchen-ticket-id-box {
+  padding: 12px 16px;
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 800;
+  color: #1c1c19;
+  border-right: 2px solid #e5e2dd;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 80px;
+}
+
+.kitchen-ticket.warning .kitchen-ticket-id-box { border-right-color: #FCD34D; color: #B45309; }
+.kitchen-ticket.urgent .kitchen-ticket-id-box { border-right-color: #FCA5A5; color: #991B1B; }
+
+.kitchen-ticket-info {
+  flex: 1;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+
+.kitchen-ticket-type {
+  font-family: var(--font-label);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #5a4b44;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kitchen-ticket-timer {
+  font-family: monospace;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1c1c19;
+}
+
+.kitchen-ticket.warning .kitchen-ticket-timer { color: #D97706; }
+.kitchen-ticket.urgent .kitchen-ticket-timer { color: #DC2626; animation: blink 2s infinite; }
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.kitchen-ticket-body {
+  padding: 16px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.kitchen-ticket-item {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed #e5e2dd;
+}
+
+.kitchen-ticket-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.kitchen-ticket-qty {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 900;
+  color: #1c1c19;
+  background: #f6f3ee;
+  padding: 4px 12px;
+  border-radius: 8px;
+  min-width: 48px;
+  text-align: center;
+}
+
+.kitchen-ticket-item-details {
+  flex: 1;
+}
+
+.kitchen-ticket-item-name {
+  font-family: var(--font-sans);
+  font-size: 20px;
+  font-weight: 800;
+  color: #1c1c19;
+  line-height: 1.2;
+  margin-bottom: 6px;
+}
+
+.kitchen-ticket-item-addons {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: #0E5C37; /* A deep green for modifiers so they stand out */
+  margin-bottom: 4px;
+}
+
+.kitchen-ticket-item-notes {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-style: italic;
+  font-weight: 500;
+  color: #D97706;
+  background: #FFFBEB;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border-left: 3px solid #FCD34D;
+}
+
+.kitchen-ticket-admin-notes {
+  margin-top: auto;
+  padding: 12px;
+  background: #FEF2F2;
+  border: 1px solid #FCA5A5;
+  border-radius: 8px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: #991B1B;
+}
+
+.kitchen-ticket-footer {
+  padding: 16px;
+  background: #fcfcfc;
+  border-top: 2px solid #e5e2dd;
+}
+
+.kitchen-ticket-btn {
+  width: 100%;
+  min-height: 60px; /* Massive button for touch */
+  border-radius: 12px;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: none;
+  cursor: pointer;
+  color: white;
+  transition: transform 0.1s, box-shadow 0.2s;
+}
+
+.kitchen-ticket-btn:active {
+  transform: scale(0.98);
+}
+
+.kitchen-ticket-btn.start {
+  background: linear-gradient(135deg, #7C3AED, #6D28D9);
+  box-shadow: 0 6px 20px rgba(124, 58, 237, 0.3);
+}
+
+.kitchen-ticket-btn.ready {
+  background: linear-gradient(135deg, #0E5C37, #065F46);
+  box-shadow: 0 6px 20px rgba(14, 92, 55, 0.3);
+}
+
+.kitchen-ticket-btn.completed {
+  background: #e5e2dd;
+  color: #9CA3AF;
+  box-shadow: none;
+  cursor: default;
+}

@@ -1,5 +1,5 @@
 import { MenuItem } from '../../types/menu';
-import { ChevronRight, Coffee, ImageIcon, AlertCircle } from 'lucide-react';
+import { ChevronRight, Coffee, ImageIcon, AlertCircle, Plus } from 'lucide-react';
 
 interface Props {
   item: MenuItem;
@@ -83,13 +83,14 @@ export default function ProductCard({ item, onClick }: Props) {
 
         <button 
           disabled={isSoldOut}
-          className={`mt-3 w-full py-1.5 rounded-md text-xs font-bold transition-colors font-sans ${
+          className={`mt-3 w-full py-1.5 rounded-full text-xs font-bold transition-colors font-sans ${
             isSoldOut 
-              ? 'border border-stone-200 text-stone-400 bg-stone-50 cursor-not-allowed' 
-              : 'border border-[#14532d] text-[#14532d] bg-white active:bg-stone-50'
+              ? 'bg-stone-100 text-stone-400 cursor-not-allowed' 
+              : 'bg-[#0E5C37] border border-[#14532d] text-white active:bg-stone-50'
           }`}
         >
-          {isSoldOut ? 'Habis' : 'Add to Cart'}
+          {!isSoldOut && <Plus className="w-3.5 h-3.5" strokeWidth={3} />}
+          {isSoldOut ? 'Sold Out' : 'Add'}
         </button>
       </div>
     </div>

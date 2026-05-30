@@ -1,7 +1,9 @@
+'use client'
+
 import { useState } from 'react';
-import { useOrderStore } from '../../store/order.store';
-import { useMenuStore } from '../../store/menu.store';
-import { formatPrice } from '../../utils/formatters';
+import { useOrderStore } from '@/store/order.store';
+import { useMenuStore } from '@/store/menu.store';
+import { formatPrice } from '@/utils/formatters';
 import { Download, Table as TableIcon, Calendar, Hash, Tag, ChevronDown, ChevronUp, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { isSameDay, subDays, isWithinInterval } from 'date-fns';
