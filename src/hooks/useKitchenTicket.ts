@@ -7,17 +7,23 @@ export function useKitchenTicket(order: Order) {
 
   useEffect(() => {
     const calc = () => {
-      const diff = Math.floor((Date.now() - new Date(order.createdAt).getTime()) / 60000);
-      setElapsedMinutes(diff);
-      
-      if (diff < 1) setTimeText('Baru saja');
-      else if (diff < 60) setTimeText(`${diff} mnt`);
-      else setTimeText(`${Math.floor(diff / 60)}j ${diff % 60}m`);
+        // 🔴 Pakai fallback Date.now() jika order.createdAt undefined
+        const createdAt = order.createdAt || Date.now();
+        
+        // Pastikan createdAt diubah jadi objek Date dulu, baru ambil .getTime()
+        const diff = Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000);
+        
+        setElapsedMinutes(diff);
+        
+        if (diff < 1) setTimeText('Baru saja');
+        else if (diff < 60) setTimeText(`${diff} mnt`);
+        else setTimeText(`${Math.floor(diff / 60)}j ${diff % 60}m`);
     };
+
     calc();
     const t = setInterval(calc, 60000);
     return () => clearInterval(t);
-  }, [order.createdAt, order.status]);
+    }, [order.createdAt, order.status]);
 
   // Determine urgency level for color coding
   // 0-5 mins: normal
