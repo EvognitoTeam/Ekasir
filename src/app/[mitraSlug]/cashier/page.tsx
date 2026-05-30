@@ -495,7 +495,13 @@ export default function CashierApp() {
             <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
               <AnimatePresence>
                 {filteredOrders.map(order => (
-                  <OrderCard key={order.id} order={order} onUpdateStatus={updateOrderStatus} onUpdateNote={updateOrderNote} role={role || 'cashier'} />
+                  <OrderCard 
+                    key={order.id} 
+                    order={order} 
+                    onUpdateStatus={updateOrderStatus} 
+                    onUpdateNote={updateOrderNote} 
+                    role={role === 'kitchen' ? 'kitchen' : 'cashier'} 
+                  />
                 ))}
               </AnimatePresence>
             </div>
