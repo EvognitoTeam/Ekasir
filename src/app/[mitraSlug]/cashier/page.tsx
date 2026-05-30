@@ -274,7 +274,7 @@ export default function CashierApp() {
                   onScan={(result) => {
                     if (result && result.length > 0) handleTokenScan(result[0].rawValue);
                   }}
-                  components={{ audio: false, finder: false }}
+                  components={{ finder: false }}
                 />
                 <button 
                   onClick={() => setIsScanning(false)}
