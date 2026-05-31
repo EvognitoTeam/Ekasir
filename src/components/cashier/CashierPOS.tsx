@@ -195,6 +195,8 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
           id: result.data?.id || Math.random().toString(36).substring(2, 6).toUpperCase(),
           order_code: result.data?.order_code || `POS-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
           table_number: orderType === 'takeaway' ? 'WALK-IN' : tableId,
+          getPayment: null,
+          cashChange: null,
           items: cart,
           subtotal,
           tax,
