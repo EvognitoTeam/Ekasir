@@ -338,7 +338,7 @@ export default function CashierApp() {
   ];
 
   // 🔴 HITUNGAN UNTUK POPUP
-  const popupTotalBill = cashPaymentPopup ? Number(cashPaymentPopup.totalAfterDiscount || cashPaymentPopup.total_after_discount || cashPaymentPopup.totalPrice || cashPaymentPopup.total_price || 0) : 0;
+  const popupTotalBill = cashPaymentPopup ? Number(cashPaymentPopup.totalPrice || cashPaymentPopup.total_price || 0) : 0;
   const popupReceived = Number(receivedAmount.replace(/\D/g, '')) || 0;
   const popupChange = popupReceived - popupTotalBill;
 
