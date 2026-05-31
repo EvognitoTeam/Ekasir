@@ -107,6 +107,7 @@ export interface CartItem {
 }
 
 export interface Order {
+  getPayment: any;
   id: string | number; // Bisa string (mock) atau number (dari DB)
   order_code?: string; // Kode unik struk dari DB
   
