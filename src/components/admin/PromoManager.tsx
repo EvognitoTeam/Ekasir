@@ -391,7 +391,7 @@ export default function PromoManager() {
           <Loader2 className="w-8 h-8 animate-spin text-[#0E5C37]" />
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <AnimatePresence>
             {filteredPromos.map((promo) => {
               const isPercentage = promo.discount_rate !== null && promo.discount_rate > 0;

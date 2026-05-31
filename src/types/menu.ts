@@ -137,6 +137,7 @@ export interface Order {
   customerName?: string;
   name?: string; // Nama dari DB asli
   adminNotes?: string;
+  admin_notes?: string;
   
   // Waktu
   createdAt?: string | Date;

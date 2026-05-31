@@ -49,7 +49,18 @@ export default function KitchenTicket({ order, onUpdateStatus }: Props) {
     headerClass = 'bg-stone-100 border-b border-stone-200';
   }
 
-  const parsedItems = Array.isArray(order.items) ? order.items : [];
+  // 🔴 LOGIKA PARSING ANTI-GAGAL UNTUK ARRAY ITEMS
+  let parsedItems: any[] = [];
+  try {
+    if (typeof order.items === 'string') {
+      parsedItems = JSON.parse(order.items);
+    } else if (Array.isArray(order.items)) {
+      parsedItems = order.items;
+    }
+  } catch (error) {
+    console.error("Gagal memproses detail pesanan:", error);
+    parsedItems = [];
+  }
 
   return (
     <div className={`rounded-[1.5rem] border overflow-hidden flex flex-col transition-all duration-300 ${urgencyClass}`}>
@@ -76,21 +87,38 @@ export default function KitchenTicket({ order, onUpdateStatus }: Props) {
         )}
       </div>
 
+      {/* BODY TIKET */}
       <div className="p-4 flex-1 flex flex-col gap-4">
         {parsedItems.map((cartItem: any, idx: number) => {
-          // Sesuaikan key pencarian menu (productId atau menuItemId)
           const product = menuItems.find(m => Number(m.id) === Number(cartItem.menuItemId || cartItem.product_id));
           const itemName = product?.name || cartItem.name || cartItem.menuItemName || 'Item Menu';
 
-          // 🔴 FIX: Ambil addons dari 'selectedAddOnsDetails' (sesuai format JSON lu)
           const addons: string[] = [];
-          if (Array.isArray(cartItem.selectedAddOnsDetails)) {
-            cartItem.selectedAddOnsDetails.forEach((a: any) => addons.push(a.name));
-          } else if (cartItem.selectedAddOns) {
-             // Fallback kalau formatnya beda
-             cartItem.selectedAddOns.forEach((sel: any) => {
-                sel.choiceIds?.forEach((cid: string) => addons.push(cid));
-             });
+          const customNotes: string[] = [];
+
+          let detailsArray: any[] = [];
+          
+          if (Array.isArray(cartItem.selectedAddOnsDetails) && cartItem.selectedAddOnsDetails.length > 0) {
+            detailsArray = cartItem.selectedAddOnsDetails;
+          } else if (typeof cartItem.notes === 'string' && cartItem.notes.trim().startsWith('[')) {
+            try { detailsArray = JSON.parse(cartItem.notes); } catch (e) {}
+          }
+
+          if (detailsArray.length > 0) {
+            detailsArray.forEach((detail: any) => {
+              if (detail.name) addons.push(detail.name);
+              if (detail.customer_note) customNotes.push(detail.customer_note);
+            });
+          } else {
+            if (typeof cartItem.notes === 'string' && cartItem.notes.trim() !== '') {
+              customNotes.push(cartItem.notes);
+            }
+          }
+
+          if (cartItem.selectedAddOns && detailsArray.length === 0) {
+            cartItem.selectedAddOns.forEach((sel: any) => {
+              sel.choiceIds?.forEach((cid: string) => addons.push(cid));
+            });
           }
 
           return (
@@ -100,58 +128,71 @@ export default function KitchenTicket({ order, onUpdateStatus }: Props) {
               </div>
               <div className="flex-1 min-w-0 pt-1">
                 <div className="text-sm font-black text-stone-800 leading-tight mb-1">{itemName}</div>
+                
                 {addons.length > 0 && (
                   <div className="text-xs font-bold text-amber-600 leading-snug mb-1">
                     + {addons.join(' · ')}
                   </div>
                 )}
-                {cartItem.notes && (
-                  <div className="text-[11px] font-medium text-stone-500 italic bg-stone-50 p-2 rounded-md border border-stone-100 mt-1">
-                    &quot;{cartItem.notes}&quot;
-                  </div>
-                )}
-                {cartItem.admin_notes && (
-                  <div className="text-[11px] font-medium text-stone-500 italic bg-stone-50 p-2 rounded-md border border-stone-100 mt-1">
-                    &quot;{cartItem.admin_notes}&quot;
+                
+                {/* Hanya tampil jika ada catatan dari customer */}
+                {customNotes.length > 0 && (
+                  <div className="mt-1">
+                    {customNotes.map((note, nIdx) => (
+                      <div key={nIdx} className="text-[11px] font-medium text-stone-500 italic bg-stone-50 p-2 rounded-md border border-stone-100 mt-1">
+                        Catatan: &quot;{note}&quot;
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
             </div>
           );
         })}
-
-        {order.adminNotes && (
-          <div className="mt-2 p-3 bg-red-50/50 border border-red-100 rounded-xl text-xs text-red-800">
-            <strong className="font-bold uppercase tracking-widest text-[10px] block mb-1">Catatan Kasir:</strong> 
-            {order.adminNotes}
-          </div>
-        )}
       </div>
 
-      <div className="p-4 pt-0">
-        {(order.status === 'pending' || order.status === 'confirmed') && (
-          <button 
-            className="w-full py-3.5 rounded-xl bg-amber-500 text-white text-xs font-bold uppercase tracking-widest hover:bg-amber-600 transition-all flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 active:scale-95"
-            onClick={() => onUpdateStatus(String(order.id), 'preparing')}
-          >
-            <ChefHat className="w-4 h-4" /> Mulai Meracik
-          </button>
-        )}
+      {/* 🔴 FOOTER: ADMIN NOTES SEJAJAR DENGAN TOMBOL STATUS */}
+      <div className="p-4 pt-0 flex gap-3 items-stretch">
         
-        {order.status === 'preparing' && (
-          <button 
-            className="w-full py-3.5 rounded-xl bg-[#0E5C37] text-white text-xs font-bold uppercase tracking-widest hover:bg-emerald-800 transition-all flex items-center justify-center gap-2 shadow-md shadow-emerald-900/20 active:scale-95"
-            onClick={() => onUpdateStatus(String(order.id), 'ready')}
-          >
-            <Sparkles className="w-4 h-4" /> Pesanan Siap
-          </button>
+        {/* Catatan Admin / Kasir (Sebelah Kiri) */}
+        {order.admin_notes && (
+          <div className="flex-1 p-2.5 bg-red-50/80 border border-red-100 rounded-xl flex flex-col justify-center">
+            <span className="text-[9px] font-black uppercase tracking-widest text-red-500 mb-0.5">Catatan Kasir:</span>
+            <span className="text-[11px] font-medium text-red-800 leading-snug line-clamp-2" title={order.adminNotes}>
+              {order.admin_notes}
+            </span>
+          </div>
         )}
 
-        {(order.status === 'ready' || order.status === 'completed') && (
-          <button className="w-full py-3.5 rounded-xl bg-stone-200 text-stone-400 text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2 cursor-not-allowed">
-            <CheckCircle2 className="w-4 h-4" /> Selesai
-          </button>
-        )}
+        {/* Tombol Status (Sebelah Kanan) */}
+        <div className={order.admin_notes ? "flex-1" : "w-full"}>
+          {(order.status === 'pending' || order.status === 'confirmed') && (
+            <button 
+              className="w-full h-full min-h-[48px] rounded-xl bg-amber-500 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-amber-600 transition-all flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 active:scale-95 px-2"
+              onClick={() => onUpdateStatus(String(order.id), 'preparing')}
+            >
+              <ChefHat className="w-4 h-4 shrink-0" /> 
+              {order.admin_notes ? 'Meracik' : 'Mulai Meracik'}
+            </button>
+          )}
+          
+          {order.status === 'preparing' && (
+            <button 
+              className="w-full h-full min-h-[48px] rounded-xl bg-[#0E5C37] text-white text-[11px] font-bold uppercase tracking-widest hover:bg-emerald-800 transition-all flex items-center justify-center gap-1.5 shadow-md shadow-emerald-900/20 active:scale-95 px-2"
+              onClick={() => onUpdateStatus(String(order.id), 'ready')}
+            >
+              <Sparkles className="w-4 h-4 shrink-0" /> 
+              {order.admin_notes ? 'Siap' : 'Pesanan Siap'}
+            </button>
+          )}
+
+          {(order.status === 'ready' || order.status === 'completed') && (
+            <button className="w-full h-full min-h-[48px] rounded-xl bg-stone-200 text-stone-400 text-[11px] font-bold uppercase tracking-widest flex items-center justify-center gap-1.5 cursor-not-allowed px-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" /> Selesai
+            </button>
+          )}
+        </div>
+
       </div>
     </div>
   );

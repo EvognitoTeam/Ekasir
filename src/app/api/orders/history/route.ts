@@ -112,31 +112,41 @@ export async function PUT(request: Request) {
 
   try {
     const body = await request.json();
-    const { orderId, status, paymentStatus, adminNotes } = body;
+    // 🔴 1. Tambahkan getPayment & cashChange di sini
+    const { orderId, status, paymentStatus, adminNotes, getPayment, cashChange } = body;
 
     if (!orderId) {
       return NextResponse.json({ success: false, message: 'ID Pesanan diperlukan' }, { status: 400 });
     }
 
-    // 1. Siapkan keranjang data yang mau di-update
+    // 2. Siapkan keranjang data yang mau di-update
     const updateData: any = {
       updatedAt: new Date()
     };
 
-    // 2. Update status order (kalau ada)
+    // Update status order (kalau ada)
     if (status) {
       updateData.status = status;
     }
     
-    // 3. Update status pembayaran (kalau ada)
+    // Update status pembayaran (kalau ada)
     if (paymentStatus) {
       updateData.payment_status = paymentStatus;
     }
 
-    // 🔴 4. BARU: Simpan catatan kasir ke database
+    // Simpan catatan kasir ke database
     if (adminNotes !== undefined) { 
-      // Kita pakai !== undefined supaya kalau kasir ngehapus catatannya (ngirim string kosong ""), tetep ke-save jadi kosong.
       updateData.admin_notes = adminNotes;
+    }
+
+    // 🔴 3. BARU: Simpan jumlah bayar & kembalian untuk Cash
+    if (getPayment !== undefined && getPayment !== null) {
+      updateData.getPayment = String(getPayment); // Drizzle Decimal butuh tipe string
+    }
+    
+    if (cashChange !== undefined && cashChange !== null) {
+      updateData.cashChange = String(cashChange);
+      updateData.payment_status = 2;
     }
 
     // Eksekusi Update ke Database MySQL

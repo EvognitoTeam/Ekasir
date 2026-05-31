@@ -71,6 +71,7 @@ export async function POST(request: Request) {
         payment_method: customer.method,
         discountId: discountId || null,
         payment_status: "1", // 1 = Pending
+        createdAt: new Date(),
       });
 
       const newOrderId = orderResult.insertId;

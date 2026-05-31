@@ -9,11 +9,11 @@ import { formatPrice } from '@/utils/formatters';
 import CashierPOS from '@/components/cashier/CashierPOS';
 import {
   ArrowLeft, BellRing, ReceiptText, ShieldCheck, RefreshCw,
-  Sparkles, ShoppingBag, TrendingUp, RotateCcw, Coffee, Plus, Loader2, QrCode, Camera
+  Sparkles, ShoppingBag, TrendingUp, RotateCcw, Coffee, Plus, Loader2, QrCode, Camera, X
 } from 'lucide-react';
 import AdminDashboardView from '@/components/views/AdminDashboardView';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Scanner } from '@yudiel/react-qr-scanner'; // 🔴 Import Scanner Kamera
+import { Scanner } from '@yudiel/react-qr-scanner'; 
 import { Toast } from '@/utils/toast';
 
 export default function CashierApp() {
@@ -25,10 +25,9 @@ export default function CashierApp() {
   const [role, setRole] = useState<'cashier' | 'owner' | 'kitchen' | null>(null);
   const [activeStaffName, setActiveStaffName] = useState('');
   
-  // 🔴 State untuk Scanner
   const [isScanning, setIsScanning] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
-  const physicalScannerBuffer = useRef(''); // Buffer buat physical scanner (tembak)
+  const physicalScannerBuffer = useRef(''); 
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [mitraProfile, setMitraProfile] = useState<{ name: string }>({ name: 'Kasir' });
@@ -40,6 +39,10 @@ export default function CashierApp() {
     orderId: string; oldStatus: Order['status']; oldPaymentStatus?: Order['paymentStatus']; timeoutId: ReturnType<typeof setTimeout>;
   } | null>(null);
   const [isPOSMode, setIsPOSMode] = useState(false);
+
+  // 🔴 STATE UNTUK POPUP PEMBAYARAN CASH
+  const [cashPaymentPopup, setCashPaymentPopup] = useState<Order | null>(null);
+  const [receivedAmount, setReceivedAmount] = useState<string>('');
 
   const { setMenu } = useMenuStore();
 
@@ -99,13 +102,12 @@ export default function CashierApp() {
   useEffect(() => {
     if (!isAuthenticated) return; 
     fetchOrders(); 
-    const interval = setInterval(() => { fetchOrders(); }, 1000); 
+    const interval = setInterval(() => { fetchOrders(); }, 2000); 
     return () => clearInterval(interval);
   }, [slug, isAuthenticated]);
 
-  // 🔴 FUNGSI VALIDASI TOKEN QR CODE
   const handleTokenScan = async (token: string) => {
-    if (isVerifying) return; // Mencegah double scan
+    if (isVerifying) return; 
     setIsVerifying(true);
     setIsScanning(false);
 
@@ -118,7 +120,7 @@ export default function CashierApp() {
       const result = await res.json();
 
       if (result.success) {
-        setRole(result.data.role); // 'owner', 'cashier', atau 'kitchen'
+        setRole(result.data.role); 
         setActiveStaffName(result.data.name);
         setIsAuthenticated(true);
         Toast.fire({ icon: 'success', title: `Selamat Bekerja, ${result.data.name}!` });
@@ -132,53 +134,80 @@ export default function CashierApp() {
     }
   };
 
-  // 🔴 SUPPORT UNTUK SCANNER FISIK (BARCODE TEMBAK)
   useEffect(() => {
     if (isAuthenticated || isScanning) return;
-
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore kalau user lagi ngetik di input field lain
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-
       if (e.key === 'Enter') {
-        if (physicalScannerBuffer.current.length > 10) {
-          handleTokenScan(physicalScannerBuffer.current);
-        }
-        physicalScannerBuffer.current = ''; // Reset
+        if (physicalScannerBuffer.current.length > 10) handleTokenScan(physicalScannerBuffer.current);
+        physicalScannerBuffer.current = ''; 
       } else if (e.key.length === 1) {
         physicalScannerBuffer.current += e.key;
       }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isAuthenticated, isScanning]);
 
-  const executeUpdate = async (orderId: string, newStatus: Order['status'], newPaymentStatus?: Order['paymentStatus']) => {
+  // 🔴 DITAMBAHKAN PARAMETER EXTRA UNTUK UANG DITERIMA & KEMBALIAN
+  const executeUpdate = async (orderId: string, newStatus: Order['status'], newPaymentStatus?: Order['paymentStatus'], extraData?: any) => {
     try {
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus, paymentStatus: newPaymentStatus || o.paymentStatus } : o));
+      setOrders(prev => prev.map(o => String(o.id) === orderId ? { ...o, status: newStatus, paymentStatus: newPaymentStatus || o.paymentStatus, ...extraData } : o));
       await fetch(`/api/orders/history?slug=${slug}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, status: newStatus, paymentStatus: newPaymentStatus })
+        body: JSON.stringify({ orderId, status: newStatus, paymentStatus: newPaymentStatus, ...extraData })
       });
     } catch (e) {
       console.error("Gagal update status:", e);
     }
   };
 
+  // 🔴 DICEGAT KALAU BAYARNYA CASH
   const updateOrderStatus = (orderId: string, newStatus: Order['status'], newPaymentStatus?: Order['paymentStatus']) => {
-    const cur = orders.find(o => o.id === orderId);
+    const cur = orders.find(o => String(o.id) === String(orderId));
     if (!cur) return;
+    
+    // Cegat jika status mau di ACC (confirmed) dan metode pembayaran CASH
+    if (newStatus === 'confirmed' && cur.paymentMethod === 'cash' && !cur.getPayment) {
+      setCashPaymentPopup(cur);
+      setReceivedAmount(''); // Reset input
+      return; 
+    }
+
     if (undoAction?.timeoutId) clearTimeout(undoAction.timeoutId);
     executeUpdate(orderId, newStatus, newPaymentStatus);
     const timeoutId = setTimeout(() => setUndoAction(null), 4000);
     setUndoAction({ orderId, oldStatus: cur.status, oldPaymentStatus: cur.paymentStatus, timeoutId });
   };
 
+  // 🔴 FUNGSI SUBMIT POPUP CASH
+  const handleConfirmCashPayment = () => {
+    if (!cashPaymentPopup) return;
+    
+    const totalBill = Number(cashPaymentPopup.totalPrice || cashPaymentPopup.total_price || 0);
+    const received = Number(receivedAmount.replace(/\D/g, '')); // Bersihkan dari format selain angka
+
+    if (received < totalBill) {
+      Toast.fire({ icon: 'error', title: 'Nominal uang kurang!' });
+      return;
+    }
+
+    const change = received - totalBill;
+    
+    // Eksekusi Update dengan tambahan getPayment dan cashChange
+    executeUpdate(String(cashPaymentPopup.id), 'confirmed', '1', { 
+      getPayment: received, 
+      cashChange: change 
+    });
+
+    Toast.fire({ icon: 'success', title: `Lunas! Kembalian: ${formatPrice(change)}` });
+    setCashPaymentPopup(null);
+  };
+
   const updateOrderNote = async (orderId: string, note: string) => {
     try {
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, adminNotes: note } : o));
+      setOrders(prev => prev.map(o => String(o.id) === orderId ? { ...o, adminNotes: note } : o));
       await fetch(`/api/orders/history?slug=${slug}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -236,7 +265,6 @@ export default function CashierApp() {
     );
   }
 
-  /* ─── TAMPILAN LOGIN QR CODE ─── */
   if (!isAuthenticated) {
     return (
       <div style={{
@@ -254,13 +282,8 @@ export default function CashierApp() {
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#0E5C37] to-[#065F46] flex items-center justify-center mb-4 shadow-lg shadow-emerald-900/20">
             <QrCode className="w-8 h-8 text-white" />
           </div>
-          
-          <h2 className="text-2xl font-black text-stone-800 tracking-tight text-center font-display leading-tight">
-            {mitraProfile.name}
-          </h2>
-          <p className="text-xs text-stone-500 mt-1.5 text-center px-4">
-            Arahkan QR Code Karyawan ke kamera atau gunakan Scanner Fisik untuk masuk
-          </p>
+          <h2 className="text-2xl font-black text-stone-800 tracking-tight text-center font-display leading-tight">{mitraProfile.name}</h2>
+          <p className="text-xs text-stone-500 mt-1.5 text-center px-4">Arahkan QR Code Karyawan ke kamera atau gunakan Scanner Fisik untuk masuk</p>
 
           <div className="w-full mt-8 mb-6">
             {isVerifying ? (
@@ -270,39 +293,16 @@ export default function CashierApp() {
               </div>
             ) : isScanning ? (
               <div className="rounded-2xl overflow-hidden border-4 border-dashed border-[#0E5C37]/50 p-1 relative bg-black aspect-square max-h-[250px] mx-auto w-full max-w-[250px]">
-                <Scanner 
-                  onScan={(result) => {
-                    if (result && result.length > 0) handleTokenScan(result[0].rawValue);
-                  }}
-                  components={{ finder: false }}
-                />
-                <button 
-                  onClick={() => setIsScanning(false)}
-                  className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-red-500/80 backdrop-blur text-white text-xs font-bold rounded-full shadow-lg"
-                >
-                  Tutup Kamera
-                </button>
+                <Scanner onScan={(result) => { if (result && result.length > 0) handleTokenScan(result[0].rawValue); }} components={{ finder: false }} />
+                <button onClick={() => setIsScanning(false)} className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-red-500/80 backdrop-blur text-white text-xs font-bold rounded-full shadow-lg">Tutup Kamera</button>
               </div>
             ) : (
               <div className="flex flex-col gap-3">
-                <button 
-                  onClick={() => setIsScanning(true)}
-                  className="w-full py-4 rounded-2xl bg-stone-50 border border-stone-200 text-stone-600 font-bold text-sm flex flex-col items-center gap-2 hover:bg-stone-100 transition-all active:scale-95"
-                >
-                  <Camera className="w-6 h-6 text-[#0E5C37]" />
-                  Buka Kamera Web
+                <button onClick={() => setIsScanning(true)} className="w-full py-4 rounded-2xl bg-stone-50 border border-stone-200 text-stone-600 font-bold text-sm flex flex-col items-center gap-2 hover:bg-stone-100 transition-all active:scale-95">
+                  <Camera className="w-6 h-6 text-[#0E5C37]" /> Buka Kamera Web
                 </button>
-                
-                <div className="relative py-3">
-                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-stone-200" /></div>
-                  <div className="relative flex justify-center"><span className="bg-white px-3 text-[10px] uppercase tracking-widest text-stone-400 font-bold">Atau</span></div>
-                </div>
-
-                <div className="text-center p-4 bg-emerald-50/50 rounded-xl border border-emerald-100">
-                  <p className="text-[11px] font-medium text-emerald-800 leading-relaxed">
-                    Scanner fisik otomatis aktif. <br/>Langsung *Tembak* QR Code ke layar.
-                  </p>
-                </div>
+                <div className="relative py-3"><div className="absolute inset-0 flex items-center"><div className="w-full border-t border-stone-200" /></div><div className="relative flex justify-center"><span className="bg-white px-3 text-[10px] uppercase tracking-widest text-stone-400 font-bold">Atau</span></div></div>
+                <div className="text-center p-4 bg-emerald-50/50 rounded-xl border border-emerald-100"><p className="text-[11px] font-medium text-emerald-800 leading-relaxed">Scanner fisik otomatis aktif. <br/>Langsung *Tembak* QR Code ke layar.</p></div>
               </div>
             )}
           </div>
@@ -311,7 +311,6 @@ export default function CashierApp() {
     );
   }
 
-  /* ─── Owner View ─── */
   if (role === 'owner') {
     return (
       <div style={{ minHeight: '100dvh', background: '#f6f3ee', display: 'flex', justifyContent: 'center', fontFamily: 'var(--font-body)' }}>
@@ -331,7 +330,6 @@ export default function CashierApp() {
     );
   }
 
-  /* ─── Cashier / Kitchen Main View ─── */
   const TABS = [
     { id: 'pending',   label: 'Baru',           count: pendingCount   },
     { id: 'preparing', label: 'Diracik',        count: preparingCount },
@@ -339,10 +337,86 @@ export default function CashierApp() {
     { id: 'completed', label: 'Selesai',        count: completedCount },
   ];
 
+  // 🔴 HITUNGAN UNTUK POPUP
+  const popupTotalBill = cashPaymentPopup ? Number(cashPaymentPopup.totalAfterDiscount || cashPaymentPopup.total_after_discount || cashPaymentPopup.totalPrice || cashPaymentPopup.total_price || 0) : 0;
+  const popupReceived = Number(receivedAmount.replace(/\D/g, '')) || 0;
+  const popupChange = popupReceived - popupTotalBill;
+
   return (
     <div style={{ minHeight: '100dvh', background: '#f0ede9', display: 'flex', justifyContent: 'center', fontFamily: 'var(--font-body)' }}>
       <div style={{ width: '100%', maxWidth: '480px', height: '100dvh', background: '#fafaf9', display: 'flex', flexDirection: 'column', boxShadow: '0 0 40px rgba(28,28,25,0.12)', position: 'relative', overflow: 'hidden' }}>
 
+        {/* 🔴 POPUP PEMBAYARAN TUNAI (CASH) */}
+        <AnimatePresence>
+          {cashPaymentPopup && (
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[100] bg-stone-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-6"
+            >
+              <motion.div 
+                initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                className="bg-white w-full sm:rounded-3xl rounded-t-3xl overflow-hidden flex flex-col max-h-[90vh]"
+              >
+                <div className="p-5 border-b border-stone-100 flex items-center justify-between bg-stone-50">
+                  <div>
+                    <h3 className="text-lg font-black text-stone-800 tracking-tight leading-none">Terima Tunai</h3>
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-stone-400 mt-1">Order #{cashPaymentPopup.id}</p>
+                  </div>
+                  <button onClick={() => setCashPaymentPopup(null)} className="w-8 h-8 rounded-full bg-white border border-stone-200 flex items-center justify-center hover:bg-stone-100"><X className="w-4 h-4 text-stone-500" /></button>
+                </div>
+
+                <div className="p-6 space-y-6 overflow-y-auto">
+                  {/* Total Tagihan */}
+                  <div className="text-center p-6 rounded-2xl bg-amber-50 border border-amber-100">
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-amber-600 mb-1">Total Tagihan</p>
+                    <p className="text-4xl font-black text-amber-600 font-display">{formatPrice(popupTotalBill)}</p>
+                  </div>
+
+                  {/* Input Uang Diterima */}
+                  <div>
+                    <label className="text-[11px] font-bold uppercase tracking-widest text-stone-500 mb-2 block">Uang Diterima (Rp)</label>
+                    <input 
+                      type="text" 
+                      autoFocus
+                      inputMode="numeric"
+                      value={receivedAmount ? formatPrice(Number(receivedAmount.replace(/\D/g, ''))).replace('Rp', '').trim() : ''}
+                      onChange={(e) => setReceivedAmount(e.target.value.replace(/\D/g, ''))}
+                      className="w-full bg-white border-2 border-stone-200 rounded-xl py-4 px-5 text-2xl font-black text-stone-800 outline-none transition-all focus:border-[#0E5C37] focus:ring-4 focus:ring-[#0E5C37]/10"
+                      placeholder="0"
+                    />
+                    
+                    {/* Quick Action Uang Pas dll */}
+                    <div className="flex gap-2 mt-3 overflow-x-auto pb-1 custom-scrollbar">
+                      <button onClick={() => setReceivedAmount(String(popupTotalBill))} className="shrink-0 px-4 py-2 rounded-lg bg-stone-100 text-stone-700 text-xs font-bold border border-stone-200 hover:bg-stone-200">Uang Pas</button>
+                      <button onClick={() => setReceivedAmount('50000')} className="shrink-0 px-4 py-2 rounded-lg bg-stone-100 text-stone-700 text-xs font-bold border border-stone-200 hover:bg-stone-200">50.000</button>
+                      <button onClick={() => setReceivedAmount('100000')} className="shrink-0 px-4 py-2 rounded-lg bg-stone-100 text-stone-700 text-xs font-bold border border-stone-200 hover:bg-stone-200">100.000</button>
+                    </div>
+                  </div>
+
+                  {/* Kembalian */}
+                  <div className="flex justify-between items-center p-4 rounded-xl border border-stone-100 bg-stone-50">
+                    <span className="text-xs font-bold uppercase tracking-widest text-stone-500">Kembalian</span>
+                    <span className={`text-lg font-black ${popupChange < 0 ? 'text-red-500' : 'text-emerald-600'}`}>
+                      {popupChange < 0 ? 'Uang Kurang' : formatPrice(popupChange)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-5 border-t border-stone-100 bg-white">
+                  <button 
+                    onClick={handleConfirmCashPayment}
+                    disabled={popupReceived < popupTotalBill}
+                    className="w-full py-4 rounded-xl bg-[#0E5C37] text-white font-bold uppercase tracking-widest flex justify-center items-center gap-2 hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#0E5C37]/20"
+                  >
+                    <ReceiptText className="w-5 h-5" /> Simpan & Lunas
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        
+        {/* SISA KODE RENDER SEPERTI BIASA... (POS, Header, dll) */}
         <AnimatePresence>
           {isPOSMode && (
             <CashierPOS onClose={() => setIsPOSMode(false)} onSubmitOrder={handlePOSSubmit} />
@@ -522,7 +596,6 @@ export default function CashierApp() {
           </button>
         </footer>
 
-        {/* Tombol Buat Order cuma muncul buat role Cashier */}
         {role === 'cashier' && (
           <button 
             onClick={() => setIsPOSMode(true)}

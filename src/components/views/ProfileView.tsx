@@ -6,11 +6,11 @@ import { useParams } from 'next/navigation';
 import { 
   User, History, Globe, Shield, ChevronRight, KeyRound, 
   LogOut, CheckCircle, AlertCircle, Ticket, Mail, Loader2,
-  LayoutDashboard, Store, X 
+  LayoutDashboard, Store, X, CookingPot
 } from 'lucide-react';
 import { PRIVACY_CONTENT } from '@/constants/legal';
 
-import { useOrderStore } from '../../store/order.store';
+import { useOrderStore } from '@/store/order.store';
 
 interface Props {
   onViewHistory: () => void;
@@ -137,6 +137,14 @@ export default function ProfileView({ onViewHistory, onViewCoupons }: Props) {
       icon: Store, 
       hasBorder: true, 
       action: () => window.location.href = `/${slug}/cashier` 
+    });
+  } else if (userRole === 'kitchen') {
+    staffMenu.push({ 
+      id: 'kitchen', 
+      label: 'Open KDS', 
+      icon: CookingPot, 
+      hasBorder: true, 
+      action: () => window.location.href = `/${slug}/kitchen` 
     });
   }
 

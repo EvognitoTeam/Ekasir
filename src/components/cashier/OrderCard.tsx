@@ -4,7 +4,8 @@ import { useMenuStore } from '@/store/menu.store';
 import { formatPrice } from '@/utils/formatters';
 import { 
   Printer, Banknote, Sparkles, Clock, User, ShoppingBag,
-  Check, AlertCircle, CheckCircle2, Coffee, ChefHat, Edit3, XCircle
+  Check, AlertCircle, CheckCircle2, Coffee, ChefHat, Edit3, XCircle,
+  Trash2
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import Swal from 'sweetalert2';
@@ -266,14 +267,14 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
             <div 
               onClick={() => setIsEditingNote(true)}
               style={{ 
-                padding: '8px 12px', borderRadius: '8px', background: order.adminNotes ? '#FFFBEB' : '#f6f3ee', 
-                border: `1px dashed ${order.adminNotes ? '#FDE68A' : '#d6c2bd'}`,
+                padding: '8px 12px', borderRadius: '8px', background: order.admin_notes ? '#FFFBEB' : '#f6f3ee', 
+                border: `1px dashed ${order.admin_notes ? '#FDE68A' : '#d6c2bd'}`,
                 display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer',
-                color: order.adminNotes ? '#92400E' : '#9CA3AF', fontSize: '11px', transition: 'all 0.2s'
+                color: order.admin_notes ? '#92400E' : '#9CA3AF', fontSize: '11px', transition: 'all 0.2s'
               }}>
               <Edit3 size={12} />
-              <span style={{ flex: 1, fontStyle: order.adminNotes ? 'normal' : 'italic', fontWeight: order.adminNotes ? 600 : 400 }}>
-                {order.adminNotes || '+ Tambah catatan kasir'}
+              <span style={{ flex: 1, fontStyle: order.admin_notes ? 'normal' : 'italic', fontWeight: order.admin_notes ? 600 : 400 }}>
+                {order.admin_notes || '+ Tambah catatan kasir'}
               </span>
             </div>
           )}
@@ -319,7 +320,7 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
             <Printer size={15} />
           </button>
 
-          {role === 'cashier' && order.status !== 'completed' && order.status !== 'cancelled' && (
+          {role === 'cashier' && order.status == 'pending' && (
             <button
               onClick={() => {
                 Swal.fire({
@@ -358,7 +359,7 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
               onMouseOver={e => (e.currentTarget.style.background = '#FEF2F2')}
               onMouseOut={e => (e.currentTarget.style.background = '#fff')}
             >
-              <XCircle size={15} />
+              <Trash2 size={15} />
             </button>
           )}
 
@@ -386,7 +387,7 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
                         boxShadow: '0 4px 14px rgba(180,83,9,0.3)',
                       }}
                     >
-                      <Banknote size={15} /> Terima & Lunas
+                      <Banknote size={15} /> Terima Tunai
                     </button>
                   ) : (
                     <button
@@ -406,18 +407,17 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
                 )}
 
                 {order.status === 'confirmed' && (
-                  <button
-                    onClick={() => onUpdateStatus(String(order.id), 'preparing')}
+                  <button disabled
                     style={{
                       width: '100%', padding: '11px 16px', borderRadius: '10px',
                       background: 'linear-gradient(135deg, #7C3AED, #6D28D9)',
                       color: '#fff', fontSize: '12px', fontWeight: 800,
                       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                      border: 'none', cursor: 'pointer',
+                      border: 'none', cursor: 'not-allowed',
                       boxShadow: '0 4px 14px rgba(124,58,237,0.3)',
                     }}
                   >
-                    <ChefHat size={15} /> Mulai Meracik
+                    <ChefHat size={15} /> (Hanya Kitchen yang bisa menggunakan tombol ini!!)
                   </button>
                 )}
 
@@ -429,11 +429,11 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
                       background: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
                       color: '#fff', fontSize: '12px', fontWeight: 800,
                       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                      border: 'none', cursor: 'pointer',
+                      border: 'none', cursor: 'not-allowed',
                       boxShadow: '0 4px 14px rgba(37,99,235,0.3)',
                     }}
                   >
-                    <Sparkles size={15} /> Pesanan Siap!
+                    <Sparkles size={15} /> (Hanya Kitchen yang bisa menggunakan tombol ini!!)
                   </button>
                 )}
 
