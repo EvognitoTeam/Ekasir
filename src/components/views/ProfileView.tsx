@@ -37,6 +37,7 @@ type SessionUser = {
   role: string;
   email?: string;
   memberId?: string;
+  member_id?: string;
   points: number;
 
   tier: string;
