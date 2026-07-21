@@ -230,6 +230,8 @@ export const tableList = mysqlTable("table_list", {
 export const reservations = mysqlTable("reservations", {
   id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
   user_id: bigint("user_id", { mode: "number", unsigned: true }),
+  customer_name: varchar("guest_name", { length: 120 }),
+  customer_phone: varchar("guest_name", { length: 120 }),
   table_id: bigint("table_id", { mode: "number", unsigned: true }),
   mitra_id: bigint("mitra_id", { mode: "number", unsigned: true }),
   branch_id: bigint("branch_id", { mode: "number", unsigned: true }), // Branch ID
