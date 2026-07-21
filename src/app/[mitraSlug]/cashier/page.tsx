@@ -1,0 +1,1072 @@
+"use client";
+
+import { Capacitor } from '@capacitor/core';
+import { BarcodeScanner } from '@capacitor-mlkit/barcode-scanning';
+import { useEffect, useState, useMemo, useRef } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { useMenuStore } from '@/store/menu.store';
+import { Order } from '@/types/menu'; 
+import OrderCard from '@/components/cashier/OrderCard';
+import { formatPrice } from '@/utils/formatters';
+import CashierPOS from '@/components/cashier/CashierPOS';
+import {
+  ArrowLeft, BellRing, ReceiptText, ShieldCheck, RefreshCw,
+  Sparkles, ShoppingBag, TrendingUp, RotateCcw, Coffee, Plus, Loader2, QrCode, Camera, X,
+  Printer, Bluetooth 
+} from 'lucide-react';
+import AdminDashboardView from '@/components/views/AdminDashboardView';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Scanner } from '@yudiel/react-qr-scanner'; 
+import { Toast } from '@/utils/toast';
+import { PrinterManager } from '@/lib/printer/PrinterManager';
+import { PrinterDevice } from '@/lib/printer/types';
+
+export default function CashierApp() {
+  const params = useParams();
+  const router = useRouter();
+  const slug = (params.mitraSlug as string) || (params.slug as string) || "";
+
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [role, setRole] = useState<'cashier' | 'owner' | 'kitchen' | null>(null);
+  const [activeStaffName, setActiveStaffName] = useState('');
+  
+  const [isScanning, setIsScanning] = useState(true);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const physicalScannerBuffer = useRef(''); 
+
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [mitraProfile, setMitraProfile] = useState<{ name: string }>({ name: 'Kasir' });
+  const [isLoadingInitial, setIsLoadingInitial] = useState(true);
+
+  const [activeTab, setActiveTab] = useState<'pending' | 'preparing' | 'ready' | 'completed'>('pending');
+  const [notification, setNotification] = useState<string | null>(null);
+  const [undoAction, setUndoAction] = useState<{
+    orderId: string; oldStatus: Order['status']; oldPaymentStatus?: Order['paymentStatus']; timeoutId: ReturnType<typeof setTimeout>;
+  } | null>(null);
+  const [isPOSMode, setIsPOSMode] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const [cashPaymentPopup, setCashPaymentPopup] = useState<Order | null>(null);
+  const [receivedAmount, setReceivedAmount] = useState<string>('');
+  const [printers, setPrinters] = useState<PrinterDevice[]>([]);
+  const [selectedPrinter, setSelectedPrinter] = useState<PrinterDevice | null>(null);
+  const [showPrinterModal, setShowPrinterModal] = useState(false);
+  const [isScanningPrinter, setIsScanningPrinter] = useState(false);
+
+  const isNative = Capacitor.isNativePlatform();
+
+  const { setMenu } = useMenuStore();
+
+  const handleScanPrinter = async () => {
+    try {
+      const devices = await PrinterManager.scan();
+      setPrinters(devices);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSavePrinter = async () => {
+
+    if (!selectedPrinter) return;
+
+    await PrinterManager.savePrinter(
+      selectedPrinter
+    );
+
+    alert("Printer berhasil disimpan");
+  };
+
+  const handleConnectPrinter = async () => {
+    try {
+      await PrinterManager.connect();
+
+      alert("Printer terhubung");
+    } catch (err) {
+      alert("Gagal connect");
+    }
+  };
+
+  const handleTestPrint = async () => {
+    try {
+      await PrinterManager.testPrint();
+    } catch (err) {
+      console.error(err);
+      alert("Printer belum terhubung");
+    }
+  };
+
+  const handleNativeScan = async () => {
+    try {
+      const { barcodes } = await BarcodeScanner.scan();
+
+      if (barcodes.length > 0) {
+        const value = barcodes[0].rawValue;
+
+        if (value) {
+          handleTokenScan(value);
+        }
+      }
+    } catch (error) {
+      console.error('Scan gagal:', error);
+    }
+  };
+  const requestCameraPermission = async () => {
+    const status = await BarcodeScanner.requestPermissions();
+
+    return (
+      status.camera === 'granted' ||
+      status.camera === 'limited'
+    );
+  };
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      audioRef.current = new Audio('/notification.mp3');
+    }
+
+    const unlockAudio = () => {
+      if (audioRef.current) {
+        audioRef.current.play().then(() => {
+          audioRef.current?.pause();
+          if (audioRef.current) audioRef.current.currentTime = 0;
+        }).catch(() => {});
+      }
+      
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+
+    window.addEventListener('click', unlockAudio);
+    window.addEventListener('keydown', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio);
+
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!slug) return;
+
+    const restoreCashierSession = async () => {
+      const storageKey = `evo_cashier_session_${slug}`;
+      const storedSession = localStorage.getItem(storageKey);
+      if (!storedSession) return;
+
+      try {
+        const parsed = JSON.parse(storedSession);
+        if (!parsed?.token) {
+          localStorage.removeItem(storageKey);
+          return;
+        }
+
+        // Verifikasi ulang QR untuk memulihkan cookie HTTP-only dan scope cabang.
+        const response = await fetch('/api/pos/verify-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: parsed.token, slug }),
+        });
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          localStorage.removeItem(storageKey);
+          return;
+        }
+
+        const restoredRole = String(result.data.role || '').toLowerCase();
+        if (restoredRole !== 'cashier' && restoredRole !== 'owner') {
+          localStorage.removeItem(storageKey);
+          return;
+        }
+
+        setActiveStaffName(result.data.name);
+        setRole(restoredRole);
+        setIsAuthenticated(true);
+        localStorage.setItem(storageKey, JSON.stringify({
+          ...parsed,
+          name: result.data.name,
+          role: restoredRole,
+          branchId: result.data.branchId ?? null,
+        }));
+      } catch {
+        localStorage.removeItem(storageKey);
+      }
+    };
+
+    void restoreCashierSession();
+  }, [slug]);
+
+  useEffect(() => {
+    if (!slug) return;
+    
+    const initApp = async () => {
+      try {
+        const resSettings = await fetch(`/api/settings?slug=${slug}`);
+        const dataSettings = await resSettings.json();
+        if (dataSettings.success && dataSettings.data) {
+          setMitraProfile({ name: dataSettings.data.cafeName || 'Kasir' });
+        }
+
+        const resMenu = await fetch(`/api/menu?slug=${slug}`);
+        const dataMenu = await resMenu.json();
+        
+        if (dataMenu.success) {
+           const rawItems = dataMenu.items || [];
+           const menuCategories = dataMenu.categories || [];
+           const allAddons = dataMenu.addons || []; 
+           const enrichedItems = rawItems.map((item: any) => ({
+               ...item,
+               categorizedAddons: [{ addons: allAddons }] 
+           }));
+           setMenu(enrichedItems, menuCategories);
+        }
+      } catch (e) {
+        console.error("Gagal inisialisasi awal:", e);
+      } finally {
+        setIsLoadingInitial(false);
+      }
+    };
+    initApp();
+  }, [slug]);
+
+  const fetchOrders = async () => {
+    if (!slug || !isAuthenticated) return;
+    try {
+      const res = await fetch(`/api/orders/history?slug=${slug}`);
+      const result = await res.json();
+
+      if (res.status === 401 || res.status === 403) {
+        localStorage.removeItem(`evo_cashier_session_${slug}`);
+        setIsAuthenticated(false);
+        setRole(null);
+        setActiveStaffName('');
+        Toast.fire({ icon: 'error', title: result.message || 'Sesi kasir berakhir' });
+        return;
+      }
+      
+      if (result.success && Array.isArray(result.data)) {
+        setOrders(prev => {
+           if (prev.length > 0 && result.data.length > prev.length) {
+             
+             if (audioRef.current) {
+               audioRef.current.currentTime = 0; 
+               audioRef.current.play().catch((e) => {
+                 console.warn("Audio diblokir: Kasir harus klik layar/tekan tombol minimal 1x setelah refresh.", e);
+               });
+             }
+
+             Toast.fire({
+               icon: 'info',
+               title: 'Ada Pesanan Baru!'
+             });
+
+             setNotification('Pesanan baru masuk!');
+             setTimeout(() => setNotification(null), 5000);
+           }
+           return result.data;
+        });
+      }
+    } catch (e) {
+      console.error("Gagal load orders:", e);
+    }
+  };
+
+  useEffect(() => {
+    if (!isAuthenticated) return; 
+    fetchOrders(); 
+    const interval = setInterval(() => { fetchOrders(); }, 2000); 
+    return () => clearInterval(interval);
+  }, [slug, isAuthenticated]);
+
+  const handleTokenScan = async (token: string) => {
+    if (isVerifying) return; 
+    setIsVerifying(true);
+    setIsScanning(false);
+
+    try {
+      const res = await fetch('/api/pos/verify-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, slug })
+      });
+      const result = await res.json();
+
+      if (result.success) {
+        const staffRole = result.data.role.toLowerCase();
+        
+        if (staffRole !== 'cashier' && staffRole !== 'owner') {
+          Toast.fire({ icon: 'error', title: 'Akses Ditolak! QR ini tidak memiliki izin Kasir.' });
+          return;
+        }
+
+        const staffName = result.data.name;
+        setRole(staffRole); 
+        setActiveStaffName(staffName);
+        setIsAuthenticated(true);
+        
+        localStorage.setItem(`evo_cashier_session_${slug}`, JSON.stringify({
+          name: staffName,
+          role: staffRole,
+          token: token,
+          branchId: result.data.branchId ?? null
+        }));
+
+        Toast.fire({ icon: 'success', title: `Selamat Bekerja, ${staffName}!` });
+      } else {
+        Toast.fire({ icon: 'error', title: result.message });
+      }
+    } catch (error) {
+      Toast.fire({ icon: 'error', title: 'Gagal menghubungi server' });
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      if (e.key === 'Enter') {
+        if (physicalScannerBuffer.current.length > 10) {
+          handleTokenScan(physicalScannerBuffer.current);
+        }
+        physicalScannerBuffer.current = ''; 
+      } else if (e.key.length === 1) {
+        physicalScannerBuffer.current += e.key;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isAuthenticated]);
+
+  const logout = async () => {
+    try {
+      // 1. Ambil data session sebelum dihapus untuk mengetahui ID/Token kasir
+      const sessionData = localStorage.getItem(`evo_cashier_session_${slug}`);
+      
+      if (sessionData) {
+        const parsedSession = JSON.parse(sessionData);
+        
+        // 2. Tembak API Logout untuk update is_login = 0 di database
+        // Asumsi data session memiliki property .id
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ token: parsedSession.token }), // Sesuaikan jika kamu menyimpannya sebagai 'token'
+        });
+      }
+    } catch (error) {
+      console.error("Gagal melakukan logout dari server:", error);
+    } finally {
+      // 3. Apapun yang terjadi (berhasil/gagal API-nya), tetap bersihkan state di frontend
+      localStorage.removeItem(`evo_cashier_session_${slug}`);
+      setIsAuthenticated(false); 
+      setRole(null); 
+      setActiveStaffName(''); 
+      setIsScanning(true); 
+    }
+  };
+
+  const executeUpdate = async (orderId: string, newStatus: Order['status'], newPaymentStatus?: Order['paymentStatus'], extraData?: any) => {
+    try {
+      setOrders(prev => prev.map(o => String(o.id) === orderId ? { ...o, status: newStatus, paymentStatus: newPaymentStatus || o.paymentStatus, ...extraData } : o));
+      await fetch(`/api/orders/history?slug=${slug}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, status: newStatus, paymentStatus: newPaymentStatus, ...extraData })
+      });
+    } catch (e) {
+      console.error("Gagal update status:", e);
+    }
+  };
+
+  const updateOrderStatus = (orderId: string, newStatus: Order['status'], newPaymentStatus?: Order['paymentStatus']) => {
+    const cur = orders.find(o => String(o.id) === String(orderId));
+    if (!cur) return;
+    
+    if (newStatus === 'confirmed' && cur.paymentMethod === 'cash' && !cur.getPayment) {
+      setCashPaymentPopup(cur);
+      setReceivedAmount(''); 
+      return; 
+    }
+
+    if (undoAction?.timeoutId) clearTimeout(undoAction.timeoutId);
+    executeUpdate(orderId, newStatus, newPaymentStatus);
+    const timeoutId = setTimeout(() => setUndoAction(null), 4000);
+    setUndoAction({ orderId, oldStatus: cur.status, oldPaymentStatus: cur.paymentStatus, timeoutId });
+  };
+
+  const handleConfirmCashPayment = () => {
+    if (!cashPaymentPopup) return;
+    
+    const totalBill = Number(cashPaymentPopup.totalAfterDiscount || cashPaymentPopup.total_after_discount || cashPaymentPopup.totalPrice || cashPaymentPopup.total_price || 0);
+    const received = Number(receivedAmount.replace(/\D/g, '')); 
+
+    if (received < totalBill) {
+      Toast.fire({ icon: 'error', title: 'Nominal uang kurang!' });
+      return;
+    }
+
+    const change = received - totalBill;
+    
+    executeUpdate(String(cashPaymentPopup.id), 'confirmed', '1', { 
+      getPayment: received, 
+      cashChange: change 
+    });
+
+    Toast.fire({ icon: 'success', title: `Lunas! Kembalian: ${formatPrice(change)}` });
+    setCashPaymentPopup(null);
+  };
+
+  const updateOrderNote = async (orderId: string, note: string) => {
+    try {
+      setOrders(prev => prev.map(o => String(o.id) === orderId ? { ...o, adminNotes: note } : o));
+      await fetch(`/api/orders/history?slug=${slug}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, adminNotes: note })
+      });
+    } catch (e) {
+      console.error("Gagal update note:", e);
+    }
+  };
+
+  const handlePOSSubmit = (newOrder: Order) => {
+    setOrders(prev => [newOrder, ...prev]);
+    setIsPOSMode(false);
+  };
+
+  const handleUndo = () => {
+    if (!undoAction) return;
+    clearTimeout(undoAction.timeoutId);
+    executeUpdate(undoAction.orderId, undoAction.oldStatus, undoAction.oldPaymentStatus);
+    setUndoAction(null);
+  };
+
+  const pendingCount   = useMemo(() => orders.filter(o => o.status === 'pending').length, [orders]);
+  const preparingCount = useMemo(() => orders.filter(o => o.status === 'confirmed' || o.status === 'preparing').length, [orders]);
+  const readyCount     = useMemo(() => orders.filter(o => o.status === 'ready').length, [orders]);
+  const completedCount = useMemo(() => orders.filter(o => o.status === 'completed' || o.status === 'cancelled').length, [orders]);
+  
+  const todayOrders    = useMemo(() => { const t = new Date().toDateString(); return orders.filter(o => new Date(o.createdAt || o.created_at || 0).toDateString() === t); }, [orders]);
+  const totalRevenue   = useMemo(() => todayOrders.reduce((s, o) => s + (Number(o.totalPrice || o.total_price) || 0), 0), [todayOrders]);
+  const totalProfit    = useMemo(() => totalRevenue * 0.45, [totalRevenue]);
+
+  const filteredOrders = useMemo(() => orders.filter(o => {
+    if (activeTab === 'pending')   return o.status === 'pending';
+    if (activeTab === 'preparing') return o.status === 'confirmed' || o.status === 'preparing';
+    if (activeTab === 'ready')     return o.status === 'ready';
+    if (activeTab === 'completed') return o.status === 'completed' || o.status === 'cancelled';
+    return true;
+  }).sort((a, b) => {
+    const idA = Number(a.id) || 0;
+    const idB = Number(b.id) || 0;
+    if (idA !== 0 && idB !== 0) return idB - idA;
+    const dateA = String(a.createdAt || a.created_at || 0).replace(' ', 'T');
+    const dateB = String(b.createdAt || b.created_at || 0).replace(' ', 'T');
+    return (new Date(dateB).getTime() || 0) - (new Date(dateA).getTime() || 0);
+  }), [orders, activeTab]);
+
+  if (isLoadingInitial) {
+    return (
+      <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#f6f3ee' }}>
+         <Loader2 className="w-8 h-8 animate-spin text-[#0E5C37]" />
+         <p style={{ marginTop: 16, fontSize: 12, fontWeight: 700, color: '#9CA3AF' }}>Menyiapkan Sistem...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div style={{
+        minHeight: '100dvh', background: 'linear-gradient(160deg, #f6f3ee 0%, #e8e2d9 100%)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', position: 'relative'
+      }}>
+        <div style={{ position: 'absolute', top: '-80px', right: '-80px', width: '320px', height: '320px', borderRadius: '50%', background: 'rgba(14,92,55,0.06)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', bottom: '-60px', left: '-60px', width: '240px', height: '240px', borderRadius: '50%', background: 'rgba(14,92,55,0.04)', pointerEvents: 'none' }} />
+
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="w-full max-w-sm bg-white rounded-3xl border border-stone-200 shadow-2xl p-8 flex flex-col items-center relative z-10"
+        >
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#0E5C37] to-[#065F46] flex items-center justify-center mb-4 shadow-lg shadow-emerald-900/20">
+            <QrCode className="w-8 h-8 text-white" />
+          </div>
+          <h2 className="text-2xl font-black text-stone-800 tracking-tight text-center font-display leading-tight">{mitraProfile.name}</h2>
+          <p className="text-xs text-stone-500 mt-1.5 text-center px-4 mb-6">Arahkan QR Code Karyawan ke kamera atau gunakan Scanner Fisik</p>
+
+          <div className="w-full">
+            {isVerifying ? (
+              <div className="flex flex-col items-center justify-center p-10 bg-stone-50 rounded-2xl border border-stone-100">
+                <Loader2 className="w-10 h-10 animate-spin text-[#0E5C37] mb-3" />
+                <p className="text-xs font-bold text-stone-600 uppercase tracking-widest">Memverifikasi...</p>
+              </div>
+            ) : (
+              <>
+                {!isNative && isScanning ? (
+                <div className="rounded-2xl overflow-hidden border-4 border-dashed border-[#0E5C37]/50 p-1 relative bg-black aspect-square max-h-[250px] mx-auto w-full max-w-[250px] mb-4">
+                  <Scanner
+                    onScan={(result) => {
+                      if (result && result.length > 0) {
+                        handleTokenScan(result[0].rawValue);
+                      }
+                    }}
+                    components={{ finder: false }}
+                  />
+
+                  <button
+                    onClick={() => setIsScanning(false)}
+                    className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-red-500/80 backdrop-blur text-white text-xs font-bold rounded-full shadow-lg"
+                  >
+                    Tutup Kamera
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={async () => {
+                    if (isNative) {
+
+                      const granted =
+                        await requestCameraPermission();
+
+                      if (!granted) {
+                        alert('Izin kamera ditolak');
+                        return;
+                      }
+
+                      await handleNativeScan();
+                      return;
+                    }
+
+                    setIsScanning(true);
+                    
+                  }}
+                  className="w-full py-4 mb-4 rounded-2xl bg-stone-50 border border-stone-200 text-stone-600 font-bold text-sm flex flex-col items-center gap-2 hover:bg-stone-100 transition-all active:scale-95"
+                >
+                  <Camera className="w-6 h-6 text-[#0E5C37]" />
+
+                  {isNative
+                    ? 'Scan QR Native'
+                    : 'Buka Kamera Web'}
+                </button>
+              )}
+                
+                <div className="text-center p-4 bg-emerald-50/50 rounded-xl border border-emerald-100">
+                  <p className="text-[11px] font-medium text-emerald-800 leading-relaxed">
+                    <strong className="font-bold">Scanner fisik juga aktif.</strong> <br/>Langsung *Tembak* QR Code ke layar.
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (role === 'owner') {
+    return (
+      <div style={{ minHeight: '100dvh', background: '#f6f3ee', display: 'flex', justifyContent: 'center', fontFamily: 'var(--font-body)' }}>
+        <div style={{ width: '100%', maxWidth: '480px', height: '100dvh', background: '#fff', display: 'flex', flexDirection: 'column', boxShadow: '0 0 40px rgba(28,28,25,0.1)', border: '1px solid #e5e2dd' }}>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            <AdminDashboardView onBack={logout} />
+          </div>
+          <div style={{ padding: '12px 20px', background: '#fff', borderTop: '1px solid #f0ede9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#5a4b44' }}>
+              <ShieldCheck size={14} color="#0E5C37" />
+              <span>Login: <strong className="text-stone-800">{activeStaffName}</strong> (Owner)</span>
+            </div>
+            <button onClick={logout} style={{ color: '#DC2626', fontWeight: 700, fontSize: '11px', background: 'none', border: 'none', cursor: 'pointer', minHeight: 'auto' }}>Keluar</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const TABS = [
+    { id: 'pending',   label: 'Baru',           count: pendingCount   },
+    { id: 'preparing', label: 'Diracik',        count: preparingCount },
+    { id: 'ready',     label: 'Siap Disajikan', count: readyCount     },
+    { id: 'completed', label: 'Selesai',        count: completedCount },
+  ];
+
+  // @ts-ignore
+  const popupTotalBill = cashPaymentPopup ? Number(cashPaymentPopup.totalAfterDiscount || cashPaymentPopup.total_after_discount || cashPaymentPopup.totalPrice || cashPaymentPopup.total_price || 0) : 0;
+  const popupReceived = Number(receivedAmount.replace(/\D/g, '')) || 0;
+  const popupChange = popupReceived - popupTotalBill;
+
+  return (
+    <div style={{ minHeight: '100dvh', background: '#f0ede9', display: 'flex', justifyContent: 'center', fontFamily: 'var(--font-body)' }}>
+      <div style={{ width: '100%', maxWidth: '480px', height: '100dvh', background: '#fafaf9', display: 'flex', flexDirection: 'column', boxShadow: '0 0 40px rgba(28,28,25,0.12)', position: 'relative', overflow: 'hidden' }}>
+
+        <AnimatePresence>
+          {cashPaymentPopup && (
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[100] bg-stone-900/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-6"
+            >
+              <motion.div 
+                initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                className="bg-white w-full sm:rounded-3xl rounded-t-3xl overflow-hidden flex flex-col max-h-[90vh]"
+              >
+                <div className="p-5 border-b border-stone-100 flex items-center justify-between bg-stone-50">
+                  <div>
+                    <h3 className="text-lg font-black text-stone-800 tracking-tight leading-none">Terima Tunai</h3>
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-stone-400 mt-1">Order #{cashPaymentPopup.id}</p>
+                  </div>
+                  <button onClick={() => setCashPaymentPopup(null)} className="w-8 h-8 rounded-full bg-white border border-stone-200 flex items-center justify-center hover:bg-stone-100"><X className="w-4 h-4 text-stone-500" /></button>
+                </div>
+
+                <div className="p-6 space-y-6 overflow-y-auto">
+                  <div className="text-center p-6 rounded-2xl bg-amber-50 border border-amber-100">
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-amber-600 mb-1">Total Tagihan</p>
+                    <p className="text-4xl font-black text-amber-600 font-display">{formatPrice(popupTotalBill)}</p>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold uppercase tracking-widest text-stone-500 mb-2 block">Uang Diterima (Rp)</label>
+                    <input 
+                      type="text" 
+                      autoFocus
+                      inputMode="numeric"
+                      value={receivedAmount ? formatPrice(Number(receivedAmount.replace(/\D/g, ''))).replace('Rp', '').trim() : ''}
+                      onChange={(e) => setReceivedAmount(e.target.value.replace(/\D/g, ''))}
+                      className="w-full bg-white border-2 border-stone-200 rounded-xl py-4 px-5 text-2xl font-black text-stone-800 outline-none transition-all focus:border-[#0E5C37] focus:ring-4 focus:ring-[#0E5C37]/10"
+                      placeholder="0"
+                    />
+                    
+                    <div className="flex gap-2 mt-3 overflow-x-auto pb-1 custom-scrollbar">
+                      <button onClick={() => setReceivedAmount(String(popupTotalBill))} className="shrink-0 px-4 py-2 rounded-lg bg-stone-100 text-stone-700 text-xs font-bold border border-stone-200 hover:bg-stone-200">Uang Pas</button>
+                      <button onClick={() => setReceivedAmount('50000')} className="shrink-0 px-4 py-2 rounded-lg bg-stone-100 text-stone-700 text-xs font-bold border border-stone-200 hover:bg-stone-200">50.000</button>
+                      <button onClick={() => setReceivedAmount('100000')} className="shrink-0 px-4 py-2 rounded-lg bg-stone-100 text-stone-700 text-xs font-bold border border-stone-200 hover:bg-stone-200">100.000</button>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center p-4 rounded-xl border border-stone-100 bg-stone-50">
+                    <span className="text-xs font-bold uppercase tracking-widest text-stone-500">Kembalian</span>
+                    <span className={`text-lg font-black ${popupChange < 0 ? 'text-red-500' : 'text-emerald-600'}`}>
+                      {popupChange < 0 ? 'Uang Kurang' : formatPrice(popupChange)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-5 border-t border-stone-100 bg-white">
+                  <button 
+                    onClick={handleConfirmCashPayment}
+                    disabled={popupReceived < popupTotalBill}
+                    className="w-full py-4 rounded-xl bg-[#0E5C37] text-white font-bold uppercase tracking-widest flex justify-center items-center gap-2 hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#0E5C37]/20"
+                  >
+                    <ReceiptText className="w-5 h-5" /> Simpan & Lunas
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        
+        <AnimatePresence>
+          {isPOSMode && (
+            <CashierPOS onClose={() => setIsPOSMode(false)} onSubmitOrder={handlePOSSubmit} />
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+        {showPrinterModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden"
+            >
+
+              {/* Header */}
+              <div className="p-5 border-b bg-gradient-to-r from-[#0E5C37] to-emerald-600 text-white">
+                <h3 className="font-black text-lg">
+                  Pengaturan Printer
+                </h3>
+                <p className="text-xs opacity-80 mt-1">
+                  Hubungkan printer thermal Bluetooth atau WiFi
+                </p>
+              </div>
+
+              <div className="p-5">
+
+                {/* Scan */}
+                <button
+                  onClick={async () => {
+                    setIsScanningPrinter(true);
+
+                    try {
+                      const devices =
+                        await PrinterManager.scan();
+
+                      setPrinters(devices);
+                    } finally {
+                      setIsScanningPrinter(false);
+                    }
+                  }}
+                  className="w-full py-3 rounded-2xl bg-[#0E5C37] text-white font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all active:scale-95"
+                >
+                  {isScanningPrinter ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Mencari Printer...
+                    </>
+                  ) : (
+                    <>
+                      🔍 Scan Printer
+                    </>
+                  )}
+                </button>
+
+                {/* List Printer */}
+                <div className="mt-4 max-h-[300px] overflow-y-auto space-y-2">
+
+                  {printers.length === 0 && !isScanningPrinter && (
+                    <div className="text-center text-sm text-stone-400 py-6">
+                      Belum ada printer ditemukan
+                    </div>
+                  )}
+
+                  {printers.map((printer) => (
+                    <button
+                      key={printer.id}
+                      onClick={() => setSelectedPrinter(printer)}
+                      className={`
+                        w-full
+                        p-4
+                        rounded-2xl
+                        border
+                        text-left
+                        transition-all
+                        ${
+                          selectedPrinter?.id === printer.id
+                            ? "border-emerald-600 bg-emerald-50"
+                            : "border-stone-200 hover:border-stone-300"
+                        }
+                      `}
+                    >
+                      <div className="flex items-center justify-between">
+
+                        <div>
+                          <div className="font-bold text-sm text-stone-800">
+                            {printer.name}
+                          </div>
+
+                          <div className="text-xs text-stone-500 mt-1">
+                            {printer.address}
+                          </div>
+
+                          <div className="text-[10px] uppercase tracking-wider text-stone-400 mt-1">
+                            {printer.type}
+                          </div>
+                        </div>
+
+                        {selectedPrinter?.id === printer.id && (
+                          <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-black">
+                            ✓
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Printer Terpilih */}
+                {selectedPrinter && (
+                  <div className="mt-4 p-3 rounded-2xl bg-emerald-50 border border-emerald-200">
+                    <div className="text-xs text-emerald-700 font-bold uppercase">
+                      Printer Dipilih
+                    </div>
+
+                    <div className="text-sm font-bold text-emerald-900 mt-1">
+                      {selectedPrinter.name}
+                    </div>
+
+                    <div className="text-xs text-emerald-700">
+                      {selectedPrinter.address}
+                    </div>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="grid grid-cols-2 gap-3 mt-5">
+
+                  <button
+                    disabled={!selectedPrinter}
+                    onClick={async () => {
+                      try {
+
+                        await PrinterManager.savePrinter(
+                          selectedPrinter!
+                        );
+
+                        await PrinterManager.connect();
+
+                        alert("Printer berhasil terhubung");
+
+                      } catch (err) {
+                        console.error(err);
+                        alert("Gagal menghubungkan printer");
+                      }
+                    }}
+                    className="py-3 rounded-2xl bg-[#0E5C37] text-white font-bold disabled:bg-stone-300"
+                  >
+                    Connect
+                  </button>
+
+                  <button
+                    disabled={!selectedPrinter}
+                    onClick={handleTestPrint}
+                    className="py-3 rounded-2xl border border-stone-300 font-bold disabled:opacity-50"
+                  >
+                    Test Print
+                  </button>
+
+                </div>
+
+              </div>
+
+              {/* Footer */}
+              <div className="p-5 border-t bg-stone-50">
+                <button
+                  onClick={() => setShowPrinterModal(false)}
+                  className="w-full py-3 rounded-2xl bg-white border border-stone-200 font-bold hover:bg-stone-100"
+                >
+                  Tutup
+                </button>
+              </div>
+
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+        <AnimatePresence>
+          {notification && (
+            <motion.div initial={{ opacity:0, y:-20 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-20 }}
+              style={{ position:'absolute', top:'72px', left:'16px', right:'16px', zIndex:50,
+                background: 'linear-gradient(135deg,#0E5C37,#065F46)', color:'#fff',
+                padding:'12px 16px', borderRadius:'12px', boxShadow:'0 8px 24px rgba(14,92,55,0.3)',
+                display:'flex', alignItems:'center', gap:'8px', fontSize:'13px', fontWeight:600 }}>
+              <BellRing size={16} /> {notification}
+            </motion.div>
+          )}
+          {undoAction && (
+            <motion.div initial={{ opacity:0, y:50 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:20 }}
+              style={{ position:'absolute', bottom:'72px', left:'16px', right:'16px', zIndex:50,
+                background:'#1c1c19', color:'#fff', padding:'12px 16px', borderRadius:'12px',
+                boxShadow:'0 8px 32px rgba(28,28,25,0.25)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <div>
+                <p style={{ margin:0, fontSize:'12px', fontWeight:700 }}>Status diperbarui</p>
+                <p style={{ margin:0, fontSize:'10px', color:'#9CA3AF' }}>Pesanan #{undoAction.orderId}</p>
+              </div>
+              <button onClick={handleUndo} style={{
+                display:'flex', alignItems:'center', gap:'6px', padding:'7px 14px', borderRadius:'8px',
+                background:'#374151', color:'#fff', fontSize:'11px', fontWeight:700,
+                border:'1px solid #4B5563', cursor:'pointer', minHeight:'auto'
+              }}>
+                <RotateCcw size={12} /> Batalkan
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <header style={{
+          padding: '14px 20px', background: '#fff', borderBottom: '1px solid #f0ede9',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          boxShadow: '0 2px 12px rgba(28,28,25,0.05)', flexShrink: 0, zIndex: 30
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{
+              width: '36px', height: '36px', borderRadius: '10px',
+              background: 'linear-gradient(135deg,#0E5C37,#065F46)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 4px 10px rgba(14,92,55,0.25)'
+            }}>
+              <Coffee size={17} color="#fff" />
+            </div>
+            <div>
+              <p style={{ margin:0, fontSize:'9px', color:'#9CA3AF', fontFamily:'var(--font-label)', letterSpacing:'0.1em' }}>
+                POS: {role?.toUpperCase()}
+              </p>
+              <h1 style={{ margin:0, fontSize:'16px', fontWeight:800, color:'#1c1c19', lineHeight:1.2, fontFamily:'var(--font-display)' }}>
+                 {mitraProfile.name}
+              </h1>
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
+          {isNative && (
+            <button
+              onClick={() => setShowPrinterModal(true)}
+              title="Printer"
+              style={{
+                width:'34px',
+                height:'34px',
+                borderRadius:'8px',
+                border:'1.5px solid #e5e2dd',
+                background:'#fff',
+                color:'#0E5C37',
+                display:'flex',
+                alignItems:'center',
+                justifyContent:'center',
+                cursor:'pointer'
+              }}
+            >
+              <Printer size={14} />
+            </button>
+          )}
+            <button onClick={() => fetchOrders()} title="Refresh" style={{
+              width:'34px', height:'34px', borderRadius:'8px', border:'1.5px solid #e5e2dd',
+              background:'#fff', color:'#5a4b44', display:'flex', alignItems:'center', justifyContent:'center',
+              cursor:'pointer', minHeight:'auto'
+            }}>
+              <RefreshCw size={14} />
+            </button>
+            <button onClick={() => router.push(`/${slug}/menu`)} style={{
+              width:'34px', height:'34px', borderRadius:'8px',
+              background:'linear-gradient(135deg,#0E5C37,#065F46)',
+              color:'#fff', display:'flex', alignItems:'center', justifyContent:'center',
+              textDecoration:'none', boxShadow:'0 4px 10px rgba(14,92,55,0.25)', border:'none', cursor:'pointer'
+            }}>
+              <ArrowLeft size={14} />
+            </button>
+          </div>
+        </header>
+
+        {role === 'cashier' && (
+          <div style={{ padding:'12px 16px', background:'#fff', borderBottom:'1px solid #f0ede9', display:'flex', gap:'10px', flexShrink:0 }}>
+            {[
+              { icon: <ReceiptText size={13} />, label: 'Penjualan', value: `${todayOrders.length} nota`, color: '#5a4b44' },
+              { icon: <TrendingUp size={13} />,  label: 'Pendapatan', value: formatPrice(totalRevenue), color: '#1c1c19' },
+              { icon: <Sparkles size={13} />,    label: 'Est. Laba',  value: formatPrice(totalProfit),  color: '#0E5C37' },
+            ].map((s, i) => (
+              <div key={i} style={{
+                flex:1, padding:'10px 12px', borderRadius:'12px',
+                background:'#fafaf9', border:'1.5px solid #f0ede9',
+                boxShadow:'0 1px 4px rgba(28,28,25,0.04)'
+              }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'4px', color:'#9CA3AF', marginBottom:'4px' }}>
+                  {s.icon}
+                  <span style={{ fontSize:'9px', fontFamily:'var(--font-label)', letterSpacing:'0.06em' }}>{s.label}</span>
+                </div>
+                <p style={{ margin:0, fontSize:'12px', fontWeight:800, color:s.color, lineHeight:1 }}>{s.value}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ padding:'10px 16px', background:'#fff', borderBottom:'1px solid #f0ede9', display:'flex', gap:'8px', flexShrink:0 }}>
+          {TABS.map(tab => {
+            const active = activeTab === tab.id;
+            return (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} style={{
+                flex:1, padding:'9px 4px', borderRadius:'10px', fontSize:'10px', fontWeight:700,
+                border: active ? '1.5px solid #0E5C37' : '1.5px solid #f0ede9',
+                background: active ? '#0E5C37' : '#fafaf9',
+                color: active ? '#fff' : '#9CA3AF',
+                cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'4px',
+                boxShadow: active ? '0 4px 12px rgba(14,92,55,0.25)' : 'none',
+                transition:'all 0.2s', minHeight:'auto'
+              }}>
+                {tab.label}
+                <span style={{
+                  width:'16px', height:'16px', borderRadius:'6px', fontSize:'9px', fontWeight:800,
+                  background: active ? 'rgba(255,255,255,0.2)' : '#f0ede9',
+                  color: active ? '#fff' : '#5a4b44',
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                }}>
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <main style={{ flex:1, overflowY:'auto', padding:'16px', background:'#f6f3ee' }}>
+          {filteredOrders.length === 0 ? (
+            <div style={{ textAlign:'center', padding:'60px 20px' }}>
+              <div style={{
+                width:'56px', height:'56px', borderRadius:'16px', background:'#fff',
+                border:'1.5px solid #e5e2dd', margin:'0 auto 16px',
+                display:'flex', alignItems:'center', justifyContent:'center',
+                boxShadow:'0 4px 12px rgba(28,28,25,0.06)'
+              }}>
+                <ShoppingBag size={22} color="#d6c2bd" />
+              </div>
+              <p style={{ fontWeight:700, color:'#1c1c19', fontSize:'14px', margin:'0 0 4px', fontFamily:'var(--font-display)' }}>
+                Belum Ada Pesanan
+              </p>
+              <p style={{ fontSize:'12px', color:'#9CA3AF', maxWidth:'220px', margin:'0 auto', lineHeight:1.6 }}>
+                {activeTab === 'pending' ? 'Pesanan baru akan muncul di sini.' : 
+                 activeTab === 'preparing' ? 'Daftar pesanan yang sedang diracik.' : 
+                 activeTab === 'ready' ? 'Pesanan siap disajikan ke pelanggan.' :
+                 'Riwayat pesanan selesai/batal akan tampil di sini.'}
+              </p>
+            </div>
+          ) : (
+            <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
+              <AnimatePresence>
+                {filteredOrders.map(order => (
+                  <OrderCard 
+                    key={order.id} 
+                    order={order} 
+                    onUpdateStatus={updateOrderStatus} 
+                    onUpdateNote={updateOrderNote} 
+                    role={role === 'kitchen' ? 'kitchen' : 'cashier'} 
+                  />
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+        </main>
+
+        <footer style={{
+          padding:'10px 20px', background:'#fff', borderTop:'1px solid #f0ede9',
+          display:'flex', justifyContent:'space-between', alignItems:'center',
+          fontSize:'11px', flexShrink:0
+        }}>
+          <span style={{ color:'#9CA3AF', display:'flex', alignItems:'center', gap:'5px' }}>
+            <span style={{ width:6, height:6, borderRadius:'50%', background:'#10B981', display:'inline-block' }} />
+            Login: <strong className="text-stone-800">{activeStaffName}</strong>
+          </span>
+          <button onClick={logout} style={{ color:'#DC2626', fontWeight:700, background:'none', border:'none', cursor:'pointer', fontSize:'11px', minHeight:'auto' }}>
+            Akhiri Sesi
+          </button>
+        </footer>
+
+        {role === 'cashier' && (
+          <button 
+            onClick={() => setIsPOSMode(true)}
+            style={{
+              position: 'absolute', bottom: '60px', right: '20px', zIndex: 40,
+              width: '56px', height: '56px', borderRadius: '16px',
+              background: 'linear-gradient(135deg, #0E5C37, #065F46)', color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: 'none', cursor: 'pointer', boxShadow: '0 8px 24px rgba(14,92,55,0.4)',
+            }}
+          >
+            <Plus size={24} />
+          </button>
+        )}
+
+      </div>
+    </div>
+  );
+}
