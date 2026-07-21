@@ -414,7 +414,7 @@ function ContactItem({
   label,
   value,
 }: {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: React.ElementType;
   label: string;
   value: string;
 }) {
