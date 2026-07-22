@@ -160,6 +160,9 @@ export const addonsRelations = relations(addons, ({ one }) => ({
 export const orders = mysqlTable("orders", {
   id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
   order_code: varchar("order_code", { length: 255 }).notNull(),
+  idempotencyKey: varchar('idempotency_key', {
+    length: 100,
+  }),
   mitra_id: bigint("mitra_id", { mode: "number", unsigned: true }),
   branch_id: bigint("branch_id", { mode: "number", unsigned: true }), // Branch ID
   cashier_id: bigint("cashier_id", { mode: "number", unsigned: true }),
@@ -173,10 +176,40 @@ export const orders = mysqlTable("orders", {
   confirmedAt: timestamp("confirmed_at"),
   preparingAt: timestamp("preparing_at"),
   readyAt: timestamp("ready_at"),
+  completedAt: timestamp('completed_at'),
+  cancelledAt: timestamp('cancelled_at'),
+  cancelReason: varchar('cancel_reason', {
+    length: 255,
+  }),
   admin_notes: text("admin_notes"),
   is_cashouted: boolean("is_cashouted").default(false).notNull(),
   total_price: decimal("total_price", { precision: 10, scale: 0 }).default('0').notNull(),
   service: decimal("service", { precision: 10, scale: 0 }).default('0').notNull(),
+  platformFee: decimal('platform_fee', {
+    precision: 12,
+    scale: 0,
+  })
+    .default('0')
+    .notNull(),
+  platformFeeRate: decimal('platform_fee_rate', {
+    precision: 5,
+    scale: 2,
+  })
+    .default('1.40')
+    .notNull(),
+  pointsEarned: int('points_earned')
+  .default(0)
+  .notNull(),
+  pointsAwardedAt: timestamp('points_awarded_at'),
+  pointsRedeemed: int('points_redeemed')
+  .default(0)
+  .notNull(),
+  pointsDiscount: decimal('points_discount', {
+    precision: 12,
+    scale: 0,
+  })
+    .default('0')
+    .notNull(),
   tax: decimal("tax", { precision: 10, scale: 0 }).default('0').notNull(),
   discount: decimal("discount", { precision: 10, scale: 0 }),
   totalAfterDiscount: decimal("totalAfterDiscount", { precision: 10, scale: 0 }),
@@ -191,6 +224,7 @@ export const orders = mysqlTable("orders", {
   qr_string: text("qr_string"),
   expiry_time: timestamp("expiry_time"),
   payment_status: mysqlEnum("payment_status", ['1', '2', '3', '4']).default('1').notNull(),
+  paymentPaidAt: timestamp('payment_paid_at'),
   createdAt: timestamp("created_at"),
   updatedAt: timestamp("updated_at"),
   deletedAt: timestamp("deleted_at"),
@@ -291,6 +325,73 @@ export const loyaltyPoints = mysqlTable("loyalty_points", {
   deletedAt: timestamp("deleted_at"),
 });
 
+export const memberPointLedgers = mysqlTable(
+  'member_point_ledgers',
+  {
+    id: bigint('id', {
+      mode: 'number',
+      unsigned: true,
+    })
+      .primaryKey()
+      .autoincrement(),
+
+    mitraId: bigint('mitra_id', {
+      mode: 'number',
+      unsigned: true,
+    }).notNull(),
+
+    userId: bigint('user_id', {
+      mode: 'number',
+      unsigned: true,
+    }).notNull(),
+
+    orderId: bigint('order_id', {
+      mode: 'number',
+      unsigned: true,
+    }),
+
+    cashierId: bigint('cashier_id', {
+      mode: 'number',
+      unsigned: true,
+    }),
+
+    type: mysqlEnum('type', [
+      'earn',
+      'redeem',
+      'adjustment',
+      'reversal',
+      'expired',
+    ]).notNull(),
+
+    points: int('points').notNull(),
+
+    balanceBefore: int('balance_before')
+      .default(0)
+      .notNull(),
+
+    balanceAfter: int('balance_after')
+      .default(0)
+      .notNull(),
+
+    description: varchar('description', {
+      length: 255,
+    }),
+
+    idempotencyKey: varchar('idempotency_key', {
+      length: 100,
+    }),
+
+    createdAt: timestamp('created_at')
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+);
+
 export const reviews = mysqlTable("reviews", {
   id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
   mitra_id: bigint("mitra_id", { mode: "number", unsigned: true }),
@@ -343,6 +444,63 @@ export const settings = mysqlTable('settings', {
   faq: json("faq"), 
   createdAt: timestamp('created_at'),
   updatedAt: timestamp('updated_at'),
+  pointsEnabled: boolean(
+    'points_enabled',
+  )
+    .default(false)
+    .notNull(),
+
+  pointsEarnRate: int(
+    'points_earn_rate',
+  )
+    .default(1000)
+    .notNull(),
+
+  pointsRedeemRate: decimal(
+    'points_redeem_rate',
+    {
+      precision: 12,
+      scale: 0,
+    },
+  )
+    .default('10')
+    .notNull(),
+
+  pointsMinimumRedeem: int(
+    'points_minimum_redeem',
+  )
+    .default(100)
+    .notNull(),
+
+  pointsMaximumRedeem: int(
+    'points_maximum_redeem',
+  ),
+
+  pointsMaxDiscountPercent: decimal(
+    'points_max_discount_percent',
+    {
+      precision: 5,
+      scale: 2,
+    },
+  )
+    .default('50.00')
+    .notNull(),
+
+  pointsRequirePaidOrder: boolean(
+    'points_require_paid_order',
+  )
+    .default(true)
+    .notNull(),
+
+  pointsIncludeTaxService: boolean(
+    'points_include_tax_service',
+  )
+    .default(false)
+    .notNull(),
+
+  pointsUpdatedAt: timestamp(
+    'points_updated_at',
+  ),
 });
 
 // ============================================================================
