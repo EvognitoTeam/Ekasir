@@ -14,9 +14,15 @@ export async function POST(request: Request) {
   try {
     const { token, slug } = await request.json();
 
-    if (!token || !slug) {
+    if (!token) {
       return NextResponse.json(
-        { success: false, message: 'Token dan slug toko wajib diisi' },
+        { success: false, message: 'Harap login terlebih dahulu' },
+        { status: 400 },
+      );
+    }
+    if (!slug) {
+      return NextResponse.json(
+        { success: false, message: 'Slug toko wajib diisi' },
         { status: 400 },
       );
     }
@@ -61,7 +67,7 @@ export async function POST(request: Request) {
     }
 
     const normalizedRole = user.role.toLowerCase();
-    if (!['cashier', 'owner'].includes(normalizedRole)) {
+    if (!['cashier', 'owner','kitchen'].includes(normalizedRole)) {
       return NextResponse.json(
         { success: false, message: 'Akun ini tidak memiliki akses kasir.' },
         { status: 403 },
