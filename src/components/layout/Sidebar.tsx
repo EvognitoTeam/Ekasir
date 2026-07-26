@@ -52,6 +52,10 @@ export default function Sidebar({
     { id: 'profile' as const, label: 'Profil', icon: User, visible: true },
   ].filter((item) => item.visible);
 
+  const isTableNotFound =
+  tableName?.trim().toLowerCase() ===
+  'table not found';
+
   return (
     <aside className="hidden h-[100dvh] w-60 shrink-0 flex-col border-r border-stone-100 bg-[var(--color-surface)] px-4 py-8 md:flex xl:w-72">
       <div className="mb-8 px-3">
@@ -80,7 +84,15 @@ export default function Sidebar({
             <p className="text-[8px] font-label uppercase tracking-widest text-stone-400">
               Meja aktif
             </p>
-            <p className="truncate text-sm font-semibold text-stone-700">{tableName}</p>
+            <p
+              className={`truncate text-sm font-semibold ${
+                isTableNotFound
+                  ? 'text-red-600'
+                  : 'text-stone-700'
+              }`}
+            >
+              {tableName}
+            </p>
           </div>
         </div>
       )}

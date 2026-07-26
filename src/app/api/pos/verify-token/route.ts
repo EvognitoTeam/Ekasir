@@ -67,7 +67,7 @@ export async function POST(request: Request) {
     }
 
     const normalizedRole = user.role.toLowerCase();
-    if (!['cashier', 'owner','kitchen'].includes(normalizedRole)) {
+    if (!['cashier','kitchen'].includes(normalizedRole)) {
       return NextResponse.json(
         { success: false, message: 'Akun ini tidak memiliki akses kasir.' },
         { status: 403 },

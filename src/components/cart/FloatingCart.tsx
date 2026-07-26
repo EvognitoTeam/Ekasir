@@ -40,7 +40,7 @@ export default function FloatingCart({
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 80, opacity: 0 }}
           transition={{ type: 'spring', damping: 28, stiffness: 320 }}
-          className={`pointer-events-none absolute inset-x-0 z-[70] px-3 pb-2 sm:px-4 ${
+          className={`pointer-events-none absolute inset-x-0 z-20 px-3 pb-2 sm:px-4 ${
             showBottomNav
               ? 'bottom-[calc(80px+env(safe-area-inset-bottom))] md:bottom-4'
               : 'bottom-4'

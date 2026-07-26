@@ -1,7 +1,21 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
-import { orders, mitra, cashouts } from '@/db/schema';
-import { eq, and, isNull, inArray, desc } from 'drizzle-orm';
+import {
+  orders,
+  mitra,
+  cashouts,
+} from '@/db/schema';
+
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNull,
+} from 'drizzle-orm';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 const MONTH_NAMES = [
   'Januari',
@@ -16,365 +30,1051 @@ const MONTH_NAMES = [
   'Oktober',
   'November',
   'Desember',
-];
+] as const;
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const slug = searchParams.get('slug');
+type OrderRow = typeof orders.$inferSelect;
 
-  if (!slug) return NextResponse.json({ success: false, message: 'Slug Toko diperlukan' }, { status: 400 });
+type MonthlyBucket = {
+  monthIndex: number;
+  monthName: string;
+  gross: number;
+  net: number;
+  cash: number;
+  qris: number;
+  other: number;
+  tax: number;
+  service: number;
+  platformFee: number;
+  totalOrders: number;
+
+  cashGross: number;
+  qrisGross: number;
+  otherGross: number;
+
+  cashPlatformFee: number;
+  qrisPlatformFee: number;
+  otherPlatformFee: number;
+};
+
+function jsonError(
+  status: number,
+  message: string,
+  code = 'REQUEST_FAILED',
+  details: unknown = null,
+): NextResponse {
+  return NextResponse.json(
+    {
+      success: false,
+      message,
+      error: {
+        code,
+        details,
+      },
+    },
+    { status },
+  );
+}
+
+function normalizePaymentMethod(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase();
+}
+
+function toAmount(value: unknown): number {
+  const amount = Number(value ?? 0);
+
+  return Number.isFinite(amount)
+    ? amount
+    : 0;
+}
+
+function getOrderGross(order: OrderRow): number {
+  return Math.max(
+    0,
+    toAmount(
+      order.totalAfterDiscount ??
+        order.total_price ??
+        0,
+    ),
+  );
+}
+
+function getOrderTax(order: OrderRow): number {
+  return Math.max(
+    0,
+    toAmount(order.tax),
+  );
+}
+
+function getOrderService(order: OrderRow): number {
+  /*
+   * Service charge restoran.
+   * Nilai ini dihitung untuk SEMUA metode pembayaran.
+   */
+  return Math.max(
+    0,
+    toAmount(order.service),
+  );
+}
+
+function getOrderPlatformFee(order: OrderRow): number {
+  /*
+   * Fee platform sudah dibekukan pada masing-masing order.
+   * Jangan dihitung ulang dari pengaturan mitra terbaru.
+   */
+  return Math.max(
+    0,
+    toAmount(order.platformFee),
+  );
+}
+
+function isCashPayment(paymentMethod: string): boolean {
+  return (
+    paymentMethod === 'cash' ||
+    paymentMethod === 'tunai'
+  );
+}
+
+function isQrisPayment(paymentMethod: string): boolean {
+  return paymentMethod === 'qris';
+}
+
+function isEligibleForPayout(
+  orderDate: Date,
+  now: Date,
+): boolean {
+  const orderYear = orderDate.getFullYear();
+  const orderMonth = orderDate.getMonth();
+  const orderDay = orderDate.getDate();
+
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
+  return (
+    orderYear < currentYear ||
+    (
+      orderYear === currentYear &&
+      orderMonth < currentMonth
+    ) ||
+    (
+      orderYear === currentYear &&
+      orderMonth === currentMonth &&
+      orderDay <= 20
+    )
+  );
+}
+
+function isCurrentOrLastMonth(
+  orderDate: Date,
+  now: Date,
+): boolean {
+  const orderYear = orderDate.getFullYear();
+  const orderMonth = orderDate.getMonth();
+
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
+  const lastMonth =
+    currentMonth === 0
+      ? 11
+      : currentMonth - 1;
+
+  const lastMonthYear =
+    currentMonth === 0
+      ? currentYear - 1
+      : currentYear;
+
+  return (
+    (
+      orderYear === currentYear &&
+      orderMonth === currentMonth
+    ) ||
+    (
+      orderYear === lastMonthYear &&
+      orderMonth === lastMonth
+    )
+  );
+}
+
+function createMonthlyBucket(
+  monthIndex: number,
+): MonthlyBucket {
+  return {
+    monthIndex,
+    monthName: MONTH_NAMES[monthIndex],
+
+    gross: 0,
+    net: 0,
+
+    cash: 0,
+    qris: 0,
+    other: 0,
+
+    tax: 0,
+    service: 0,
+    platformFee: 0,
+
+    totalOrders: 0,
+
+    cashGross: 0,
+    qrisGross: 0,
+    otherGross: 0,
+
+    cashPlatformFee: 0,
+    qrisPlatformFee: 0,
+    otherPlatformFee: 0,
+  };
+}
+
+function finalizeBucket(
+  bucket: MonthlyBucket,
+): Omit<
+  MonthlyBucket,
+  | 'cashGross'
+  | 'qrisGross'
+  | 'otherGross'
+  | 'cashPlatformFee'
+  | 'qrisPlatformFee'
+  | 'otherPlatformFee'
+> {
+  /*
+   * Cash adalah uang yang sudah diterima langsung oleh mitra.
+   */
+  const cash = bucket.cashGross;
+
+  /*
+   * QRIS bersih dikurangi:
+   * - fee transaksi QRIS;
+   * - fee transaksi cash;
+   * - fee metode lain.
+   *
+   * Alasannya, fee non-QRIS harus tetap ditagihkan dari saldo
+   * digital yang tersedia untuk payout.
+   */
+  const qris =
+    bucket.qrisGross -
+    bucket.qrisPlatformFee -
+    bucket.cashPlatformFee -
+    bucket.otherPlatformFee;
+
+  /*
+   * Metode lain ditampilkan sebagai gross dikurangi fee-nya sendiri.
+   */
+  const other =
+    bucket.otherGross -
+    bucket.otherPlatformFee;
+
+  return {
+    monthIndex: bucket.monthIndex,
+    monthName: bucket.monthName,
+
+    gross: bucket.gross,
+    net:
+      bucket.gross -
+      bucket.platformFee,
+
+    cash,
+    qris,
+    other,
+
+    tax: bucket.tax,
+    service: bucket.service,
+    platformFee: bucket.platformFee,
+
+    totalOrders: bucket.totalOrders,
+  };
+}
+
+export async function GET(
+  request: Request,
+): Promise<Response> {
+  const { searchParams } =
+    new URL(request.url);
+
+  const slug =
+    searchParams.get('slug')?.trim();
+
+  if (!slug) {
+    return jsonError(
+      400,
+      'Slug toko diperlukan.',
+      'SLUG_REQUIRED',
+    );
+  }
 
   try {
-    const foundMitra = await db.select().from(mitra).where(eq(mitra.mitra_slug, slug)).limit(1);
-    if (foundMitra.length === 0) return NextResponse.json({ success: false, message: 'Mitra tidak ditemukan' }, { status: 404 });
-    const mitraId = foundMitra[0].id;
-    
-    // 1. Ambil persentase potongan (Fee Platform)
-    const platformFeeRate = Number(foundMitra[0].cashout || 0) / 100;
+    const [foundMitra] = await db
+      .select()
+      .from(mitra)
+      .where(
+        eq(
+          mitra.mitra_slug,
+          slug,
+        ),
+      )
+      .limit(1);
 
-    // 2. Ambil SEMUA riwayat sukses untuk tab "Riwayat Penjualan"
-    const allOrders = await db.select()
+    if (!foundMitra) {
+      return jsonError(
+        404,
+        'Mitra tidak ditemukan.',
+        'MITRA_NOT_FOUND',
+      );
+    }
+
+    const mitraId = foundMitra.id;
+
+    /*
+     * Semua order sukses untuk histori seluruh waktu.
+     */
+    const allOrders = await db
+      .select()
       .from(orders)
-      .where(and(
-        eq(orders.mitra_id, mitraId),
-        eq(orders.status, 'completed'),
-        eq(orders.payment_status, '2'),
-        isNull(orders.deletedAt)
-      ));
+      .where(
+        and(
+          eq(
+            orders.mitra_id,
+            mitraId,
+          ),
+          eq(
+            orders.status,
+            'completed',
+          ),
+          eq(
+            orders.payment_status,
+            '2',
+          ),
+          isNull(
+            orders.deletedAt,
+          ),
+        ),
+      );
 
-    const allHistoryData: Record<string, Record<string, any>> = {};
-    
+    const allHistoryData: Record<
+      string,
+      Record<string, MonthlyBucket>
+    > = {};
 
-    allOrders.forEach((order) => {
-      if (!order.createdAt) return;
-      // 🔴 UBAH MENJADI HURUF KECIL SEMUA
-      const payMethod = (order.payment_method || '').toLowerCase();
-
-      const orderDate = new Date(order.createdAt);
-      const year = orderDate.getFullYear().toString();
-      const month = orderDate.getMonth().toString();
-
-      const grandTotal = Number(order.totalAfterDiscount || 0); 
-      const tax = Number(order.tax || 0);
-      const service = Number(order.service || 0);
-
-      if (!allHistoryData[year]) allHistoryData[year] = {};
-      if (!allHistoryData[year][month]) {
-          allHistoryData[year][month] = {
-            monthIndex: Number(month),
-            monthName: MONTH_NAMES[Number(month)],
-            gross: 0, net: 0, cash: 0, qris: 0, tax: 0, service: 0, platformFee: 0, totalOrders: 0
-          };
+    for (const order of allOrders) {
+      if (!order.createdAt) {
+        continue;
       }
 
-      const bucket = allHistoryData[year][month];
+      const orderDate =
+        new Date(order.createdAt);
+
+      const year =
+        String(orderDate.getFullYear());
+
+      const monthIndex =
+        orderDate.getMonth();
+
+      const month =
+        String(monthIndex);
+
+      if (!allHistoryData[year]) {
+        allHistoryData[year] = {};
+      }
+
+      if (!allHistoryData[year][month]) {
+        allHistoryData[year][month] =
+          createMonthlyBucket(monthIndex);
+      }
+
+      const bucket =
+        allHistoryData[year][month];
+
+      const gross =
+        getOrderGross(order);
+
+      const tax =
+        getOrderTax(order);
+
+      const service =
+        getOrderService(order);
+
+      const platformFee =
+        getOrderPlatformFee(order);
+
+      const paymentMethod =
+        normalizePaymentMethod(
+          order.payment_method,
+        );
+
+      /*
+       * Semua komponen berikut dihitung untuk SEMUA payment method.
+       */
       bucket.totalOrders += 1;
-      
-      // Kumpulkan seluruh Gross terlebih dahulu
-      bucket.gross += grandTotal;
+      bucket.gross += gross;
       bucket.tax += tax;
       bucket.service += service;
+      bucket.platformFee += platformFee;
 
-      // 🔴 PENGECEKAN AMAN DARI HURUF BESAR/KECIL
-      if (payMethod === "cash" || payMethod === "tunai") bucket.cash += grandTotal; 
-      else if (payMethod === "qris") bucket.qris += grandTotal; 
-    });
+      if (isCashPayment(paymentMethod)) {
+        bucket.cashGross += gross;
+        bucket.cashPlatformFee += platformFee;
+      } else if (isQrisPayment(paymentMethod)) {
+        bucket.qrisGross += gross;
+        bucket.qrisPlatformFee += platformFee;
+      } else {
+        bucket.otherGross += gross;
+        bucket.otherPlatformFee += platformFee;
+      }
+    }
 
-    // 3. Hitung Fee Platform SEKALIGUS dari total bulanan (allHistory)
-    Object.keys(allHistoryData).forEach(year => {
-      Object.keys(allHistoryData[year]).forEach(month => {
-        const bucket = allHistoryData[year][month];
-        bucket.platformFee = Math.floor(bucket.gross * platformFeeRate);
-        bucket.net = bucket.gross - bucket.platformFee;
-      });
-    });
-
-    // 4. Ambil Riwayat Penarikan (History Cashout)
-    const withdrawalHistory = await db.select()
+    const withdrawalHistory =
+      await db
+        .select()
         .from(cashouts)
-        .where(eq(cashouts.mitra_id, mitraId))
-        .orderBy(desc(cashouts.createdAt));
+        .where(
+          eq(
+            cashouts.mitra_id,
+            mitraId,
+          ),
+        )
+        .orderBy(
+          desc(
+            cashouts.createdAt,
+          ),
+        );
 
-    // 5. Ambil Order Unpaid (Belum Dicairkan)
-    const pendingOrders = await db.select()
+    /*
+     * Order selesai yang belum dicairkan.
+     */
+    const pendingOrders = await db
+      .select()
       .from(orders)
-      .where(and(
-        eq(orders.mitra_id, mitraId),
-        eq(orders.status, 'completed'),
-        eq(orders.payment_status, '2'),
-        eq(orders.is_cashouted, false),
-        isNull(orders.deletedAt)
-      ));
-    
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth(); 
-    const currentDay = now.getDate();
-    const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-    const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+      .where(
+        and(
+          eq(
+            orders.mitra_id,
+            mitraId,
+          ),
+          eq(
+            orders.status,
+            'completed',
+          ),
+          eq(
+            orders.payment_status,
+            '2',
+          ),
+          eq(
+            orders.is_cashouted,
+            false,
+          ),
+          isNull(
+            orders.deletedAt,
+          ),
+        ),
+      );
 
-    // Variabel penampung total kotor per tipe
+    const now = new Date();
+    const currentDay = now.getDate();
+
     let totalCashGross = 0;
+    let totalQrisGross = 0;
+    let totalOtherGross = 0;
+
+    /*
+     * Tax, service, dan platform fee dihitung dari SEMUA metode.
+     */
     let totalTax = 0;
     let totalService = 0;
+    let totalPlatformFee = 0;
 
-    let eligibleCashGross = 0;
-    let lockedCashGross = 0;
     let eligibleQrisGross = 0;
     let lockedQrisGross = 0;
 
-    const historyData: Record<string, Record<string, any>> = {};
+    let eligibleCashFee = 0;
+    let lockedCashFee = 0;
 
-    pendingOrders.forEach((order) => {
-      if (!order.createdAt) return;
-      const orderDate = new Date(order.createdAt);
-      const oYear = orderDate.getFullYear();
-      const oMonth = orderDate.getMonth();
-      const oDay = orderDate.getDate();
+    let eligibleQrisFee = 0;
+    let lockedQrisFee = 0;
 
-      const isCurrentOrLastMonth = 
-        (oYear === currentYear && oMonth === currentMonth) || 
-        (oYear === lastMonthYear && oMonth === lastMonth);
+    let eligibleOtherFee = 0;
+    let lockedOtherFee = 0;
 
-      if (!isCurrentOrLastMonth) return;
+    const historyData: Record<
+      string,
+      Record<string, MonthlyBucket>
+    > = {};
 
-      const grandTotal = Number(order.totalAfterDiscount || 0);
-      const service = Number(order.service || 0);
-      const tax = Number(order.tax || 0);
-
-      const yearStr = oYear.toString();
-      const monthStr = oMonth.toString();
-
-      if (!historyData[yearStr]) historyData[yearStr] = {};
-      if (!historyData[yearStr][monthStr]) {
-        historyData[yearStr][monthStr] = { 
-          monthName: MONTH_NAMES[oMonth], net: 0, gross: 0, cash: 0, qris: 0, service: 0, tax: 0,
-          cashGross: 0, qrisGross: 0 // Penampung sementara per bulan
-        };
+    for (const order of pendingOrders) {
+      if (!order.createdAt) {
+        continue;
       }
 
-      const bucket = historyData[yearStr][monthStr];
-      bucket.gross += grandTotal;
-      bucket.service += service; 
+      const orderDate =
+        new Date(order.createdAt);
+
+      /*
+       * Riwayat unpaid pada layar hanya menampilkan bulan berjalan
+       * dan bulan sebelumnya.
+       */
+      if (
+        !isCurrentOrLastMonth(
+          orderDate,
+          now,
+        )
+      ) {
+        continue;
+      }
+
+      const year =
+        String(orderDate.getFullYear());
+
+      const monthIndex =
+        orderDate.getMonth();
+
+      const month =
+        String(monthIndex);
+
+      if (!historyData[year]) {
+        historyData[year] = {};
+      }
+
+      if (!historyData[year][month]) {
+        historyData[year][month] =
+          createMonthlyBucket(monthIndex);
+      }
+
+      const bucket =
+        historyData[year][month];
+
+      const gross =
+        getOrderGross(order);
+
+      const tax =
+        getOrderTax(order);
+
+      const service =
+        getOrderService(order);
+
+      const platformFee =
+        getOrderPlatformFee(order);
+
+      const paymentMethod =
+        normalizePaymentMethod(
+          order.payment_method,
+        );
+
+      /*
+       * Semua komponen dihitung tanpa memandang payment method.
+       */
+      bucket.totalOrders += 1;
+      bucket.gross += gross;
       bucket.tax += tax;
+      bucket.service += service;
+      bucket.platformFee += platformFee;
 
       totalTax += tax;
       totalService += service;
+      totalPlatformFee += platformFee;
 
-      const isEligible = 
-        oYear < currentYear || 
-        (oYear === currentYear && oMonth < currentMonth) || 
-        (oYear === currentYear && oMonth === currentMonth && oDay <= 20);
+      const eligible =
+        isEligibleForPayout(
+          orderDate,
+          now,
+        );
 
-      // 🔴 UBAH MENJADI HURUF KECIL SEMUA
-      const payMethod = (order.payment_method || '').toLowerCase();
+      if (isCashPayment(paymentMethod)) {
+        bucket.cashGross += gross;
+        bucket.cashPlatformFee += platformFee;
 
-      // 🔴 Kumpulkan seluruh Gross yang belum dicairkan ke masing-masing kategori
-      if (payMethod === 'cash' || payMethod === 'tunai') {
-        bucket.cashGross += grandTotal;
-        totalCashGross += grandTotal;
-        
-        if (isEligible) eligibleCashGross += grandTotal;
-        else lockedCashGross += grandTotal;
-      } else if (payMethod === 'qris') {
-        bucket.qrisGross += grandTotal;
+        totalCashGross += gross;
 
-        if (isEligible) eligibleQrisGross += grandTotal;
-        else lockedQrisGross += grandTotal;
+        if (eligible) {
+          eligibleCashFee += platformFee;
+        } else {
+          lockedCashFee += platformFee;
+        }
+      } else if (isQrisPayment(paymentMethod)) {
+        bucket.qrisGross += gross;
+        bucket.qrisPlatformFee += platformFee;
+
+        totalQrisGross += gross;
+
+        if (eligible) {
+          eligibleQrisGross += gross;
+          eligibleQrisFee += platformFee;
+        } else {
+          lockedQrisGross += gross;
+          lockedQrisFee += platformFee;
+        }
+      } else {
+        bucket.otherGross += gross;
+        bucket.otherPlatformFee += platformFee;
+
+        totalOtherGross += gross;
+
+        if (eligible) {
+          eligibleOtherFee += platformFee;
+        } else {
+          lockedOtherFee += platformFee;
+        }
       }
-    });
+    }
 
-    // 6. KALKULASI FEE PLATFORM SECARA AGREGAT (DIHITUNG SEMUA DULU)
-    const eligibleCashFee = Math.floor(eligibleCashGross * platformFeeRate);
-    const lockedCashFee = Math.floor(lockedCashGross * platformFeeRate);
-    
-    const eligibleQrisFee = Math.floor(eligibleQrisGross * platformFeeRate);
-    const lockedQrisFee = Math.floor(lockedQrisGross * platformFeeRate);
+    /*
+     * Dana QRIS bersih:
+     * QRIS gross dikurangi fee QRIS dan fee seluruh metode non-QRIS.
+     */
+    const eligibleQrisNet =
+      eligibleQrisGross -
+      eligibleQrisFee;
 
-    // Saldo QRIS Bersih
-    const eligibleQrisNet = eligibleQrisGross - eligibleQrisFee;
-    const lockedQrisNet = lockedQrisGross - lockedQrisFee;
+    const lockedQrisNet =
+      lockedQrisGross -
+      lockedQrisFee;
 
-    // Saldo Akhir yang bisa dicairkan (Net QRIS - Minus Fee Cash)
-    const totalEligibleQris = eligibleQrisNet - eligibleCashFee;
-    const totalLockedQris = lockedQrisNet - lockedCashFee;
+    const totalEligibleQris =
+      eligibleQrisNet -
+      eligibleCashFee -
+      eligibleOtherFee;
 
-    // Data presentasi untuk frontend
-    const totalCash = totalCashGross;
-    const totalCashService = eligibleCashFee + lockedCashFee; 
-    const totalQrisService = eligibleQrisFee + lockedQrisFee;
+    const totalLockedQris =
+      lockedQrisNet -
+      lockedCashFee -
+      lockedOtherFee;
 
-    // 7. Hitung Fee Platform per bulan untuk historyData
-    Object.keys(historyData).forEach(year => {
-      Object.keys(historyData[year]).forEach(month => {
-        const bucket = historyData[year][month];
-        
-        const cashFeeBulanan = Math.floor(bucket.cashGross * platformFeeRate);
-        const qrisFeeBulanan = Math.floor(bucket.qrisGross * platformFeeRate);
-        const totalFeeBulanan = cashFeeBulanan + qrisFeeBulanan;
+    const totalCashPlatformFee =
+      eligibleCashFee +
+      lockedCashFee;
 
-        bucket.cash = bucket.cashGross;
-        // Saldo QRIS frontend dikurangi fee QRIS dan fee Cash
-        bucket.qris = (bucket.qrisGross - qrisFeeBulanan) - cashFeeBulanan; 
-        bucket.net = bucket.gross - totalFeeBulanan;
+    const totalQrisPlatformFee =
+      eligibleQrisFee +
+      lockedQrisFee;
 
-        // Bersihkan data sementara
-        delete bucket.cashGross;
-        delete bucket.qrisGross;
-      });
-    });
+    const totalOtherPlatformFee =
+      eligibleOtherFee +
+      lockedOtherFee;
 
-    // --- Sisa Validasi Withdrawal ---
+    const historyArray =
+      Object.keys(historyData)
+        .sort(
+          (a, b) =>
+            Number(b) -
+            Number(a),
+        )
+        .map((year) => ({
+          year,
+          months: Object.keys(
+            historyData[year],
+          )
+            .sort(
+              (a, b) =>
+                Number(b) -
+                Number(a),
+            )
+            .map((month) =>
+              finalizeBucket(
+                historyData[year][month],
+              ),
+            ),
+        }));
+
+    const allHistoryArray =
+      Object.keys(allHistoryData)
+        .sort(
+          (a, b) =>
+            Number(b) -
+            Number(a),
+        )
+        .map((year) => ({
+          year,
+          months: Object.keys(
+            allHistoryData[year],
+          )
+            .sort(
+              (a, b) =>
+                Number(b) -
+                Number(a),
+            )
+            .map((month) =>
+              finalizeBucket(
+                allHistoryData[year][month],
+              ),
+            ),
+        }));
+
     let canWithdraw = false;
     let withdrawalMessage = '';
 
     if (totalEligibleQris > 0) {
       if (totalEligibleQris >= 500000) {
         canWithdraw = true;
-        withdrawalMessage = 'Dana QRIS tersedia dan siap dicairkan.';
+        withdrawalMessage =
+          'Dana QRIS tersedia dan siap dicairkan.';
       } else if (currentDay >= 20) {
         canWithdraw = true;
-        withdrawalMessage = 'Periode pencairan dibuka (>= Tgl 20).';
+        withdrawalMessage =
+          'Periode pencairan dibuka mulai tanggal 20.';
       } else {
-        const shortage = 500000 - totalEligibleQris;
-        withdrawalMessage = `Minimal penarikan Rp 500.000 (Kurang Rp ${shortage.toLocaleString('id-ID')}). Atau tunggu setelah tanggal 20.`;
+        const shortage =
+          500000 -
+          totalEligibleQris;
+
+        withdrawalMessage =
+          `Minimal penarikan Rp 500.000 ` +
+          `(kurang Rp ${shortage.toLocaleString('id-ID')}). ` +
+          'Atau tunggu mulai tanggal 20.';
       }
     } else if (totalEligibleQris < 0) {
-      withdrawalMessage = `Terdapat minus fee sebesar Rp ${Math.abs(totalEligibleQris).toLocaleString('id-ID')} dari transaksi tunai.`;
+      withdrawalMessage =
+        `Terdapat minus fee sebesar Rp ` +
+        `${Math.abs(totalEligibleQris).toLocaleString('id-ID')} ` +
+        'dari transaksi non-QRIS.';
     } else {
-      withdrawalMessage = 'Belum ada dana QRIS yang dapat dicairkan.';
+      withdrawalMessage =
+        'Belum ada dana QRIS yang dapat dicairkan.';
     }
 
-    const historyArray = Object.keys(historyData).sort((a, b) => Number(b) - Number(a)).map(year => ({
-        year,
-        months: Object.keys(historyData[year]).sort((a, b) => Number(b) - Number(a)).map(month => ({ monthIndex: month, ...historyData[year][month] }))
-    }));
-
-    const allHistoryArray = Object.keys(allHistoryData)
-    .sort((a, b) => Number(b) - Number(a))
-    .map((year) => ({
-        year,
-        months: Object.values(allHistoryData[year])
-        .sort((a: any, b: any) => b.monthIndex - a.monthIndex),
-    }));
-
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       data: {
-        totalEligibleQris, totalLockedQris, totalCash, totalTax, totalService,
-        totalCashService, totalQrisService, canWithdraw, withdrawalMessage,
-        withdrawals: withdrawalHistory, 
-        history: historyArray,
-        allHistory: allHistoryArray
-      } 
+        totalEligibleQris:
+          Math.max(
+            0,
+            totalEligibleQris,
+          ),
+
+        totalLockedQris:
+          Math.max(
+            0,
+            totalLockedQris,
+          ),
+
+        /*
+         * Gross berdasarkan metode pembayaran.
+         */
+        totalCash:
+          totalCashGross,
+
+        totalQris:
+          totalQrisGross,
+
+        totalOther:
+          totalOtherGross,
+
+        /*
+         * Dihitung dari semua metode pembayaran.
+         */
+        totalTax,
+        totalService,
+        totalPlatformFee,
+
+        totalCashPlatformFee,
+        totalQrisPlatformFee,
+        totalOtherPlatformFee,
+
+        /*
+         * Alias sementara agar frontend lama tetap berjalan.
+         */
+        totalCashService:
+          totalCashPlatformFee,
+
+        totalQrisService:
+          totalQrisPlatformFee,
+
+        canWithdraw,
+        withdrawalMessage,
+
+        withdrawals:
+          withdrawalHistory,
+
+        history:
+          historyArray,
+
+        allHistory:
+          allHistoryArray,
+      },
     });
   } catch (error) {
-    console.error("GET Payout Error:", error);
-    return NextResponse.json({ success: false, message: 'Internal Server Error' }, { status: 500 });
+    console.error(
+      '[GET_PAYOUT_ERROR]',
+      error,
+    );
+
+    return jsonError(
+      500,
+      'Internal Server Error',
+      'INTERNAL_SERVER_ERROR',
+      process.env.NODE_ENV === 'development'
+        ? {
+            message:
+              error instanceof Error
+                ? error.message
+                : String(error),
+          }
+        : null,
+    );
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(
+  request: Request,
+): Promise<Response> {
   try {
-    const body = await request.json();
-    const { slug } = body;
+    let body: {
+      slug?: unknown;
+    };
 
-    if (!slug) return NextResponse.json({ success: false, message: 'Slug Toko diperlukan' }, { status: 400 });
+    try {
+      body = await request.json();
+    } catch {
+      return jsonError(
+        400,
+        'Request body harus berupa JSON yang valid.',
+        'INVALID_JSON',
+      );
+    }
 
-    const foundMitra = await db.select().from(mitra).where(eq(mitra.mitra_slug, slug)).limit(1);
-    if (foundMitra.length === 0) return NextResponse.json({ success: false, message: 'Mitra tidak ditemukan' }, { status: 404 });
-    const mitraId = foundMitra[0].id;
-    const platformFeeRate = Number(foundMitra[0].cashout || 0) / 100;
+    const slug =
+      String(body.slug ?? '').trim();
 
-    const pendingOrders = await db.select()
+    if (!slug) {
+      return jsonError(
+        400,
+        'Slug toko diperlukan.',
+        'SLUG_REQUIRED',
+      );
+    }
+
+    const [foundMitra] = await db
+      .select()
+      .from(mitra)
+      .where(
+        eq(
+          mitra.mitra_slug,
+          slug,
+        ),
+      )
+      .limit(1);
+
+    if (!foundMitra) {
+      return jsonError(
+        404,
+        'Mitra tidak ditemukan.',
+        'MITRA_NOT_FOUND',
+      );
+    }
+
+    const mitraId =
+      foundMitra.id;
+
+    const pendingOrders = await db
+      .select()
       .from(orders)
-      .where(and(
-        eq(orders.mitra_id, mitraId),
-        eq(orders.status, 'completed'),
-        eq(orders.payment_status, '2'),
-        eq(orders.is_cashouted, false),
-        isNull(orders.deletedAt)
-      ));
+      .where(
+        and(
+          eq(
+            orders.mitra_id,
+            mitraId,
+          ),
+          eq(
+            orders.status,
+            'completed',
+          ),
+          eq(
+            orders.payment_status,
+            '2',
+          ),
+          eq(
+            orders.is_cashouted,
+            false,
+          ),
+          isNull(
+            orders.deletedAt,
+          ),
+        ),
+      );
 
     const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth(); 
     const currentDay = now.getDate();
 
-    let eligibleCashGross = 0;
     let eligibleQrisGross = 0;
-    const eligibleOrderIds: number[] = []; 
+    let eligibleQrisFee = 0;
 
-    // 1. Kumpulkan seluruh nominal (Gross) terlebih dahulu
-    pendingOrders.forEach(order => {
-      if (!order.createdAt) return;
-      const orderDate = new Date(order.createdAt);
-      const oYear = orderDate.getFullYear();
-      const oMonth = orderDate.getMonth();
-      const oDay = orderDate.getDate();
+    /*
+     * Semua fee non-QRIS ikut dipotong dari saldo QRIS payout.
+     */
+    let eligibleNonQrisFee = 0;
 
-      const grandTotal = Number(order.totalAfterDiscount || 0);
+    const eligibleOrderIds: number[] = [];
 
-      const isEligible = 
-          oYear < currentYear || 
-          (oYear === currentYear && oMonth < currentMonth) || 
-          (oYear === currentYear && oMonth === currentMonth && oDay <= 20);
-
-      if (isEligible) {
-        eligibleOrderIds.push(order.id);
-
-        // 🔴 UBAH MENJADI HURUF KECIL SEMUA DAN TAMBAH TUNAI
-        const payMethod = (order.payment_method || '').toLowerCase();
-
-        if (payMethod === 'cash' || payMethod === 'tunai') {
-          eligibleCashGross += grandTotal;
-        } else if (payMethod === 'qris') {
-          eligibleQrisGross += grandTotal;
-        }
+    for (const order of pendingOrders) {
+      if (!order.createdAt) {
+        continue;
       }
-    });
 
-    // 2. Hitung Platform Fee SEKALIGUS dari total keseluruhan
-    const eligibleCashFee = Math.floor(eligibleCashGross * platformFeeRate);
-    const eligibleQrisFee = Math.floor(eligibleQrisGross * platformFeeRate);
-    
-    // Net QRIS setelah dipotong fee QRIS
-    const eligibleQrisNet = eligibleQrisGross - eligibleQrisFee;
+      const orderDate =
+        new Date(order.createdAt);
 
-    // Saldo akhir yang dicairkan (Net QRIS - Fee Cash yang tertunggak)
-    const totalEligibleQris = eligibleQrisNet - eligibleCashFee;
+      if (
+        !isEligibleForPayout(
+          orderDate,
+          now,
+        )
+      ) {
+        continue;
+      }
 
-    if (totalEligibleQris <= 0) {
-        return NextResponse.json({ success: false, message: 'Tidak ada dana QRIS yang bisa dicairkan.' }, { status: 400 });
+      const paymentMethod =
+        normalizePaymentMethod(
+          order.payment_method,
+        );
+
+      const gross =
+        getOrderGross(order);
+
+      const platformFee =
+        getOrderPlatformFee(order);
+
+      eligibleOrderIds.push(order.id);
+
+      if (isQrisPayment(paymentMethod)) {
+        eligibleQrisGross += gross;
+        eligibleQrisFee += platformFee;
+      } else {
+        /*
+         * Cash, transfer, debit, credit card, e-wallet lain, dll.
+         */
+        eligibleNonQrisFee += platformFee;
+      }
     }
 
-    if (totalEligibleQris < 500000 && currentDay <= 20) {
-        return NextResponse.json({ success: false, message: 'Minimal penarikan Rp 500.000 atau tunggu setelah tanggal 20.' }, { status: 400 });
-    }
+    const eligibleQrisNet =
+      eligibleQrisGross -
+      eligibleQrisFee;
+
+    const totalEligibleQris =
+      eligibleQrisNet -
+      eligibleNonQrisFee;
 
     if (eligibleOrderIds.length === 0) {
-        return NextResponse.json({ success: false, message: 'Tidak ada transaksi valid.' }, { status: 400 });
+      return jsonError(
+        400,
+        'Tidak ada transaksi valid untuk dicairkan.',
+        'NO_ELIGIBLE_ORDERS',
+      );
     }
 
-    await db.insert(cashouts).values({
-        mitra_id: mitraId,
-        amount: totalEligibleQris.toString(), 
-        createdAt: new Date(),
-        updatedAt: new Date()
+    if (totalEligibleQris <= 0) {
+      return jsonError(
+        400,
+        'Tidak ada dana QRIS yang bisa dicairkan.',
+        'NO_WITHDRAWABLE_BALANCE',
+        {
+          eligibleQrisGross,
+          eligibleQrisFee,
+          eligibleNonQrisFee,
+        },
+      );
+    }
+
+    if (
+      totalEligibleQris < 500000 &&
+      currentDay < 20
+    ) {
+      return jsonError(
+        400,
+        'Minimal penarikan Rp 500.000 atau tunggu mulai tanggal 20.',
+        'MINIMUM_WITHDRAWAL_NOT_MET',
+        {
+          amount:
+            totalEligibleQris,
+
+          minimum:
+            500000,
+
+          shortage:
+            500000 -
+            totalEligibleQris,
+        },
+      );
+    }
+
+    const createdAt = new Date();
+
+    await db.transaction(
+      async (tx) => {
+        await tx
+          .insert(cashouts)
+          .values({
+            mitra_id:
+              mitraId,
+
+            amount:
+              String(
+                totalEligibleQris,
+              ),
+
+            createdAt,
+            updatedAt:
+              createdAt,
+          });
+
+        await tx
+          .update(orders)
+          .set({
+            is_cashouted:
+              true,
+
+            updatedAt:
+              createdAt,
+          })
+          .where(
+            inArray(
+              orders.id,
+              eligibleOrderIds,
+            ),
+          );
+      },
+    );
+
+    return NextResponse.json({
+      success: true,
+      message:
+        'Permintaan penarikan dana berhasil dikirim.',
+
+      amount:
+        totalEligibleQris,
+
+      data: {
+        amount:
+          totalEligibleQris,
+
+        eligibleOrderCount:
+          eligibleOrderIds.length,
+
+        eligibleQrisGross,
+        eligibleQrisFee,
+        eligibleNonQrisFee,
+
+        totalPlatformFee:
+          eligibleQrisFee +
+          eligibleNonQrisFee,
+      },
     });
-
-    await db.update(orders)
-        .set({ is_cashouted: true, updatedAt: new Date() })
-        .where(inArray(orders.id, eligibleOrderIds));
-
-    return NextResponse.json({ 
-        success: true, 
-        message: 'Permintaan penarikan dana berhasil dikirim.',
-        amount: totalEligibleQris 
-    });
-
   } catch (error) {
-    console.error("Cashout Request Error:", error);
-    return NextResponse.json({ success: false, message: 'Internal Server Error' }, { status: 500 });
+    console.error(
+      '[POST_PAYOUT_ERROR]',
+      error,
+    );
+
+    return jsonError(
+      500,
+      'Internal Server Error',
+      'INTERNAL_SERVER_ERROR',
+      process.env.NODE_ENV === 'development'
+        ? {
+            message:
+              error instanceof Error
+                ? error.message
+                : String(error),
+          }
+        : null,
+    );
   }
 }

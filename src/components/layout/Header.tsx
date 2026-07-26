@@ -17,7 +17,7 @@ export default function Header({
   const { tableName } = useTableStore();
 
   return (
-    <header className="sticky top-0 z-[60] border-b border-stone-200 bg-[var(--color-surface)]/95 backdrop-blur-xl">
+    <header className="sticky top-0 z-20 border-b border-stone-200 bg-[var(--color-surface)]/95 backdrop-blur-xl">
       <div className="flex items-center justify-between gap-3 px-4 py-3.5 sm:px-6">
         <div className="min-w-0 md:hidden">
           <div className="mb-1 flex items-center gap-1.5">

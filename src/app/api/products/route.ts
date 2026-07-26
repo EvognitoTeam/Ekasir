@@ -1,119 +1,571 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db'; 
-import { products, mitra, categories, addons, addonCategories, tableList, branches } from '@/db/schema';
-import { eq, isNull, and } from 'drizzle-orm';
+import {
+  NextRequest,
+  NextResponse,
+} from 'next/server';
+
+import { db } from '@/db';
+
+import {
+  products,
+  mitra,
+  categories,
+  addons,
+  addonCategories,
+  tableList,
+  branches,
+} from '@/db/schema';
+
+import {
+  and,
+  eq,
+  isNull,
+} from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest,
+): Promise<Response> {
   try {
-    const { searchParams } = new URL(request.url);
-    const slug = searchParams.get('slug');
-    const tableCode = searchParams.get('tableCode');
-    const branchSlug = searchParams.get('branch_slug');
+    const { searchParams } =
+      new URL(request.url);
+
+    const slug =
+      searchParams
+        .get('slug')
+        ?.trim();
+
+    const tableCode =
+      searchParams
+        .get('tableCode')
+        ?.trim();
+
+    const branchSlug =
+      searchParams
+        .get('branch_slug')
+        ?.trim();
 
     if (!slug) {
-      return NextResponse.json({ success: false, message: 'Nama kedai tidak valid' }, { status: 400 });
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            'Nama kedai tidak valid',
+        },
+        {
+          status: 400,
+        },
+      );
     }
 
-    const targetMitra = await db.select().from(mitra).where(and(eq(mitra.mitra_slug, slug), isNull(mitra.deletedAt))).limit(1);
-    if (targetMitra.length === 0) {
-      return NextResponse.json({ success: false, message: `Kedai "${slug}" belum terdaftar di sistem kami.` }, { status: 404 });
+    /*
+     * Ambil data mitra.
+     */
+    const [targetMitra] = await db
+      .select()
+      .from(mitra)
+      .where(
+        and(
+          eq(
+            mitra.mitra_slug,
+            slug,
+          ),
+          isNull(
+            mitra.deletedAt,
+          ),
+        ),
+      )
+      .limit(1);
+
+    if (!targetMitra) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            `Kedai "${slug}" belum terdaftar di sistem kami.`,
+        },
+        {
+          status: 404,
+        },
+      );
     }
 
-    const mitraId = targetMitra[0].id;
-    let finalBranchId = null;
-    let branchName = null;
+    const mitraId =
+      targetMitra.id;
 
-    // 🔴 1. Ambil Menu (Produk) dengan Filter Cabang
+    let finalBranchId:
+      | number
+      | null = null;
+
+    let branchName:
+      | string
+      | null = null;
+
+    /*
+     * Jika URL memiliki branch_slug,
+     * cari dan validasi cabangnya.
+     */
     if (branchSlug) {
-      const targetBranch = await db.select().from(branches)
-        .where(and(eq(branches.mitra_id, mitraId), eq(branches.branch_slug, branchSlug), isNull(branches.deletedAt)))
-        .limit(1);
+      const [targetBranch] =
+        await db
+          .select({
+            id:
+              branches.id,
 
-      if (targetBranch.length === 0) {
-        return NextResponse.json({ success: false, message: 'Cabang tidak ditemukan' }, { status: 404 });
-      }
-      finalBranchId = targetBranch[0].id;
-      branchName = targetBranch[0].name;
-    }
-    const condsProd = [eq(products.mitra_id, mitraId), isNull(products.deletedAt)];
-    if (finalBranchId) condsProd.push(eq(products.branch_id, finalBranchId));
+            name:
+              branches.name,
+          })
+          .from(branches)
+          .where(
+            and(
+              eq(
+                branches.mitra_id,
+                mitraId,
+              ),
+              eq(
+                branches.branch_slug,
+                branchSlug,
+              ),
+              isNull(
+                branches.deletedAt,
+              ),
+            ),
+          )
+          .limit(1);
 
-    const getCondition = (tableField: any, deletedField?: any) => {
-      const conds = [eq(tableField, mitraId)];
-      if (deletedField) conds.push(isNull(deletedField));
-      return conds;
-    };
-
-    // 🔴 2. Ambil Kategori & Addon (Tanpa Filter Cabang)
-    const mitraCategories = await db.select().from(categories).where(and(...getCondition(categories.mitra_id, categories.deletedAt)));
-    const allAddonCategories = await db.select().from(addonCategories).where(eq(addonCategories.mitra_id, mitraId));
-    const allAddons = await db.select().from(addons).where(and(eq(addons.mitra_id, mitraId), isNull(addons.deletedAt)));
-    
-    const mitraProducts = await db.select().from(products).where(and(...condsProd));
-
-    const formattedCategories = mitraCategories.map((c) => ({
-      id: c.id.toString(),
-      name: c.name,
-      slug: c.name.toLowerCase().replace(/ /g, '-')
-    }));
-    
-    const formattedProducts = mitraProducts.map((p) => {
-      let parsedAddons = p.addon_id;
-      if (typeof parsedAddons === 'string') {
-        try { parsedAddons = JSON.parse(parsedAddons); } catch (e) { parsedAddons = []; }
-      }
-
-      const productAddonIds = Array.isArray(parsedAddons) ? parsedAddons.map(id => Number(id)) : [];
-
-      const categorizedAddons = allAddonCategories.map(cat => {
-        const items = allAddons.filter(a => 
-          productAddonIds.includes(Number(a.id)) && Number(a.category_id) === Number(cat.id) 
+      if (!targetBranch) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              'Cabang tidak ditemukan',
+          },
+          {
+            status: 404,
+          },
         );
-        return {
-          categoryName: cat.name,
-          maxSelected: cat.maxSelected,
-          isRequired: cat.isRequired,
-          addons: items.map(i => ({ id: Number(i.id), name: i.name, price: Number(i.price) }))
-        };
-      }).filter(group => group.addons.length > 0); 
+      }
 
-      return {
-        id: p.id.toString(),
-        categoryId: p.categories_id?.toString(),
-        name: p.name,
-        description: p.description || '',
-        image: p.image || '',
-        basePrice: Number(p.price),
-        isAvailable: p.status === 1,
-        stock: p.stock,
-        categorizedAddons: categorizedAddons
-      };
-    });
+      finalBranchId =
+        targetBranch.id;
 
-    let tableName = null;
+      branchName =
+        targetBranch.name;
+    }
+
+    /*
+     * Filter produk:
+     *
+     * - Jika ada branch_slug:
+     *   hanya produk cabang tersebut.
+     *
+     * - Jika tidak ada branch_slug:
+     *   hanya produk pusat dengan branch_id NULL.
+     *
+     * Ini mencegah produk cabang tampil pada URL pusat.
+     */
+    const productConditions = [
+      eq(
+        products.mitra_id,
+        mitraId,
+      ),
+      isNull(
+        products.deletedAt,
+      ),
+    ];
+
+    if (finalBranchId !== null) {
+      productConditions.push(
+        eq(
+          products.branch_id,
+          finalBranchId,
+        ),
+      );
+    } else {
+      productConditions.push(
+        isNull(
+          products.branch_id,
+        ),
+      );
+    }
+
+    /*
+     * Ambil kategori milik mitra.
+     */
+    const mitraCategories =
+      await db
+        .select()
+        .from(categories)
+        .where(
+          and(
+            eq(
+              categories.mitra_id,
+              mitraId,
+            ),
+            isNull(
+              categories.deletedAt,
+            ),
+          ),
+        );
+
+    /*
+     * Addon category masih berlaku pada level mitra.
+     */
+    const allAddonCategories =
+      await db
+        .select()
+        .from(addonCategories)
+        .where(
+          eq(
+            addonCategories.mitra_id,
+            mitraId,
+          ),
+        );
+
+    /*
+     * Addon masih berlaku pada level mitra.
+     */
+    const allAddons =
+      await db
+        .select()
+        .from(addons)
+        .where(
+          and(
+            eq(
+              addons.mitra_id,
+              mitraId,
+            ),
+            isNull(
+              addons.deletedAt,
+            ),
+          ),
+        );
+
+    /*
+     * Ambil produk sesuai cabang atau pusat.
+     */
+    const mitraProducts =
+      await db
+        .select()
+        .from(products)
+        .where(
+          and(
+            ...productConditions,
+          ),
+        );
+
+    const formattedCategories =
+      mitraCategories.map(
+        (category) => ({
+          id:
+            String(category.id),
+
+          name:
+            category.name,
+
+          slug:
+            category.name
+              .toLowerCase()
+              .trim()
+              .replace(
+                /\s+/g,
+                '-',
+              ),
+        }),
+      );
+
+    const formattedProducts =
+      mitraProducts.map(
+        (product) => {
+          let parsedAddons:
+            unknown =
+            product.addon_id;
+
+          if (
+            typeof parsedAddons ===
+            'string'
+          ) {
+            try {
+              parsedAddons =
+                JSON.parse(
+                  parsedAddons,
+                );
+            } catch {
+              parsedAddons = [];
+            }
+          }
+
+          const productAddonIds =
+            Array.isArray(
+              parsedAddons,
+            )
+              ? parsedAddons
+                  .map(
+                    (addonId) =>
+                      Number(
+                        addonId,
+                      ),
+                  )
+                  .filter(
+                    (addonId) =>
+                      Number.isInteger(
+                        addonId,
+                      ) &&
+                      addonId > 0,
+                  )
+              : [];
+
+          const categorizedAddons =
+            allAddonCategories
+              .map(
+                (
+                  addonCategory,
+                ) => {
+                  const items =
+                    allAddons.filter(
+                      (addon) =>
+                        productAddonIds.includes(
+                          Number(
+                            addon.id,
+                          ),
+                        ) &&
+                        Number(
+                          addon.category_id,
+                        ) ===
+                          Number(
+                            addonCategory.id,
+                          ),
+                    );
+
+                  return {
+                    categoryName:
+                      addonCategory.name,
+
+                    maxSelected:
+                      addonCategory.maxSelected,
+
+                    isRequired:
+                      addonCategory.isRequired,
+
+                    addons:
+                      items.map(
+                        (addon) => ({
+                          id:
+                            Number(
+                              addon.id,
+                            ),
+
+                          name:
+                            addon.name,
+
+                          price:
+                            Number(
+                              addon.price,
+                            ),
+                        }),
+                      ),
+                  };
+                },
+              )
+              .filter(
+                (group) =>
+                  group.addons.length >
+                  0,
+              );
+
+          return {
+            id:
+              String(product.id),
+
+            categoryId:
+              product.categories_id
+                ? String(
+                    product.categories_id,
+                  )
+                : null,
+
+            name:
+              product.name,
+
+            description:
+              product.description ||
+              '',
+
+            image:
+              product.image ||
+              '',
+
+            basePrice:
+              Number(
+                product.price,
+              ),
+
+            isAvailable:
+              product.status === 1,
+
+            stock:
+              product.stock,
+
+            branchId:
+              product.branch_id ??
+              null,
+
+            categorizedAddons,
+          };
+        },
+      );
+
+    let tableName:
+      | string
+      | null = 'Table Not Found';
+
+    let tableId:
+      | number
+      | null = null;
+
+    let resolvedTableCode:
+      | string
+      | null = null;
+
     if (tableCode) {
-      const tableConds = [eq(tableList.mitra_id, mitraId), eq(tableList.table_code, tableCode)];
-      if (finalBranchId) tableConds.push(eq(tableList.branch_id, finalBranchId));
+      const tableConditions = [
+        eq(
+          tableList.mitra_id,
+          mitraId,
+        ),
+        eq(
+          tableList.table_code,
+          tableCode,
+        ),
+      ];
 
-      const foundTable = await db.select().from(tableList).where(and(...tableConds)).limit(1);
-      if (foundTable.length > 0) tableName = foundTable[0].table_name;
+      /*
+       * Aturan penting:
+       *
+       * Jika URL memiliki cabang:
+       * meja harus berasal dari cabang tersebut.
+       *
+       * Jika URL tidak memiliki cabang:
+       * meja harus memiliki branch_id NULL.
+       *
+       * Jadi tableCode milik cabang tidak akan ditemukan
+       * ketika halaman pusat/tanpa branch diakses.
+       */
+      if (finalBranchId !== null) {
+        tableConditions.push(
+          eq(
+            tableList.branch_id,
+            finalBranchId,
+          ),
+        );
+      } else {
+        tableConditions.push(
+          isNull(
+            tableList.branch_id,
+          ),
+        );
+      }
+
+      /*
+       * Tambahkan filter deletedAt jika tableList
+       * memiliki kolom deletedAt pada schema.
+       */
+      if (
+        'deletedAt' in tableList
+      ) {
+        tableConditions.push(
+          isNull(
+            tableList.deletedAt,
+          ),
+        );
+      }
+
+      const [foundTable] =
+        await db
+          .select({
+            id:
+              tableList.id,
+
+            tableCode:
+              tableList.table_code,
+
+            tableName:
+              tableList.table_name,
+
+            branchId:
+              tableList.branch_id,
+          })
+          .from(tableList)
+          .where(
+            and(
+              ...tableConditions,
+            ),
+          )
+          .limit(1);
+
+      if (foundTable) {
+        tableId =
+          foundTable.id;
+
+        tableName =
+          foundTable.tableName;
+
+        resolvedTableCode =
+          foundTable.tableCode;
+      }
     }
 
     return NextResponse.json({
       success: true,
-      mitraName: targetMitra[0].mitra_name,
-      mitraAddress: targetMitra[0].mitra_address || 'Alamat belum diatur', 
-      mitraWelcome: targetMitra[0].mitra_welcome || '',
-      branchName: branchName,
-      data: formattedProducts,
-      categoriesData: formattedCategories,
-      tableName: tableName
-    });
 
+      mitraName:
+        targetMitra.mitra_name,
+
+      mitraAddress:
+        targetMitra.mitra_address ||
+        'Alamat belum diatur',
+
+      mitraWelcome:
+        targetMitra.mitra_welcome ||
+        '',
+
+      branchId:
+        finalBranchId,
+
+      branchName,
+
+      data:
+        formattedProducts,
+
+      categoriesData:
+        formattedCategories,
+
+      /*
+       * Akan NULL bila:
+       * - tableCode tidak ditemukan;
+       * - tableCode berasal dari cabang lain;
+       * - URL tidak memiliki branch tetapi meja memiliki branch_id.
+       */
+      tableId,
+      tableCode:
+        resolvedTableCode,
+      tableName,
+    });
   } catch (error) {
-    console.error("Database Error:", error);
-    return NextResponse.json({ success: false, message: 'Gagal mengambil data dari server' }, { status: 500 });
+    console.error(
+      'Database Error:',
+      error,
+    );
+
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          'Gagal mengambil data dari server',
+      },
+      {
+        status: 500,
+      },
+    );
   }
 }

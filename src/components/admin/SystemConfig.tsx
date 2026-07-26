@@ -306,8 +306,27 @@ export default function SystemConfig() {
             <span className="font-bold text-stone-700">Rp {data.tax.toLocaleString('id-ID')}</span>
           </div>
           <div className="flex justify-between text-[11px]">
-            <span className="text-stone-400 font-medium">Potongan Service</span>
-            <span className="font-bold text-red-500">- Rp {data.service.toLocaleString('id-ID')}</span>
+            <span className="text-stone-400 font-medium">
+              Service Charge Resto
+            </span>
+
+            <span className="font-bold text-stone-700">
+              Rp {Number(
+                data.service ?? 0,
+              ).toLocaleString('id-ID')}
+            </span>
+          </div>
+
+          <div className="flex justify-between text-[11px]">
+            <span className="text-stone-400 font-medium">
+              Fee Platform
+            </span>
+
+            <span className="font-bold text-red-500">
+              - Rp {Number(
+                data.platformFee ?? 0,
+              ).toLocaleString('id-ID')}
+            </span>
           </div>
         </div>
       </div>
@@ -364,7 +383,7 @@ export default function SystemConfig() {
                         <div className="hidden sm:block w-px h-8 bg-white/20" />
                         <div>
                           <p className="text-[10px] uppercase tracking-widest text-emerald-200 font-bold mb-1">Fee Platform (Potongan Service)</p>
-                          <p className="text-sm font-bold text-red-300">- Rp {payoutData.totalService.toLocaleString('id-ID')}</p>
+                          <p className="text-sm font-bold text-red-300">- Rp {Number(payoutData.totalPlatformFee ?? 0,).toLocaleString('id-ID')}</p>
                         </div>
                     </div>
 
@@ -468,7 +487,7 @@ export default function SystemConfig() {
                               </div>
                               <div className="flex justify-between text-xs">
                                 <span className="text-stone-500">Service Fee (Platform)</span>
-                                <span className="font-bold text-red-500">- Rp {monthly.service.toLocaleString('id-ID')}</span>
+                                <span className="font-bold text-red-500">- Rp {Number(monthly.platformFee ?? 0,).toLocaleString('id-ID')}</span>
                               </div>
                             </div>
                           </div>
@@ -574,7 +593,7 @@ export default function SystemConfig() {
                             </div>
                             <div className="flex justify-between text-sm">
                               <span className="text-stone-500">Fee Platform</span>
-                              <span className="font-bold text-red-500">- Rp {Number(mData.service || 0).toLocaleString('id-ID')}</span>
+                              <span className="font-bold text-red-500">- Rp {Number(mData.platformFee ?? 0,).toLocaleString('id-ID')}</span>
                             </div>
                             <div className="flex justify-between text-sm">
                               <span className="text-stone-500">Jumlah Order</span>

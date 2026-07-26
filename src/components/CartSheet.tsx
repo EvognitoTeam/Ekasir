@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type MouseEvent } from 'react';
 import { useParams } from 'next/navigation'; 
 import { useCartStore } from '../store/cart.store';
 import { useMenuStore } from '../store/menu.store';
@@ -31,11 +31,13 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
   const [settings, setSettings] = useState({ taxRate: 0, serviceRate: 0, isTaxIncluded: false });
 
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    }
+    if (!isOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
     return () => {
-      document.body.style.overflow = ''; // Paksa hapus inline style overflow saat sheet mati
+      document.body.style.overflow = previousOverflow;
     };
   }, [isOpen]);
 
@@ -61,6 +63,15 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
     fetchSettings();
   }, [slug, isOpen]);
 
+  const handleRemoveItem = (
+    event: MouseEvent<HTMLButtonElement>,
+    itemId: string,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    removeItem(slug, itemId);
+  };
+
   const getCartTotals = () => {
     // 🔴 3. Sisipkan slug saat memanggil calculateTotal
     const subtotal = calculateTotal(slug, menuItems);
@@ -79,34 +90,29 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
   const { subtotal, tax, service, total } = getCartTotals();
 
   return (
-    <AnimatePresence>
-      {/* 🟢 1. BACKDROP: Dipisah tanpa fragment & diberi key unik */}
+    <>
       {isOpen && (
-        <motion.div
-          key="cart-sheet-backdrop"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+        <button
+          type="button"
+          aria-label="Tutup keranjang"
           onClick={onClose}
-          className="fixed inset-0 bg-black/30 z-50 backdrop-blur-sm"
+          className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm"
         />
       )}
-      {isOpen && (
-        <>
-          <motion.div
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.aside
             key="cart-sheet-panel"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-black/30 z-50 backdrop-blur-sm"
-          />
-          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Keranjang belanja"
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
-            exit={{ x: '100%' }}
+            exit={{ x: '100%', pointerEvents: 'none' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300, mass: 0.8 }}
-            className="fixed top-0 right-0 w-full max-w-md h-full bg-white z-50 shadow-2xl flex flex-col"
+            className="fixed inset-y-0 right-0 z-[60] flex h-full w-full max-w-md flex-col bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
           >
             {/* Header */}
             <header className="px-8 pt-12 pb-8 border-b border-stone-100">
@@ -120,7 +126,8 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
                     <span className="text-sm font-bold text-stone-900">{cartItems.length} Items Selected</span>
                   </div>
                 </div>
-                <button 
+                <button
+                  type="button"
                   onClick={onClose}
                   className="w-10 h-10 rounded-full border border-stone-100 flex items-center justify-center hover:bg-stone-50 transition-all"
                 >
@@ -194,9 +201,11 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
                         <div className="flex-1 min-w-0">
                           <div className="flex justify-between items-start">
                             <h4 className="text-sm font-bold text-stone-900 truncate pr-2">{product.name}</h4>
-                            <button 
+                            <button
+                              type="button"
                               // 🔴 4. Sisipkan slug saat menghapus item
-                              onClick={() => removeItem(slug, item.id)}
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={(event) => handleRemoveItem(event, item.id)}
                               className="text-stone-300 hover:text-red-500 transition-colors"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -214,7 +223,8 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
                               {formatIDR(unitPrice * item.quantity)}
                             </span>
                             <div className="flex items-center gap-3 bg-stone-50 rounded-full px-3 py-1 border border-stone-100">
-                              <button 
+                              <button
+                                type="button"
                                 // 🔴 5. Sisipkan slug saat update kuantitas (kurang)
                                 onClick={() => updateQuantity(slug, item.id, -1)} 
                                 className="hover:text-red-500 transition-colors"
@@ -222,7 +232,8 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
                                 <Minus className="w-3 h-3" />
                               </button>
                               <span className="text-xs font-bold w-4 text-center">{item.quantity}</span>
-                              <button 
+                              <button
+                                type="button"
                                 // 🔴 6. Sisipkan slug saat update kuantitas (tambah)
                                 onClick={() => updateQuantity(slug, item.id, 1)} 
                                 className="hover:text-[#0E5C37] transition-colors"
@@ -264,6 +275,7 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
               </div>
 
               <button
+                type="button"
                 disabled={cartItems.length === 0}
                 onClick={onCheckout}
                 className="w-full bg-[#0E5C37] disabled:opacity-30 text-white py-4 rounded-2xl flex items-center justify-center gap-3 font-bold shadow-lg shadow-emerald-900/20 active:scale-[0.98] transition-all"
@@ -272,9 +284,9 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+          </motion.aside>
+)}
+</AnimatePresence>
+</>
   );
 }
