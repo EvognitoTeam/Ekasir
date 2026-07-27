@@ -1,6 +1,15 @@
 import {
+  NextRequest,
   NextResponse,
 } from 'next/server';
+
+import {
+  GET as getProducts,
+} from '@/app/api/products/route';
+
+import {
+  GET as getCoupons,
+} from '@/app/api/coupons/route';
 
 export const dynamic =
   'force-dynamic';
@@ -202,21 +211,45 @@ function imageUrl(
   return `/${image}`;
 }
 
-async function fetchJson(
-  url: URL,
-  request: Request,
+type InternalRouteHandler =
+  (
+    request:
+      NextRequest,
+  ) =>
+    Promise<Response> |
+    Response;
+
+async function invokeInternalRoute(
+  handler:
+    InternalRouteHandler,
+  url:
+    URL,
+  sourceRequest:
+    Request,
 ) {
-  const response =
-    await fetch(
+  /*
+   * Jangan melakukan fetch HTTP ke origin aplikasi sendiri.
+   *
+   * Pada deployment di belakang reverse proxy, request publik
+   * dapat menggunakan HTTPS sementara proses Next.js internal
+   * hanya mendengarkan HTTP. Self-fetch ke requestUrl.origin
+   * dapat menghasilkan ERR_SSL_WRONG_VERSION_NUMBER.
+   *
+   * Route handler dipanggil langsung di dalam proses Node.js,
+   * sehingga tidak melewati TLS, reverse proxy, DNS, atau port
+   * publik.
+   */
+  const internalRequest =
+    new NextRequest(
       url,
       {
-        cache:
-          'no-store',
+        method:
+          'GET',
         headers: {
           Accept:
             'application/json',
           Cookie:
-            request.headers.get(
+            sourceRequest.headers.get(
               'cookie',
             ) ??
             '',
@@ -224,12 +257,31 @@ async function fetchJson(
       },
     );
 
-  const result =
-    await response.json();
+  const response =
+    await handler(
+      internalRequest,
+    );
+
+  let result:
+    unknown;
+
+  try {
+    result =
+      await response.json();
+  } catch {
+    result = {
+      success:
+        false,
+      message:
+        'Internal route mengembalikan response yang tidak valid.',
+    };
+  }
 
   return {
     response,
-    result,
+    result:
+      result as
+        Record<string, unknown>,
   };
 }
 
@@ -307,11 +359,13 @@ export async function GET(
       couponsResult,
     ] =
       await Promise.all([
-        fetchJson(
+        invokeInternalRoute(
+          getProducts,
           productsUrl,
           request,
         ),
-        fetchJson(
+        invokeInternalRoute(
+          getCoupons,
           couponsUrl,
           request,
         ),
