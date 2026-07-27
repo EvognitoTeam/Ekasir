@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Order, AddOnGroup, AddOnChoice } from '@/types/menu';
+import { Order } from '@/types/menu';
 import { useMenuStore } from '@/store/menu.store';
 import { formatPrice } from '@/utils/formatters';
 import { 
@@ -14,8 +14,84 @@ interface Props {
   order: Order;
   onUpdateStatus: (id: string, status: Order['status'] | 'cancelled', paymentStatus?: Order['paymentStatus']) => void;
   onUpdateNote?: (id: string, note: string) => void;
-  role?: 'cashier' | 'owner' | 'kitchen';
+  role?: 'cashier' | 'kitchen';
 }
+
+const normalizeOrderValue = (
+  value: unknown,
+): string => {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return '';
+  }
+
+  return String(value)
+    .trim()
+    .toLowerCase();
+};
+
+const readOrderField = (
+  order: Order,
+  fieldNames: string[],
+): unknown => {
+  const rawOrder =
+    order as unknown as Record<
+      string,
+      unknown
+    >;
+
+  for (const fieldName of fieldNames) {
+    const directValue =
+      rawOrder[fieldName];
+
+    if (
+      directValue !== null &&
+      directValue !== undefined &&
+      String(directValue).trim() !==
+        ''
+    ) {
+      return directValue;
+    }
+  }
+
+  /*
+   * Fallback case-insensitive agar tetap terbaca ketika API
+   * mengubah kapitalisasi nama properti.
+   */
+  const normalizedNames =
+    new Set(
+      fieldNames.map((name) =>
+        name
+          .replace(/_/g, '')
+          .toLowerCase(),
+      ),
+    );
+
+  for (
+    const [key, value] of
+    Object.entries(rawOrder)
+  ) {
+    const normalizedKey =
+      key
+        .replace(/_/g, '')
+        .toLowerCase();
+
+    if (
+      normalizedNames.has(
+        normalizedKey,
+      ) &&
+      value !== null &&
+      value !== undefined &&
+      String(value).trim() !== ''
+    ) {
+      return value;
+    }
+  }
+
+  return null;
+};
 
 const STATUS_CONFIG = {
   pending:   { label: 'Pesanan Baru',     color: '#B45309', bg: '#FEF3C7', border: '#FCD34D', dot: '#F59E0B' },
@@ -47,7 +123,104 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
     return () => clearInterval(t);
   }, [order.createdAt, order.status]);
 
-  const cfg = STATUS_CONFIG[order.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.completed;
+  const baseCfg =
+    STATUS_CONFIG[
+      order.status as keyof typeof STATUS_CONFIG
+    ] ||
+    STATUS_CONFIG.completed;
+
+  /*
+   * Jenis layanan dan meja asal wajib dibaca secara independen.
+   *
+   * table_number/tableId tidak menentukan apakah pesanan dine-in
+   * atau Takeaway. Pesanan Takeaway dari meja tetap mempunyai
+   * table_number.
+   */
+  const manualTableInfo =
+    readOrderField(
+      order,
+      [
+        'manualTableInfo',
+        'manual_table_info',
+        'manualInfo',
+        'manual_info',
+      ],
+    );
+
+  const serviceType =
+    readOrderField(
+      order,
+      [
+        'serviceType',
+        'service_type',
+        'orderType',
+        'order_type',
+        'fulfillmentType',
+        'fulfillment_type',
+      ],
+    );
+
+  const takeawayCandidates = [
+    manualTableInfo,
+    serviceType,
+  ].map(normalizeOrderValue);
+
+  const isTakeaway =
+    takeawayCandidates.some(
+      (value) =>
+        value === 'takeaway' ||
+        value === 'take away' ||
+        value === 'bungkus',
+    );
+
+  const rawTableName =
+    readOrderField(
+      order,
+      [
+        'tableName',
+        'table_name',
+        'tableCode',
+        'table_code',
+        'tableId',
+        'table_id',
+        'tableNumber',
+        'table_number',
+      ],
+    );
+
+  const tableName =
+    rawTableName !== null &&
+    rawTableName !== undefined
+      ? String(rawTableName)
+          .trim()
+          .replace(/^T-/i, '')
+      : '';
+
+  const normalizedTableName =
+    normalizeOrderValue(
+      tableName,
+    );
+
+  const hasTable =
+    Boolean(tableName) &&
+    normalizedTableName !==
+      'null' &&
+    normalizedTableName !==
+      'undefined' &&
+    normalizedTableName !==
+      'walk-in' &&
+    normalizedTableName !==
+      'walk in';
+
+  const cfg =
+    order.status === 'ready' &&
+    isTakeaway
+      ? {
+          ...baseCfg,
+          label:
+            'Siap Diambil',
+        }
+      : baseCfg;
 
   const handlePrint = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -60,7 +233,15 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
     }).join('');
 
     const orderIdToPrint = order.order_code || order.id;
-    const tableInfo = order.table_name ? `Meja: ${order.table_name}` : (order.table_number ? `Meja: ${order.table_number}` : 'TAKE AWAY');
+
+    const tableInfo = isTakeaway
+      ? hasTable
+        ? `TAKEAWAY - DARI: ${tableName}`
+        : 'TAKEAWAY'
+      : hasTable
+        ? `MEJA: ${tableName}`
+        : 'WALK-IN';
+
     const paymentStatusPrint = order.paymentStatus === '2' || order.paymentStatus === 'paid' ? 'LUNAS' : 'BELUM BAYAR';
 
     pw.document.write(`<html><head><style>
@@ -72,6 +253,7 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
       <div class="center bold border-b">
         <h2 style="margin:0 0 4px 0">EKASIR</h2>
         <p style="margin:8px 0 0 0;font-size:14px">${tableInfo}</p>
+        ${isTakeaway ? '<p style="margin:6px 0 0 0;padding:5px;border:2px solid #000;font-size:13px">BUNGKUS PESANAN</p>' : ''}
         <p style="margin:4px 0 0 0">Pesanan: #${orderIdToPrint}</p>
         ${order.customerName || order.name ? `<p style="margin:4px 0 0 0;font-weight:normal">Pelanggan: ${order.customerName || order.name}</p>` : ''}
         <p style="margin:4px 0 0 0;font-weight:normal;font-size:10px">${order.paymentMethod?.toUpperCase() || 'TUNAI'} - ${paymentStatusPrint}</p>
@@ -84,6 +266,38 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
     </body></html>`);
     pw.document.close();
   };
+
+  useEffect(() => {
+    if (
+      process.env.NODE_ENV !==
+        'production' &&
+      !manualTableInfo &&
+      !serviceType
+    ) {
+      console.warn(
+        '[ORDER_CARD_SERVICE_TYPE_MISSING]',
+        {
+          orderId:
+            order.id,
+          status:
+            order.status,
+          table_number:
+            (order as any)
+              ?.table_number,
+          table_name:
+            (order as any)
+              ?.table_name,
+          message:
+            'API daftar order belum mengirim manual_table_info/service_type.',
+        },
+      );
+    }
+  }, [
+    manualTableInfo,
+    serviceType,
+    order.id,
+    order.status,
+  ]);
 
   const paymentStatusUi = order.paymentStatus === '2' || order.paymentStatus === 'paid' ? 'LUNAS' : 'BLM BAYAR';
   const paymentMethodUi = order.paymentMethod || 'TUNAI';
@@ -114,21 +328,59 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
       <div style={{ padding: '12px 16px 10px', background: cfg.bg, borderBottom: `1px solid ${cfg.border}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            {order.orderType === 'takeaway' || !order.table_number ? (
-              <span style={{
-                display: 'inline-flex', alignItems: 'center', gap: '4px',
-                background: '#1c1c19', color: '#fff',
-                padding: '3px 9px', borderRadius: '6px', fontSize: '10px', fontWeight: 700, fontFamily: 'var(--font-label)', letterSpacing: '0.06em'
-              }}>
-                <ShoppingBag size={10} /> BUNGKUS
-              </span>
+            {isTakeaway ? (
+              <>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  background: '#DC2626',
+                  color: '#fff',
+                  border: '1px solid #B91C1C',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  fontSize: '10px',
+                  fontWeight: 900,
+                  fontFamily: 'var(--font-label)',
+                  letterSpacing: '0.08em',
+                  boxShadow: '0 2px 8px rgba(220,38,38,0.2)',
+                }}>
+                  <ShoppingBag size={11} /> TAKEAWAY
+                </span>
+
+                {hasTable && (
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    background: '#FFFBEB',
+                    color: '#92400E',
+                    border: '1px solid #FCD34D',
+                    padding: '3px 9px',
+                    borderRadius: '6px',
+                    fontSize: '10px',
+                    fontWeight: 800,
+                    fontFamily: 'var(--font-label)',
+                    letterSpacing: '0.05em',
+                  }}>
+                    <Coffee size={10} />
+                    DARI
+                    <strong style={{ color: '#B45309', marginLeft: 1 }}>
+                      {tableName}
+                    </strong>
+                  </span>
+                )}
+              </>
             ) : (
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: '4px',
                 background: '#f0ede9', color: '#1c1c19', border: '1px solid #d6c2bd',
                 padding: '3px 9px', borderRadius: '6px', fontSize: '10px', fontWeight: 700, fontFamily: 'var(--font-label)', letterSpacing: '0.06em'
               }}>
-                <Coffee size={10} /> MEJA <strong style={{ color: '#0E5C37', marginLeft: 2 }}>{order.table_name || order.table_number}</strong>
+                <Coffee size={10} /> MEJA
+                <strong style={{ color: '#0E5C37', marginLeft: 2 }}>
+                  {hasTable ? tableName : 'WALK-IN'}
+                </strong>
               </span>
             )}
 
@@ -172,6 +424,30 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
           )}
         </div>
       </div>
+
+      {isTakeaway && (
+        <div style={{
+          background: '#FEF2F2',
+          borderBottom: '1px solid #FCA5A5',
+          padding: '9px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '7px',
+          color: '#B91C1C',
+        }}>
+          <ShoppingBag size={14} />
+          <span style={{
+            fontSize: '10px',
+            fontWeight: 900,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            textAlign: 'center',
+          }}>
+            Bungkus pesanan atas nama: {order.customerName}
+          </span>
+        </div>
+      )}
 
       <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '10px', background: '#ffffff', flex: 1 }}>
         {(order.items || []).map((cartItem, idx) => {
@@ -485,7 +761,8 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
                       boxShadow: '0 4px 14px rgba(28,28,25,0.25)',
                     }}
                   >
-                    <Check size={15} /> Sudah Disajikan
+                    <Check size={15} />
+                    {isTakeaway ? 'Sudah Diambil' : 'Sudah Disajikan'}
                   </button>
                 )}
 

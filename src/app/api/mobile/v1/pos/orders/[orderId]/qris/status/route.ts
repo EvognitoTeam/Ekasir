@@ -10,6 +10,145 @@ import { db } from '@/db';
 import { orders } from '@/db/schema';
 import { requireMobileAuth } from '@/lib/mobile-api/auth';
 
+const MIDTRANS_SERVER_KEY =
+  process.env.MIDTRANS_SERVER_KEY ?? '';
+
+const MIDTRANS_IS_PRODUCTION =
+  String(
+    process.env.MIDTRANS_IS_PRODUCTION ??
+      'false',
+  ).toLowerCase() === 'true';
+
+const MIDTRANS_BASE_URL =
+  MIDTRANS_IS_PRODUCTION
+    ? 'https://api.midtrans.com'
+    : 'https://api.sandbox.midtrans.com';
+
+type MidtransStatusResponse = {
+  status_code?: string;
+  status_message?: string;
+  transaction_id?: string;
+  order_id?: string;
+  gross_amount?: string;
+  payment_type?: string;
+  transaction_status?: string;
+  fraud_status?: string;
+  transaction_time?: string;
+  settlement_time?: string;
+  expiry_time?: string;
+  issuer?: string;
+  acquirer?: string;
+};
+
+function getMidtransAuthorization() {
+  if (!MIDTRANS_SERVER_KEY) {
+    throw new Error(
+      'MIDTRANS_SERVER_KEY belum dikonfigurasi.',
+    );
+  }
+
+  return `Basic ${Buffer.from(
+    `${MIDTRANS_SERVER_KEY}:`,
+  ).toString('base64')}`;
+}
+
+function mapMidtransStatus(
+  transactionStatus:
+    string | undefined,
+  fraudStatus:
+    string | undefined,
+) {
+  if (
+    transactionStatus ===
+      'settlement' ||
+    (
+      transactionStatus ===
+        'capture' &&
+      fraudStatus ===
+        'accept'
+    )
+  ) {
+    return {
+      databaseStatus:
+        '2' as const,
+      label:
+        'paid',
+    };
+  }
+
+  if (
+    transactionStatus ===
+      'expire'
+  ) {
+    return {
+      databaseStatus:
+        '3' as const,
+      label:
+        'expired',
+    };
+  }
+
+  if (
+    [
+      'deny',
+      'cancel',
+      'failure',
+    ].includes(
+      transactionStatus ?? '',
+    )
+  ) {
+    return {
+      databaseStatus:
+        '4' as const,
+      label:
+        'failed',
+    };
+  }
+
+  return {
+    databaseStatus:
+      '1' as const,
+    label:
+      'pending',
+  };
+}
+
+async function fetchMidtransStatus(
+  identifier: string,
+) {
+  const response =
+    await fetch(
+      `${MIDTRANS_BASE_URL}/v2/${encodeURIComponent(
+        identifier,
+      )}/status`,
+      {
+        method:
+          'GET',
+        headers: {
+          Accept:
+            'application/json',
+          Authorization:
+            getMidtransAuthorization(),
+        },
+        cache:
+          'no-store',
+      },
+    );
+
+  const data =
+    await response.json() as
+      MidtransStatusResponse;
+
+  if (!response.ok) {
+    throw new Error(
+      data.status_message ||
+        `Midtrans HTTP ${response.status}`,
+    );
+  }
+
+  return data;
+}
+
 type RouteContext = {
   params: Promise<{
     orderId: string;
@@ -255,31 +394,87 @@ export async function GET(
       );
     }
 
-    const now = new Date();
+    const identifier =
+      order.transactionId ||
+      order.orderCode;
+
+    const midtransStatus =
+      await fetchMidtransStatus(
+        identifier,
+      );
+
+    const mappedStatus =
+      mapMidtransStatus(
+        midtransStatus
+          .transaction_status,
+        midtransStatus
+          .fraud_status,
+      );
+
+    const now =
+      new Date();
+
+    const shouldMarkPaid =
+      mappedStatus.databaseStatus ===
+        '2';
+
+    await db
+      .update(orders)
+      .set({
+        payment_status:
+          mappedStatus.databaseStatus,
+        transaction_id:
+          midtransStatus
+            .transaction_id ??
+          order.transactionId,
+        payment_type:
+          midtransStatus
+            .payment_type ??
+          order.paymentType,
+        issuer:
+          midtransStatus.issuer ??
+          midtransStatus.acquirer ??
+          order.issuer,
+        paymentPaidAt:
+          shouldMarkPaid
+            ? now
+            : undefined,
+        updatedAt:
+          now,
+      })
+      .where(
+        whereCondition,
+      );
 
     const expiryTime =
-      order.expiryTime
-        ? new Date(order.expiryTime)
-        : null;
+      midtransStatus.expiry_time
+        ? new Date(
+            midtransStatus
+              .expiry_time.replace(
+                ' ',
+                'T',
+              ) +
+              (
+                midtransStatus
+                  .expiry_time.includes(
+                    'T',
+                  )
+                  ? ''
+                  : '+07:00'
+              ),
+          )
+        : order.expiryTime
+          ? new Date(
+              order.expiryTime,
+            )
+          : null;
 
     const isExpired =
-      expiryTime !== null &&
-      expiryTime.getTime() <
-        now.getTime() &&
-      order.paymentStatus === '1';
+      mappedStatus.databaseStatus ===
+        '3';
 
-    /*
-     * Untuk sementara endpoint ini membaca
-     * status yang tersimpan di database.
-     *
-     * Sinkronisasi real ke Midtrans dapat
-     * ditambahkan kemudian.
-     */
-    const normalizedStatus = isExpired
-      ? 'expired'
-      : mapPaymentStatus(
-          order.paymentStatus,
-        );
+    const normalizedStatus =
+      mappedStatus.label;
 
     console.log('[QRIS_STATUS_SUCCESS]', {
       orderId: order.id,
@@ -305,18 +500,22 @@ export async function GET(
             order.paymentMethod,
 
           paymentStatus:
-            order.paymentStatus,
+            mappedStatus.databaseStatus,
 
           paymentStatusLabel:
             normalizedStatus,
 
           transactionId:
+            midtransStatus.transaction_id ??
             order.transactionId,
 
           paymentType:
+            midtransStatus.payment_type ??
             order.paymentType,
 
           issuer:
+            midtransStatus.issuer ??
+            midtransStatus.acquirer ??
             order.issuer,
 
           qrUrl:
@@ -325,10 +524,27 @@ export async function GET(
           qrString:
             order.qrString,
 
-          expiryTime:
-            order.expiryTime,
+          expiryTime,
 
           isExpired,
+
+          midtrans: {
+            transactionStatus:
+              midtransStatus.transaction_status ??
+              null,
+            fraudStatus:
+              midtransStatus.fraud_status ??
+              null,
+            statusCode:
+              midtransStatus.status_code ??
+              null,
+            statusMessage:
+              midtransStatus.status_message ??
+              null,
+            settlementTime:
+              midtransStatus.settlement_time ??
+              null,
+          },
 
           total: Number(
             order.totalAfterDiscount ??

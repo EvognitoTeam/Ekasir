@@ -35,6 +35,7 @@ interface Props {
 
 type PaymentMethod = 'qris' | 'cash';
 type OrderType = 'online' | 'cashier';
+type ServiceType = 'dine_in' | 'takeaway';
 
 type SettingsState = {
   taxRate: number;
@@ -466,12 +467,16 @@ function PaymentStep({
 }: any) {
   const { tableCode, tableName } = useTableStore();
 
-  const displayTable = tableName || tableCode || 'Walk-in / Takeaway';
-  const finalTableId = tableCode || 'Walk-in';
+  const displayTable = tableName || tableCode || 'Meja tidak dipilih';
 
   const [method, setMethod] = useState<PaymentMethod>('qris');
   const [orderType, setOrderType] = useState<OrderType>('online');
+  const [serviceType, setServiceType] = useState<ServiceType>(
+    tableCode ? 'dine_in' : 'takeaway',
+  );
 
+
+  const [sessionUserId, setSessionUserId] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -483,10 +488,33 @@ function PaymentStep({
       }
 
       try {
-        const response = await fetch(`/api/auth/me?slug=${slug}`);
+        const response = await fetch(
+          `/api/auth/me?slug=${encodeURIComponent(slug)}`,
+          {
+            method: 'GET',
+            credentials: 'include',
+            cache: 'no-store',
+            headers: {
+              Accept: 'application/json',
+            },
+          },
+        );
+
         const data = await response.json();
 
-        if (data.success && data.user) {
+        if (response.ok && data.success && data.user) {
+          const resolvedUserId = Number(
+            data.user.id ??
+              data.user.userId ??
+              data.user.user_id ??
+              0,
+          );
+
+          setSessionUserId(
+            Number.isInteger(resolvedUserId) && resolvedUserId > 0
+              ? resolvedUserId
+              : null,
+          );
           if (data.user.name) {
             setName(data.user.name);
           }
@@ -498,8 +526,12 @@ function PaymentStep({
           if (data.user.phone) {
             setPhone(data.user.phone);
           }
+        
+        } else {
+          setSessionUserId(null);
         }
       } catch (error) {
+        setSessionUserId(null);
         console.warn('Gagal mengambil session user:', error);
       }
     };
@@ -597,21 +629,68 @@ function PaymentStep({
               />
             </div>
 
-            <div className="flex cursor-not-allowed items-center gap-3 rounded-xl border border-stone-200 bg-stone-100 px-3 py-3 opacity-80">
-              <MapPin className="h-4 w-4 shrink-0 text-stone-500" />
+            <div className="space-y-3">
+              <div
+                className={`flex items-center gap-3 rounded-xl border px-3 py-3 ${
+                  serviceType === 'dine_in'
+                    ? 'border-[var(--color-primary)] bg-emerald-50'
+                    : 'border-stone-200 bg-stone-100 opacity-70'
+                }`}
+              >
+                <MapPin className="h-4 w-4 shrink-0 text-stone-500" />
 
-              <input
-                type="text"
-                readOnly
-                value={displayTable}
-                className="w-full cursor-not-allowed bg-transparent text-sm font-bold uppercase text-stone-600 outline-none"
-              />
+                <input
+                  type="text"
+                  readOnly
+                  value={displayTable}
+                  className="w-full cursor-not-allowed bg-transparent text-sm font-bold uppercase text-stone-600 outline-none"
+                />
 
-              {tableCode && (
-                <span className="rounded-md bg-emerald-100 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-emerald-600">
-                  Scanned
-                </span>
-              )}
+                {tableCode && (
+                  <span className="rounded-md bg-emerald-100 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-emerald-600">
+                    Scanned
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <p className="mb-2 text-[10px] font-label font-bold uppercase tracking-[0.2em] text-stone-500">
+                  Jenis pesanan
+                </p>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setServiceType('dine_in')}
+                    disabled={!tableCode}
+                    className={`rounded-xl border px-3 py-3 text-xs font-bold transition ${
+                      serviceType === 'dine_in'
+                        ? 'border-[var(--color-primary)] bg-emerald-50 text-[var(--color-primary)]'
+                        : 'border-stone-200 bg-white text-stone-500'
+                    } disabled:cursor-not-allowed disabled:opacity-40`}
+                  >
+                    Makan di Tempat
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setServiceType('takeaway')}
+                    className={`rounded-xl border px-3 py-3 text-xs font-bold transition ${
+                      serviceType === 'takeaway'
+                        ? 'border-[var(--color-primary)] bg-emerald-50 text-[var(--color-primary)]'
+                        : 'border-stone-200 bg-white text-stone-500'
+                    }`}
+                  >
+                    Takeaway
+                  </button>
+                </div>
+
+                {!tableCode && (
+                  <p className="mt-2 text-[10px] text-stone-400">
+                    Meja tidak tersedia, pesanan otomatis menggunakan Takeaway.
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -699,10 +778,20 @@ function PaymentStep({
           type="button"
           onClick={() =>
             onPay({
+              userId: sessionUserId,
               name,
               email,
               phone,
-              tableNumber: finalTableId,
+              /*
+               * tableNumber tetap dikirim meskipun pengguna memilih Takeaway.
+               * Dengan begitu backend tetap dapat menyimpan ID meja asal.
+               */
+              tableNumber: tableCode || null,
+              serviceType,
+              manualTableInfo:
+                serviceType === 'takeaway'
+                  ? 'Takeaway'
+                  : null,
               method,
               orderType,
             })
@@ -981,11 +1070,43 @@ export default function CheckoutView({
   }, [slug]);
 
   const handleApplyCoupon = async (code: string) => {
+    const normalizedCode = code.trim().toUpperCase();
+
+    if (!normalizedCode) {
+      setCoupon({
+        isValid: false,
+        code: '',
+        id: null,
+        discountRate: 0,
+        discountPrice: 0,
+        error: 'Kode kupon wajib diisi.',
+      });
+      return;
+    }
+
     setIsCheckingCoupon(true);
 
     try {
+      const authResponse = await fetch(
+        `/api/auth/me?slug=${encodeURIComponent(slug)}`,
+        {
+          method: 'GET',
+          credentials: 'include',
+          cache: 'no-store',
+        },
+      );
+
+      const authResult = await authResponse.json().catch(() => null);
+
+      const authenticatedUserId =
+        authResponse.ok &&
+        authResult?.success &&
+        authResult?.user?.id
+          ? Number(authResult.user.id)
+          : null;
+
       const couponParams = new URLSearchParams({
-        code,
+        code: normalizedCode,
         slug,
       });
 
@@ -993,46 +1114,44 @@ export default function CheckoutView({
         couponParams.set('branch_slug', branchSlug);
       }
 
+      if (authenticatedUserId) {
+        couponParams.set('user_id', String(authenticatedUserId));
+      }
+
       const response = await fetch(
         `/api/coupons/validate?${couponParams.toString()}`,
+        {
+          method: 'GET',
+          credentials: 'include',
+          cache: 'no-store',
+        },
       );
 
       const result = await response.json();
 
-      if (result.success) {
-        if (result.data.isMemberOnly && !isLoggedIn) {
-          setCoupon({
-            isValid: false,
-            code: '',
-            id: null,
-            discountRate: 0,
-            discountPrice: 0,
-            error:
-              'Kupon ini hanya khusus Member. Silakan login terlebih dahulu.',
-          });
-
-          return;
-        }
-
-        setCoupon({
-          isValid: true,
-          code: result.data.code,
-          id: result.data.id,
-          discountRate: result.data.discountRate,
-          discountPrice: result.data.discountPrice,
-          error: '',
-        });
-      } else {
+      if (!response.ok || !result.success) {
         setCoupon({
           isValid: false,
           code: '',
           id: null,
           discountRate: 0,
           discountPrice: 0,
-          error: result.message,
+          error: result.message || 'Kupon tidak dapat digunakan.',
         });
+        return;
       }
-    } catch {
+
+      setCoupon({
+        isValid: true,
+        code: result.data.code,
+        id: result.data.id,
+        discountRate: result.data.discountRate,
+        discountPrice: result.data.discountPrice,
+        error: '',
+      });
+    } catch (error) {
+      console.error('Coupon validation error:', error);
+
       setCoupon({
         isValid: false,
         code: '',
@@ -1162,10 +1281,37 @@ export default function CheckoutView({
       totalAfterDiscount: total,
       discountId: coupon.isValid ? coupon.id : null,
 
+      /*
+       * Fallback top-level agar route lama/baru tetap dapat membaca
+       * jenis layanan dan informasi manual.
+       */
+      serviceType:
+        customerData.serviceType ??
+        'dine_in',
+
+      manualTableInfo:
+        customerData.manualTableInfo ??
+        null,
+
       customer: {
         ...customerData,
-        userId: isLoggedIn ? userId : null,
-        method: customerData.method,
+        userId:
+          Number(customerData.userId) > 0
+            ? Number(customerData.userId)
+            : isLoggedIn && Number(userId) > 0
+              ? Number(userId)
+              : null,
+        tableNumber:
+          customerData.tableNumber ??
+          null,
+        serviceType:
+          customerData.serviceType ??
+          'dine_in',
+        manualTableInfo:
+          customerData.manualTableInfo ??
+          null,
+        method:
+          customerData.method,
       },
 
       cartItems: preparedItems,
@@ -1174,6 +1320,7 @@ export default function CheckoutView({
     try {
       const response = await fetch('/api/checkout', {
         method: 'POST',
+        credentials: 'include',
 
         headers: {
           'Content-Type': 'application/json',

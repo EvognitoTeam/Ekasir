@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
-import { useParams, useRouter } from 'next/navigation';
+import {
+  useParams,
+  usePathname,
+  useRouter,
+} from 'next/navigation';
 import {
   AlertCircle,
   CheckCircle,
@@ -21,6 +25,9 @@ import {
   Ticket,
   User,
   X,
+  Coins,
+  TrendingUp,
+  Sparkles,
 } from 'lucide-react';
 
 import { PRIVACY_CONTENT, TERMS_CONTENT } from '@/constants/legal';
@@ -47,6 +54,12 @@ type SessionUser = {
   nextTierMinimum: number | null;
   remainingToNextTier: number;
   tierProgress: number;
+  lifetimePointsEarned: number;
+  lifetimePointsRedeemed: number;
+  lifetimeSpending: number;
+  pointValue: number;
+  pointsRupiahValue: number;
+  loyaltyEnabled: boolean;
 };
 
 type MenuItem = {
@@ -72,15 +85,33 @@ export default function ProfileView({
   onViewCoupons,
 }: ProfileViewProps) {
   const params = useParams();
+  const pathname = usePathname();
   const router = useRouter();
   const { orderHistory } = useOrderStore();
 
-  const mitraSlug = String(params.mitraSlug ?? '');
-  const branchParam = params.branchSlug;
-  const branchSlug = Array.isArray(branchParam)
-    ? branchParam[0]
-    : typeof branchParam === 'string'
-      ? branchParam
+  const mitraSlug = String(
+    params.mitraSlug ?? '',
+  );
+
+  /*
+   * Pada route customer berbasis catch-all, params.branchSlug
+   * dapat berisi nama halaman, misalnya "profile".
+   * Karena itu branchSlug ditentukan dari posisi segmen pathname.
+   */
+  const pathSegments = pathname
+    .split('/')
+    .filter(Boolean);
+
+  const profileSegmentIndex =
+    pathSegments.lastIndexOf(
+      'profile',
+    );
+
+  const branchSlug =
+    profileSegmentIndex >= 2
+      ? pathSegments[
+          profileSegmentIndex - 1
+        ]
       : undefined;
 
   const basePath = branchSlug
@@ -109,9 +140,23 @@ export default function ProfileView({
       }
 
       try {
+        const query = new URLSearchParams({
+          slug: mitraSlug,
+        });
+
+        if (branchSlug) {
+          query.set('branch_slug', branchSlug);
+        }
+
         const response = await fetch(
-          `/api/auth/me?slug=${encodeURIComponent(mitraSlug)}`,
-          { cache: 'no-store' },
+          `/api/auth/me?${query.toString()}`,
+          {
+            credentials: 'include',
+            cache: 'no-store',
+            headers: {
+              Accept: 'application/json',
+            },
+          },
         );
         const data = await response.json();
 
@@ -181,6 +226,44 @@ export default function ProfileView({
                 data.user.tier_progress ??
                 0,
             ),
+
+            lifetimePointsEarned: Number(
+              data.user.lifetimePointsEarned ??
+                data.user.lifetime_points_earned ??
+                0,
+            ),
+
+            lifetimePointsRedeemed: Number(
+              data.user.lifetimePointsRedeemed ??
+                data.user.lifetime_points_redeemed ??
+                0,
+            ),
+
+            lifetimeSpending: Number(
+              data.user.lifetimeSpending ??
+                data.user.lifetime_spending ??
+                data.user.totalSpent ??
+                data.user.total_spent ??
+                0,
+            ),
+
+            pointValue: Number(
+              data.user.pointValue ??
+                data.user.point_value ??
+                0,
+            ),
+
+            pointsRupiahValue: Number(
+              data.user.pointsRupiahValue ??
+                data.user.points_rupiah_value ??
+                0,
+            ),
+
+            loyaltyEnabled: Boolean(
+              data.user.loyaltyEnabled ??
+                data.user.loyalty_enabled ??
+                false,
+            ),
           });
         } else {
           setIsLoggedIn(false);
@@ -201,7 +284,7 @@ export default function ProfileView({
     return () => {
       mounted = false;
     };
-  }, [mitraSlug]);
+  }, [mitraSlug, branchSlug]);
 
   const userRole = userData?.role?.toLowerCase() || 'user';
 
@@ -472,54 +555,96 @@ export default function ProfileView({
                   </button>
                 </div>
 
-                <div className="flex gap-3 border-t border-white/10 pt-6">
-                  <div className="flex-1 rounded-xl border border-white/5 bg-white/5 p-4 text-center backdrop-blur-sm">
-                    <p className="font-display text-2xl text-white">
-                       {userData?.totalOrders ?? 0}
+                <div className="grid grid-cols-2 gap-3 border-t border-white/10 pt-6">
+                  <div className="rounded-xl border border-white/5 bg-white/5 p-3 text-center backdrop-blur-sm sm:p-4">
+                    <p className="font-display text-xl text-white sm:text-2xl">
+                      {userData?.totalOrders ?? 0}
                     </p>
-                    <p className="mt-1 font-label text-[9px] font-bold uppercase tracking-widest text-stone-400">
-                      Total Pesanan
+                    <p className="mt-1 font-label text-[8px] font-bold uppercase tracking-widest text-stone-400 sm:text-[9px]">
+                      Pesanan
                     </p>
                   </div>
 
-                  <div className="flex-1 rounded-xl border border-white/5 bg-white/5 p-4 text-center backdrop-blur-sm">
-                    <p className="font-display text-lg text-white sm:text-xl">
-                       {formatIDR(userData?.totalSpent ?? 0)}
+                  <div className="rounded-xl border border-white/5 bg-white/5 p-3 text-center backdrop-blur-sm sm:p-4">
+                    <p className="truncate font-display text-sm text-white sm:text-lg">
+                      {formatIDR(userData?.totalSpent ?? 0)}
                     </p>
-                    <p className="mt-1 font-label text-[9px] font-bold uppercase tracking-widest text-stone-400">
+                    <p className="mt-1 font-label text-[8px] font-bold uppercase tracking-widest text-stone-400 sm:text-[9px]">
                       Total Belanja
                     </p>
                   </div>
+
+                  {/* <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-center backdrop-blur-sm sm:p-4">
+                    <p className="font-display text-xl font-bold text-amber-300 sm:text-2xl">
+                      {(userData?.points ?? 0).toLocaleString('id-ID')}
+                    </p>
+                    <p className="mt-1 font-label text-[8px] font-bold uppercase tracking-widest text-amber-200/70 sm:text-[9px]">
+                      Poin Aktifs
+                    </p>
+                  </div> */}
                 </div>
 
                 <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.06]">
-                  <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-                    <div>
-                      <p className="font-label text-[9px] font-bold uppercase tracking-widest text-stone-400">
-                        Membership
-                      </p>
+                  <div className="border-b border-white/10 px-5 py-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="font-label text-[9px] font-bold uppercase tracking-widest text-stone-400">
+                          Membership
+                        </p>
+                        <h3 className="mt-1 flex items-center gap-2 font-display text-lg font-bold text-white">
+                          <Sparkles className="h-4 w-4 text-amber-300" />
+                          {userData?.tier || 'Member'} Tier
+                        </h3>
+                        <p className="mt-1 text-xs text-stone-300">
+                          Kartu member digital
+                        </p>
+                      </div>
 
-                      {/* Tier sementara dinonaktifkan. Aktifkan kembali saat sistem tier sudah siap. */}
-                      
-                      <h3 className="font-display text-lg font-bold text-white">
-                        {userData?.tier || 'Member'} Tier
-                      </h3>
-                     
-
-                      <p className="mt-1 text-xs text-stone-300">
-                        Kartu member digital
-                      </p>
+                      <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-right">
+                        <p className="font-label text-[8px] font-bold uppercase tracking-widest text-amber-200/70">
+                          Saldo Poin
+                        </p>
+                        <p className="mt-1 font-display text-2xl font-bold text-amber-300">
+                          {(userData?.points ?? 0).toLocaleString('id-ID')}
+                        </p>
+                        {Number(userData?.pointsRupiahValue ?? 0) > 0 && (
+                          <p className="mt-0.5 text-[9px] font-medium text-amber-100/60">
+                            ≈ {formatIDR(userData?.pointsRupiahValue ?? 0)}
+                          </p>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="text-right">
-                      <p className="font-label text-[9px] font-bold uppercase tracking-widest text-stone-400">
-                        Poin Aktif
-                      </p>
-                      <p className="font-display text-2xl font-bold text-yellow-400">
-                        {/* {userData?.points ?? 0} */}
-                        COMING SOON
-                      </p>
-                    </div>
+                    {userData?.nextTier && (
+                      <div className="mt-4">
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <p className="text-[10px] font-semibold text-stone-300">
+                            Menuju {userData.nextTier}
+                          </p>
+                          <p className="text-[10px] font-bold text-amber-300">
+                            {Math.min(100, Math.max(0, userData.tierProgress || 0)).toFixed(0)}%
+                          </p>
+                        </div>
+
+                        <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                          <div
+                            className="h-full rounded-full bg-amber-300 transition-all"
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                Math.max(0, userData.tierProgress || 0),
+                              )}%`,
+                            }}
+                          />
+                        </div>
+
+                        <p className="mt-2 text-[10px] text-stone-400">
+                          {userData.remainingToNextTier > 0
+                            ? `Kurang ${formatIDR(userData.remainingToNextTier)} lagi untuk naik tier.`
+                            : 'Syarat tier berikutnya sudah tercapai.'}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-4 p-4">
@@ -550,6 +675,32 @@ export default function ProfileView({
                       </p>
                       <p className="mt-2 text-[10px] leading-relaxed text-stone-400">
                         Tunjukkan QR ini kepada kasir untuk identifikasi member dan pencatatan poin.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 border-t border-white/10 p-4">
+                    <div className="rounded-xl border border-white/5 bg-white/5 p-3">
+                      <div className="flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4 text-emerald-300" />
+                        <p className="font-label text-[8px] font-bold uppercase tracking-widest text-stone-400">
+                          Lifetime Earned
+                        </p>
+                      </div>
+                      <p className="mt-2 font-display text-lg font-bold text-white">
+                        {(userData?.lifetimePointsEarned ?? 0).toLocaleString('id-ID')}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-white/5 bg-white/5 p-3">
+                      <div className="flex items-center gap-2">
+                        <Coins className="h-4 w-4 text-amber-300" />
+                        <p className="font-label text-[8px] font-bold uppercase tracking-widest text-stone-400">
+                          Poin Digunakan
+                        </p>
+                      </div>
+                      <p className="mt-2 font-display text-lg font-bold text-white">
+                        {(userData?.lifetimePointsRedeemed ?? 0).toLocaleString('id-ID')}
                       </p>
                     </div>
                   </div>

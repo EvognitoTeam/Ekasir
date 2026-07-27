@@ -36,7 +36,15 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
   const storeName = slug ? slug.replace(/-/g, ' ').toUpperCase() : 'OUR RESTAURANT';
   
   const [actualTableName, setActualTableName] = useState(
-      (currentOrder as any)?.tableName || (currentOrder as any)?.table_name || 'Locating...'
+    (currentOrder as any)?.tableName ||
+      (currentOrder as any)?.table_name ||
+      'Locating...'
+  );
+
+  const [manualTableInfo, setManualTableInfo] = useState<string | null>(
+    (currentOrder as any)?.manualTableInfo ||
+      (currentOrder as any)?.manual_table_info ||
+      null
   );
 
   const [actualPaymentStatus, setActualPaymentStatus] = useState(
@@ -87,11 +95,35 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
 
   // Sinkronisasi Nama Toko & Meja Awal
   useEffect(() => {
-    const newTableName = (currentOrder as any)?.tableName || (currentOrder as any)?.table_name;
-    if (newTableName && newTableName !== actualTableName) {
+    const newTableName =
+      (currentOrder as any)?.tableName ||
+      (currentOrder as any)?.table_name;
+
+    const newManualTableInfo =
+      (currentOrder as any)?.manualTableInfo ||
+      (currentOrder as any)?.manual_table_info ||
+      null;
+
+    if (
+      newTableName &&
+      newTableName !== actualTableName
+    ) {
       setActualTableName(newTableName);
     }
-  }, [currentOrder]);
+
+    if (
+      newManualTableInfo !==
+      manualTableInfo
+    ) {
+      setManualTableInfo(
+        newManualTableInfo,
+      );
+    }
+  }, [
+    currentOrder,
+    actualTableName,
+    manualTableInfo,
+  ]);
 
   // Real-time Status & Table Polling
   useEffect(() => {
@@ -104,10 +136,42 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
         if (result.success && result.data && result.data.length > 0) {
           const fetchedOrder = result.data[0];
 
-          if (fetchedOrder.status !== currentOrder?.status) updateStatus(fetchedOrder.status);
-          if (fetchedOrder.table_name) setActualTableName(fetchedOrder.table_name);
-          else if (!fetchedOrder.table_number) setActualTableName('Walk-in');
-          if (fetchedOrder.payment_status) setActualPaymentStatus(fetchedOrder.payment_status.toString());
+          if (
+            fetchedOrder.status !==
+            currentOrder?.status
+          ) {
+            updateStatus(
+              fetchedOrder.status,
+            );
+          }
+
+          if (
+            fetchedOrder.table_name
+          ) {
+            setActualTableName(
+              fetchedOrder.table_name,
+            );
+          } else if (
+            !fetchedOrder.table_number
+          ) {
+            setActualTableName(
+              'Walk-in',
+            );
+          }
+
+          setManualTableInfo(
+            fetchedOrder.manual_table_info ||
+              fetchedOrder.manualTableInfo ||
+              null,
+          );
+
+          if (
+            fetchedOrder.payment_status
+          ) {
+            setActualPaymentStatus(
+              fetchedOrder.payment_status.toString(),
+            );
+          }
           if (fetchedOrder.payment_method) setPaymentMethod(fetchedOrder.payment_method);
 
           setTimestamps({
@@ -139,12 +203,38 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
   const preparingTime = formatTime(timestamps.preparing);
   const readyTime = formatTime(timestamps.ready);
 
+  const isTakeaway =
+    manualTableInfo
+      ?.trim()
+      .toLowerCase() ===
+    'takeaway';
+
+  const stationLabel = isTakeaway
+    ? actualTableName &&
+      actualTableName !==
+        'Walk-in' &&
+      actualTableName !==
+        'Locating...'
+      ? `Takeaway • ${actualTableName}`
+      : 'Takeaway'
+    : actualTableName;
+
+  const readyDescription = isTakeaway
+    ? actualTableName &&
+      actualTableName !==
+        'Walk-in' &&
+      actualTableName !==
+        'Locating...'
+      ? `Takeaway order from ${actualTableName}`
+      : 'Takeaway order is ready'
+    : `Served at ${actualTableName}`;
+
   // 🔴 MAPPING STEPS MENGGUNAKAN STATE ESTIMATES
   const STEPS = [
     { id: 'pending', label: 'Order Received', icon: Clock, description: 'Waiting for confirmation', time: orderTime || 'Just now' },
     { id: 'confirmed', label: 'Confirmed', icon: CheckCircle2, description: 'Accepted by our team', time: confirmedTime || (activeStep >= 1 ? 'Processing...' : `Est. ${estimates.confirmed}m`) },
     { id: 'preparing', label: 'In Preparation', icon: ChefHat, description: 'Prepared fresh by our chef', time: preparingTime || (activeStep >= 2 ? 'Processing...' : `Est. ${estimates.preparing}m`) },
-    { id: 'completed', label: 'Ready!', icon: Package, description: `Served at ${actualTableName}`, time: readyTime || (activeStep >= 3 ? 'Done' : `Est. ${estimates.ready}m`) },
+    { id: 'completed', label: 'Ready!', icon: Package, description: readyDescription, time: readyTime || (activeStep >= 3 ? 'Done' : `Est. ${estimates.ready}m`) },
   ];
 
   useEffect(() => {
@@ -212,9 +302,40 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
               </div>
            </div>
 
-           <div className="flex flex-col items-start gap-1">
-              <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Assigned Station</p>
-              <p className="text-4xl font-black text-[#0E5C37] uppercase">{actualTableName}</p>
+           <div className="flex w-full flex-col items-start gap-2">
+              <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">
+                {isTakeaway
+                  ? 'Order Type'
+                  : 'Assigned Station'}
+              </p>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-4xl font-black text-[#0E5C37] uppercase">
+                  {stationLabel}
+                </p>
+
+                {isTakeaway && (
+                  <span className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-700">
+                    <Package className="h-3.5 w-3.5" />
+                    Takeaway
+                  </span>
+                )}
+              </div>
+
+              {isTakeaway &&
+                actualTableName &&
+                actualTableName !==
+                  'Walk-in' &&
+                actualTableName !==
+                  'Locating...' && (
+                  <p className="text-xs font-medium text-stone-500">
+                    Pesanan takeaway dibuat dari meja{' '}
+                    <span className="font-bold text-stone-700">
+                      {actualTableName}
+                    </span>
+                    .
+                  </p>
+                )}
            </div>
         </header>
 

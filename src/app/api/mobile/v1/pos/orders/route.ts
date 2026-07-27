@@ -10,6 +10,271 @@ import { mobileError, mobileSuccess } from '@/lib/mobile-api/response';
 
 const ALLOWED_PAYMENT_METHODS = ['cash', 'qris'] as const;
 
+const MIDTRANS_SERVER_KEY =
+  process.env.MIDTRANS_SERVER_KEY ?? '';
+
+const MIDTRANS_IS_PRODUCTION =
+  String(
+    process.env.MIDTRANS_IS_PRODUCTION ??
+      'false',
+  ).toLowerCase() === 'true';
+
+const MIDTRANS_BASE_URL =
+  MIDTRANS_IS_PRODUCTION
+    ? 'https://api.midtrans.com'
+    : 'https://api.sandbox.midtrans.com';
+
+const QRIS_EXPIRY_MINUTES = Math.max(
+  1,
+  Number(
+    process.env.MIDTRANS_QRIS_EXPIRY_MINUTES ??
+      15,
+  ),
+);
+
+type MidtransAction = {
+  name?: string;
+  method?: string;
+  url?: string;
+};
+
+type MidtransQrisResponse = {
+  status_code?: string;
+  status_message?: string;
+  transaction_id?: string;
+  order_id?: string;
+  gross_amount?: string;
+  payment_type?: string;
+  transaction_status?: string;
+  transaction_time?: string;
+  expiry_time?: string;
+  fraud_status?: string;
+  acquirer?: string;
+  issuer?: string;
+  qr_string?: string;
+  actions?: MidtransAction[];
+  validation_messages?: string[];
+};
+
+function getMidtransAuthorization() {
+  if (!MIDTRANS_SERVER_KEY) {
+    throw new Error(
+      'MIDTRANS_SERVER_KEY belum dikonfigurasi.',
+    );
+  }
+
+  return `Basic ${Buffer.from(
+    `${MIDTRANS_SERVER_KEY}:`,
+  ).toString('base64')}`;
+}
+
+function findQrisUrl(
+  actions: MidtransAction[] | undefined,
+) {
+  if (!Array.isArray(actions)) {
+    return null;
+  }
+
+  const preferred =
+    actions.find(
+      (action) =>
+        action.name ===
+          'generate-qr-code-v2' &&
+        action.url,
+    ) ??
+    actions.find(
+      (action) =>
+        action.name ===
+          'generate-qr-code' &&
+        action.url,
+    );
+
+  return preferred?.url ?? null;
+}
+
+function parseMidtransDate(
+  value: string | undefined,
+  fallback: Date,
+) {
+  if (!value) {
+    return fallback;
+  }
+
+  /*
+   * Format Midtrans biasanya:
+   * YYYY-MM-DD HH:mm:ss
+   * Waktu diperlakukan sebagai Asia/Jakarta.
+   */
+  const normalized =
+    value.includes('T')
+      ? value
+      : `${value.replace(
+          ' ',
+          'T',
+        )}+07:00`;
+
+  const parsed =
+    new Date(normalized);
+
+  return Number.isNaN(
+    parsed.getTime(),
+  )
+    ? fallback
+    : parsed;
+}
+
+async function createMidtransQris({
+  orderCode,
+  grossAmount,
+  customer,
+}: {
+  orderCode: string;
+  grossAmount: number;
+  customer: {
+    name: string;
+    email: string | null;
+    phone: string | null;
+  };
+}) {
+  const response =
+    await fetch(
+      `${MIDTRANS_BASE_URL}/v2/charge`,
+      {
+        method: 'POST',
+        headers: {
+          Accept:
+            'application/json',
+          'Content-Type':
+            'application/json',
+          Authorization:
+            getMidtransAuthorization(),
+        },
+        body: JSON.stringify({
+          payment_type:
+            'qris',
+
+          transaction_details: {
+            order_id:
+              orderCode,
+            gross_amount:
+              grossAmount,
+          },
+
+          qris: {
+            acquirer:
+              'gopay',
+          },
+
+          customer_details: {
+            first_name:
+              customer.name ||
+              'Customer',
+            email:
+              customer.email ||
+              undefined,
+            phone:
+              customer.phone ||
+              undefined,
+          },
+
+          item_details: [
+            {
+              id:
+                orderCode,
+              price:
+                grossAmount,
+              quantity:
+                1,
+              name:
+                `Pembayaran ${orderCode}`,
+            },
+          ],
+
+          custom_expiry: {
+            expiry_duration:
+              QRIS_EXPIRY_MINUTES,
+            unit:
+              'minute',
+          },
+        }),
+        cache:
+          'no-store',
+      },
+    );
+
+  const data =
+    await response.json() as
+      MidtransQrisResponse;
+
+  if (!response.ok) {
+    const validationMessage =
+      Array.isArray(
+        data.validation_messages,
+      )
+        ? data.validation_messages.join(
+            ', ',
+          )
+        : null;
+
+    throw new Error(
+      validationMessage ||
+        data.status_message ||
+        `Midtrans HTTP ${response.status}`,
+    );
+  }
+
+  const qrUrl =
+    findQrisUrl(
+      data.actions,
+    );
+
+  if (
+    !data.transaction_id ||
+    !qrUrl
+  ) {
+    throw new Error(
+      'Response Midtrans tidak memiliki transaction_id atau URL QR.',
+    );
+  }
+
+  const fallbackExpiry =
+    new Date(
+      Date.now() +
+        QRIS_EXPIRY_MINUTES *
+          60 *
+          1000,
+    );
+
+  return {
+    raw:
+      data,
+    transactionId:
+      data.transaction_id,
+    paymentType:
+      data.payment_type ??
+      'qris',
+    transactionStatus:
+      data.transaction_status ??
+      'pending',
+    acquirer:
+      data.acquirer ??
+      null,
+    issuer:
+      data.issuer ??
+      data.acquirer ??
+      null,
+    qrUrl,
+    qrString:
+      data.qr_string ??
+      null,
+    expiryTime:
+      parseMidtransDate(
+        data.expiry_time,
+        fallbackExpiry,
+      ),
+  };
+}
+
 type CartItemInput = {
   menuItemId: number;
   name?: string;
@@ -198,6 +463,154 @@ export async function POST(request: Request) {
       return { orderId, orderCode };
     });
 
+    if (
+      paymentMethod ===
+      'qris'
+    ) {
+      try {
+        const qris =
+          await createMidtransQris({
+            orderCode:
+              created.orderCode,
+            grossAmount:
+              grandTotal,
+            customer: {
+              name:
+                String(
+                  body.customer?.name ??
+                    'Walk-in',
+                ),
+              email:
+                body.customer?.email
+                  ? String(
+                      body.customer.email,
+                    )
+                  : null,
+              phone:
+                body.customer?.phone
+                  ? String(
+                      body.customer.phone,
+                    )
+                  : null,
+            },
+          });
+
+        await db
+          .update(orders)
+          .set({
+            payment_method:
+              'qris',
+            payment_status:
+              '1',
+            transaction_id:
+              qris.transactionId,
+            payment_type:
+              qris.paymentType,
+            issuer:
+              qris.issuer,
+            qr_url:
+              qris.qrUrl,
+            qr_string:
+              qris.qrString,
+            expiry_time:
+              qris.expiryTime,
+            updatedAt:
+              new Date(),
+          })
+          .where(
+            and(
+              eq(
+                orders.id,
+                created.orderId,
+              ),
+              eq(
+                orders.mitra_id,
+                auth.mitraId,
+              ),
+            ),
+          );
+
+        return mobileSuccess(
+          {
+            ...created,
+            subtotal,
+            discount,
+            service,
+            tax,
+            grandTotal,
+            paymentMethod:
+              'qris',
+            paymentStatus:
+              '1',
+            paymentStatusLabel:
+              qris.transactionStatus,
+            qris: {
+              transactionId:
+                qris.transactionId,
+              qrUrl:
+                qris.qrUrl,
+              qrString:
+                qris.qrString,
+              expiryTime:
+                qris.expiryTime,
+              acquirer:
+                qris.acquirer,
+              issuer:
+                qris.issuer,
+            },
+          },
+          {
+            message:
+              'Pesanan dan QRIS berhasil dibuat.',
+            status:
+              201,
+          },
+        );
+      } catch (midtransError) {
+        console.error(
+          '[MOBILE_ORDER_QRIS_CREATE_ERROR]',
+          midtransError,
+        );
+
+        await db
+          .update(orders)
+          .set({
+            payment_method:
+              'qris',
+            payment_status:
+              '4',
+            updatedAt:
+              new Date(),
+          })
+          .where(
+            and(
+              eq(
+                orders.id,
+                created.orderId,
+              ),
+              eq(
+                orders.mitra_id,
+                auth.mitraId,
+              ),
+            ),
+          );
+
+        return mobileError(
+          'QRIS_CREATE_FAILED',
+          midtransError instanceof Error
+            ? midtransError.message
+            : 'Gagal membuat transaksi QRIS.',
+          502,
+          {
+            orderId:
+              created.orderId,
+            orderCode:
+              created.orderCode,
+          },
+        );
+      }
+    }
+
     return mobileSuccess(
       {
         ...created,
@@ -206,10 +619,19 @@ export async function POST(request: Request) {
         service,
         tax,
         grandTotal,
-        paymentMethod,
-        paymentStatus: '1',
+        paymentMethod:
+          'cash',
+        paymentStatus:
+          '1',
+        qris:
+          null,
       },
-      { message: 'Pesanan berhasil dibuat.', status: 201 },
+      {
+        message:
+          'Pesanan berhasil dibuat.',
+        status:
+          201,
+      },
     );
   } catch (error) {
     console.error('POST mobile orders error:', error);

@@ -19,6 +19,7 @@ import {
   PanelLeftClose,
   Settings,
   ShieldCheck,
+  Gift,
   Sofa,
   Store,
   Tag,
@@ -42,8 +43,20 @@ const PromoManager = dynamic(() => import('@/components/admin/PromoManager'), { 
 const StaffManager = dynamic(() => import('@/components/admin/StaffManager'), { loading: LoadingFallback });
 const TableConfig = dynamic(() => import('@/components/admin/TableConfig'), { loading: LoadingFallback });
 const BranchManager = dynamic(() => import('@/components/admin/BranchManager'), { loading: LoadingFallback });
+const LoyaltyConfig = dynamic(() => import('@/components/admin/LoyaltyConfig'), { loading: LoadingFallback });
 
-type AdminTab = 'dashboard' | 'sales' | 'menu' | 'ledger' | 'inventory' | 'table' | 'promos' | 'staff' | 'branch' | 'settings';
+type AdminTab =
+  | 'dashboard'
+  | 'sales'
+  | 'menu'
+  | 'ledger'
+  | 'inventory'
+  | 'table'
+  | 'promos'
+  | 'staff'
+  | 'branch'
+  | 'loyalty'
+  | 'settings';
 
 type NavItem = {
   id: AdminTab;
@@ -75,6 +88,7 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { id: 'branch', label: 'Cabang Outlet', description: 'Lokasi dan cabang', icon: Store },
       { id: 'staff', label: 'Staf & PIN', description: 'Akses karyawan', icon: Users },
+      { id: 'loyalty', label: 'Loyalty & Points', description: 'Atur sistem poin', icon: Gift },
       { id: 'settings', label: 'Konfigurasi', description: 'Pajak dan sistem', icon: Settings },
     ],
   },
@@ -90,6 +104,7 @@ const TITLES: Record<AdminTab, string> = {
   promos: 'Promo & Event',
   staff: 'Staf & PIN',
   branch: 'Cabang Outlet',
+  loyalty: 'Loyalty & Points',
   settings: 'Konfigurasi Sistem',
 };
 
@@ -133,7 +148,19 @@ export default function AdminDashboardPage() {
     const adminIndex = segments.indexOf('admin');
     const branchSlug = adminIndex === 2 ? segments[1] : undefined;
     const rawTab = adminIndex >= 0 ? segments[adminIndex + 1] : 'dashboard';
-    const allowed: AdminTab[] = ['dashboard', 'sales', 'menu', 'ledger', 'inventory', 'table', 'promos', 'staff', 'branch', 'settings'];
+    const allowed: AdminTab[] = [
+      'dashboard',
+      'sales',
+      'menu',
+      'ledger',
+      'inventory',
+      'table',
+      'promos',
+      'staff',
+      'branch',
+      'loyalty',
+      'settings',
+    ];
     const activeTab = allowed.includes(rawTab as AdminTab) ? (rawTab as AdminTab) : 'dashboard';
     const basePath = branchSlug ? `/${slug}/${branchSlug}/admin` : `/${slug}/admin`;
     const customerBase = branchSlug ? `/${slug}/${branchSlug}` : `/${slug}`;
@@ -204,6 +231,7 @@ export default function AdminDashboardPage() {
       case 'promos': return <PromoManager />;
       case 'staff': return <StaffManager />;
       case 'branch': return <BranchManager />;
+      case 'loyalty': return <LoyaltyConfig />;
       case 'settings': return <SystemConfig />;
       default:
         return (

@@ -32,6 +32,8 @@ type CheckoutBody = {
     email?: unknown;
     phone?: unknown;
     tableNumber?: unknown;
+    serviceType?: unknown;
+    manualTableInfo?: unknown;
     method?: unknown;
   };
 
@@ -46,6 +48,12 @@ type CheckoutBody = {
 
   discountId?: unknown;
   slug?: unknown;
+
+  /*
+   * Fallback top-level untuk kompatibilitas request.
+   */
+  serviceType?: unknown;
+  manualTableInfo?: unknown;
 
   /*
    * Cabang tempat website pelanggan dibuka.
@@ -258,11 +266,15 @@ async function findActiveCashier(
 export async function POST(
   request: Request,
 ): Promise<Response> {
+  let checkoutStep = 'START';
+
   try {
+    checkoutStep = 'PARSE_REQUEST';
     let body: CheckoutBody;
 
     try {
       body = (await request.json()) as CheckoutBody;
+      checkoutStep = 'REQUEST_PARSED';
     } catch {
       return jsonError(
         400,
@@ -380,6 +392,8 @@ export async function POST(
       process.env.MIDTRANS_IS_PRODUCTION ===
       'true';
 
+    checkoutStep = 'FIND_MITRA';
+
     const [foundMitra] = await db
       .select()
       .from(mitra)
@@ -404,6 +418,8 @@ export async function POST(
     /*
      * Cegah order ganda untuk request checkout yang sama.
      */
+    checkoutStep = 'CHECK_IDEMPOTENCY';
+
     const [existingOrder] = await db
       .select({
         id: orders.id,
@@ -479,6 +495,8 @@ export async function POST(
       });
     }
 
+    checkoutStep = 'FIND_SETTINGS';
+
     const [foundSetting] = await db
       .select()
       .from(settings)
@@ -522,6 +540,8 @@ export async function POST(
      * Checkout website tetap mengisi cashier_id.
      * Kasir dipilih dari users yang sedang login pada mitra dan cabang sama.
      */
+    checkoutStep = 'FIND_ACTIVE_CASHIER';
+
     const activeCashier =
       await findActiveCashier(
         mitraId,
@@ -766,8 +786,11 @@ export async function POST(
             price,
 
             selectedAddOnsDetails:
-              item.selectedAddOnsDetails ??
-              [],
+              Array.isArray(
+                item.selectedAddOnsDetails,
+              )
+                ? item.selectedAddOnsDetails
+                : [],
 
             fallbackName:
               normalizeString(
@@ -783,6 +806,8 @@ export async function POST(
         (item) =>
           item.productId,
       );
+
+    checkoutStep = 'FIND_PRODUCTS';
 
     const databaseProducts =
       await db
@@ -874,10 +899,16 @@ export async function POST(
 
     const now = new Date();
 
-    const paymentReference =
+    /*
+     * Referensi Midtrans hanya dipakai pada request provider.
+     * Tidak disimpan ke orders karena schema tidak memiliki kolom referensi provider.
+     */
+    const midtransOrderId =
       paymentMethod === 'qris'
         ? `EKASIR-${mitraId}-${generatedCode}`
         : null;
+
+    checkoutStep = 'START_TRANSACTION';
 
     const transactionResult =
       await db.transaction(
@@ -895,11 +926,59 @@ export async function POST(
               customer.tableNumber,
             );
 
+          const serviceType =
+            normalizeString(
+              customer.serviceType ??
+                body.serviceType,
+            ).toLowerCase();
+
+          const submittedManualTableInfo =
+            normalizeString(
+              customer.manualTableInfo ??
+                body.manualTableInfo,
+            );
+
+          const isTakeaway =
+            serviceType ===
+              'takeaway' ||
+            submittedManualTableInfo.toLowerCase() ===
+              'takeaway';
+
+          /*
+           * Cari meja berdasarkan mitra, kode meja, dan cabang.
+           * table_number tetap disimpan walaupun pesanan Takeaway.
+           */
           if (
             tableNumber &&
             tableNumber.toLowerCase() !==
               'walk-in'
           ) {
+            const tableConditions = [
+              eq(
+                tableList.mitra_id,
+                mitraId,
+              ),
+              eq(
+                tableList.table_code,
+                tableNumber,
+              ),
+            ];
+
+            if (branchId !== null) {
+              tableConditions.push(
+                eq(
+                  tableList.branch_id,
+                  branchId,
+                ),
+              );
+            } else {
+              tableConditions.push(
+                isNull(
+                  tableList.branch_id,
+                ),
+              );
+            }
+
             const [foundTable] =
               await tx
                 .select({
@@ -909,14 +988,7 @@ export async function POST(
                 .from(tableList)
                 .where(
                   and(
-                    eq(
-                      tableList.mitra_id,
-                      mitraId,
-                    ),
-                    eq(
-                      tableList.table_code,
-                      tableNumber,
-                    ),
+                    ...tableConditions,
                   ),
                 )
                 .limit(1);
@@ -924,152 +996,240 @@ export async function POST(
             if (foundTable) {
               finalTableId =
                 foundTable.id;
-            } else {
-              manualTableInfo =
-                tableNumber;
             }
           }
 
-          const [insertResult] =
+          /*
+           * manual_table_info ditentukan setelah pencarian meja
+           * agar tidak tertimpa.
+           */
+          if (isTakeaway) {
+            manualTableInfo =
+              'Takeaway';
+          } else if (
+            !finalTableId &&
+            tableNumber &&
+            tableNumber.toLowerCase() !==
+              'walk-in'
+          ) {
+            manualTableInfo =
+              tableNumber;
+          }
+
+          console.log(
+            '[CHECKOUT_TABLE_DATA]',
+            {
+              tableNumber,
+              requestCustomer:
+                customer,
+              bodyServiceType:
+                body.serviceType,
+              bodyManualTableInfo:
+                body.manualTableInfo,
+              serviceType,
+              submittedManualTableInfo,
+              isTakeaway,
+              finalTableId,
+              manualTableInfo,
+              mitraId,
+              branchId,
+            },
+          );
+
+          checkoutStep =
+            'PREPARE_ORDER_INSERT';
+
+          /*
+           * Semua nilai dibuat eksplisit. Tidak ada properti object insert
+           * yang bernilai undefined, karena Drizzle dapat melempar
+           * "Cannot convert undefined or null to object" ketika menerima
+           * row/object yang tidak valid.
+           */
+          const orderValues = {
+            order_code:
+              generatedCode,
+
+            mitra_id:
+              mitraId,
+
+            branch_id:
+              branchId,
+
+            user_id:
+              customerUserId,
+
+            cashier_id:
+              activeCashier.id,
+
+            name:
+              customerName,
+
+            email:
+              customerEmail ||
+              null,
+
+            phone_number:
+              customerPhone ||
+              null,
+
+            table_number:
+              finalTableId,
+
+            manual_table_info:
+              manualTableInfo,
+
+            total_price:
+              String(
+                basePrice,
+              ),
+
+            discount:
+              String(
+                discountValue,
+              ),
+
+            tax:
+              String(tax),
+
+            service:
+              String(service),
+
+            totalAfterDiscount:
+              String(
+                finalGrandTotal,
+              ),
+
+            payment_method:
+              paymentMethod,
+
+            discountId:
+              toPositiveInteger(
+                discountId,
+              ),
+
+            idempotencyKey:
+              String(
+                idempotencyKey,
+              ),
+
+            platformFee:
+              String(
+                platformFee,
+              ),
+
+            platformFeeRate:
+              String(
+                platformFeeRate,
+              ),
+
+            paymentPaidAt:
+              null,
+
+            completedAt:
+              null,
+
+            cancelledAt:
+              null,
+
+            cancelReason:
+              null,
+
+            status:
+              'pending' as const,
+
+            payment_status:
+              '1',
+
+            is_cashouted:
+              false,
+
+            createdAt:
+              now,
+
+            updatedAt:
+              now,
+          };
+
+          checkoutStep =
+            'INSERT_ORDER';
+
+          const insertResults =
             await tx
               .insert(orders)
-              .values({
-                order_code:
-                  generatedCode,
+              .values(
+                orderValues,
+              );
 
-                mitra_id:
-                  mitraId,
+          const insertResult =
+            insertResults[0];
 
-                branch_id:
-                  branchId,
-
-                user_id:
-                  customerUserId,
-
-                /*
-                 * Kasir aktif yang login pada mitra dan cabang terkait.
-                 */
-                cashier_id:
-                  activeCashier.id,
-
-                name:
-                  customerName,
-
-                email:
-                  customerEmail ||
-                  null,
-
-                phone_number:
-                  customerPhone ||
-                  null,
-
-                table_number:
-                  finalTableId,
-
-                manual_table_info:
-                  manualTableInfo,
-
-                total_price:
-                  String(
-                    basePrice,
-                  ),
-
-                discount:
-                  String(
-                    discountValue,
-                  ),
-
-                tax:
-                  String(tax),
-
-                service:
-                  String(service),
-
-                totalAfterDiscount:
-                  String(
-                    finalGrandTotal,
-                  ),
-
-                payment_method:
-                  paymentMethod,
-
-                discountId:
-                  toPositiveInteger(
-                    discountId,
-                  ),
-
-                idempotencyKey,
-
-                platformFee:
-                  String(
-                    platformFee,
-                  ),
-
-                platformFeeRate:
-                  String(
-                    platformFeeRate,
-                  ),
-
-                paymentPaidAt:
-                  null,
-
-                completedAt:
-                  null,
-
-                cancelledAt:
-                  null,
-
-                cancelReason:
-                  null,
-
-                status:
-                  'pending',
-
-                payment_status:
-                  '1',
-
-                is_cashouted:
-                  false,
-
-                createdAt:
-                  now,
-
-                updatedAt:
-                  now,
-              });
+          if (
+            !insertResult ||
+            !insertResult.insertId
+          ) {
+            throw new Error(
+              'Order berhasil diproses tetapi insertId tidak dikembalikan database.',
+            );
+          }
 
           const newOrderId =
-            insertResult.insertId;
+            Number(
+              insertResult.insertId,
+            );
+
+          checkoutStep =
+            'PREPARE_ORDER_ITEMS';
 
           const itemsToInsert =
             normalizedItems.map(
-              (item) => ({
-                order_id:
-                  newOrderId,
-
-                product_id:
-                  item.productId,
-
-                mitra_id:
-                  mitraId,
-
-                quantity:
-                  item.quantity,
-
-                notes:
-                  JSON.stringify(
+              (item) => {
+                const safeNotes =
+                  Array.isArray(
                     item.selectedAddOnsDetails,
-                  ),
+                  )
+                    ? item.selectedAddOnsDetails
+                    : [];
 
-                price:
-                  String(
-                    item.price,
-                  ),
+                return {
+                  order_id:
+                    newOrderId,
 
-                createdAt:
-                  now,
-              }),
+                  product_id:
+                    item.productId,
+
+                  mitra_id:
+                    mitraId,
+
+                  quantity:
+                    item.quantity,
+
+                  notes:
+                    JSON.stringify(
+                      safeNotes,
+                    ),
+
+                  price:
+                    String(
+                      item.price,
+                    ),
+
+                  createdAt:
+                    now,
+                };
+              },
             );
+
+          if (
+            itemsToInsert.length ===
+            0
+          ) {
+            throw new Error(
+              'Item order kosong.',
+            );
+          }
+
+          checkoutStep =
+            'INSERT_ORDER_ITEMS';
 
           await tx
             .insert(orderItems)
@@ -1084,7 +1244,7 @@ export async function POST(
             code:
               generatedCode,
 
-            paymentReference,
+            midtransOrderId,
           };
         },
       );
@@ -1328,6 +1488,8 @@ export async function POST(
         'base64',
       );
 
+    checkoutStep = 'MIDTRANS_CHARGE';
+
     const midtransResponse =
       await fetch(
         getMidtransUrl(
@@ -1351,7 +1513,7 @@ export async function POST(
 
               transaction_details: {
                 order_id:
-                  transactionResult.paymentReference,
+                  transactionResult.midtransOrderId,
 
                 gross_amount:
                   finalGrandTotal,
@@ -1401,9 +1563,6 @@ export async function POST(
           orderCode:
             transactionResult.code,
 
-          paymentReference:
-            transactionResult.paymentReference,
-
           providerResponse:
             process.env.NODE_ENV ===
               'development'
@@ -1428,6 +1587,8 @@ export async function POST(
               'generate-qr-code-v2',
           )
         : null;
+
+    checkoutStep = 'UPDATE_QRIS_ORDER';
 
     await db
       .update(orders)
@@ -1509,12 +1670,6 @@ export async function POST(
         paymentMethod:
           'qris',
 
-        paymentProvider:
-          'midtrans',
-
-        paymentReference:
-          transactionResult.paymentReference,
-
         transactionId:
           midtransData.transaction_id ??
           null,
@@ -1560,7 +1715,10 @@ export async function POST(
 
     console.error(
       '[WEBSITE_CHECKOUT_ERROR]',
-      error,
+      {
+        checkoutStep,
+        error,
+      },
     );
 
     if (
@@ -1585,6 +1743,8 @@ export async function POST(
       process.env.NODE_ENV ===
         'development'
         ? {
+            checkoutStep,
+
             message:
               errorMessage,
 
