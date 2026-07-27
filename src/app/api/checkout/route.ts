@@ -1039,13 +1039,8 @@ export async function POST(
           checkoutStep =
             'PREPARE_ORDER_INSERT';
 
-          /*
-           * Semua nilai dibuat eksplisit. Tidak ada properti object insert
-           * yang bernilai undefined, karena Drizzle dapat melempar
-           * "Cannot convert undefined or null to object" ketika menerima
-           * row/object yang tidak valid.
-           */
-          const orderValues = {
+          const orderValues:
+            typeof orders.$inferInsert = {
             order_code:
               generatedCode,
 
@@ -1138,7 +1133,7 @@ export async function POST(
               'pending' as const,
 
             payment_status:
-              '1',
+              '1' as const,
 
             is_cashouted:
               false,
