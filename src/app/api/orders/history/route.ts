@@ -1640,8 +1640,8 @@ export async function PUT(
                   ${scope.mitraId}
               LIMIT 1
               FOR UPDATE
-            `,
-          ) as MysqlExecuteResult<
+            `
+          ) as unknown as MysqlExecuteResult<
             LockedOrderRow[]
           >;
 
