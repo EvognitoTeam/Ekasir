@@ -14,7 +14,7 @@ interface Props {
   order: Order;
   onUpdateStatus: (id: string, status: Order['status'] | 'cancelled', paymentStatus?: Order['paymentStatus']) => void;
   onUpdateNote?: (id: string, note: string) => void;
-  role?: 'cashier' | 'kitchen';
+  role?: 'cashier' | 'owner' | 'kitchen';
 }
 
 const normalizeOrderValue = (
