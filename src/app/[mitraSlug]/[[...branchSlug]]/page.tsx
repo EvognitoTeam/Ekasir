@@ -32,6 +32,7 @@ import { useMenuStore } from '@/store/menu.store';
 import { useOrderStore } from '@/store/order.store';
 import { useTableStore } from '@/store/table.store';
 import type { MenuItem } from '@/types/menu';
+import KioskApp from '@/components/kiosk/KioskApp';
 
 type ViewState =
   | 'menu'
@@ -56,6 +57,63 @@ const CUSTOMER_VIEWS: readonly ViewState[] = [
 
 function isCustomerView(value: string | undefined): value is ViewState {
   return Boolean(value && CUSTOMER_VIEWS.includes(value as ViewState));
+}
+
+type ResolvedAppRoute =
+  | {
+      mode: 'kiosk';
+      branchSlug: string | null;
+    }
+  | {
+      mode: 'customer';
+      branchSlug: string | null;
+      currentView: ViewState;
+      hasExplicitView: boolean;
+    };
+
+function resolveAppRoute(
+  segments: string[] | undefined,
+): ResolvedAppRoute {
+  const routeSegments =
+    segments ?? [];
+
+  /*
+   * /{mitraSlug}/kiosk
+   */
+  if (
+    routeSegments.length === 1 &&
+    routeSegments[0] === 'kiosk'
+  ) {
+    return {
+      mode: 'kiosk',
+      branchSlug: null,
+    };
+  }
+
+  /*
+   * /{mitraSlug}/{branchSlug}/kiosk
+   */
+  if (
+    routeSegments.length === 2 &&
+    routeSegments[1] === 'kiosk'
+  ) {
+    return {
+      mode: 'kiosk',
+      branchSlug:
+        routeSegments[0] ||
+        null,
+    };
+  }
+
+  const customerRoute =
+    resolveCustomerRoute(
+      routeSegments,
+    );
+
+  return {
+    mode: 'customer',
+    ...customerRoute,
+  };
 }
 
 function resolveCustomerRoute(segments: string[] | undefined) {
@@ -83,10 +141,33 @@ export default function CustomerPage() {
   const params = useParams<{ mitraSlug: string; branchSlug?: string[] }>();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const slug = params.mitraSlug;
-  const route = resolveCustomerRoute(params.branchSlug);
-  const branchSlug = route.branchSlug;
-  const currentView = route.currentView;
+  const slug =
+    params.mitraSlug;
+
+  const resolvedRoute =
+    resolveAppRoute(
+      params.branchSlug,
+    );
+
+  const isKiosk =
+    resolvedRoute.mode ===
+    'kiosk';
+
+  const branchSlug =
+    resolvedRoute.branchSlug;
+
+  const currentView:
+    ViewState =
+    resolvedRoute.mode ===
+    'customer'
+      ? resolvedRoute.currentView
+      : 'menu';
+
+  const hasExplicitView =
+    resolvedRoute.mode ===
+    'customer'
+      ? resolvedRoute.hasExplicitView
+      : false;
 
   const { setMenu, setLoading, items, categories, isLoading } = useMenuStore();
   const addItem = useCartStore((state) => state.addItem);
@@ -156,13 +237,34 @@ export default function CustomerPage() {
   );
 
   useEffect(() => {
-    if (!slug || route.hasExplicitView) return;
+    if (
+      !slug ||
+      isKiosk ||
+      hasExplicitView
+    ) {
+      return;
+    }
 
-    router.replace(buildCustomerUrl('menu'));
-  }, [buildCustomerUrl, route.hasExplicitView, router, slug]);
+    router.replace(
+      buildCustomerUrl(
+        'menu',
+      ),
+    );
+  }, [
+    buildCustomerUrl,
+    hasExplicitView,
+    isKiosk,
+    router,
+    slug,
+  ]);
 
   useEffect(() => {
-    if (!slug) return;
+    if (
+      !slug ||
+      isKiosk
+    ) {
+      return;
+    }
 
     const controller = new AbortController();
     const tableCode = searchParams.get('tableCode');
@@ -235,7 +337,15 @@ export default function CustomerPage() {
     void loadCustomerData();
 
     return () => controller.abort();
-  }, [branchSlug, searchParams, setLoading, setMenu, setTable, slug]);
+  }, [
+    branchSlug,
+    isKiosk,
+    searchParams,
+    setLoading,
+    setMenu,
+    setTable,
+    slug,
+  ]);
 
   const handleOpenDetail = (product: MenuItem) => {
     setSelectedProduct(product);
@@ -261,6 +371,18 @@ export default function CustomerPage() {
 
     router.push(buildCustomerUrl(view));
   };
+
+  if (isKiosk) {
+    return (
+      <KioskApp
+        mitraSlug={slug}
+        branchSlug={
+          branchSlug ??
+          undefined
+        }
+      />
+    );
+  }
 
   if (error) {
     return (
