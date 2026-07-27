@@ -24,6 +24,22 @@ type AuthPayload = JWTPayload & {
   role?: string;
 };
 
+type AdminScopeSuccess = {
+  ok: true;
+  payload: AuthPayload;
+  mitraId: number;
+  branchId: number | null;
+};
+
+type AdminScopeFailure = {
+  ok: false;
+  response: NextResponse;
+};
+
+type AdminScopeResult =
+  | AdminScopeSuccess
+  | AdminScopeFailure;
+
 type EarningMode =
   | 'fixed_ratio'
   | 'tier_percentage';
@@ -114,7 +130,7 @@ type RawStatsRow = {
 function jsonError(
   status: number,
   message: string,
-) {
+): NextResponse {
   return NextResponse.json(
     {
       success: false,
@@ -297,13 +313,14 @@ Promise<AuthPayload | null> {
 async function resolveAdminScope(
   slug: string,
   branchSlug: string | null,
-) {
+): Promise<AdminScopeResult> {
   const payload =
     await getAuthPayload();
 
   if (!payload) {
     return {
-      error:
+      ok: false,
+      response:
         jsonError(
           401,
           'Sesi admin tidak ditemukan atau sudah berakhir.',
@@ -318,7 +335,8 @@ async function resolveAdminScope(
 
   if (role !== 'owner') {
     return {
-      error:
+      ok: false,
+      response:
         jsonError(
           403,
           'Hanya Owner yang dapat mengubah konfigurasi loyalty.',
@@ -331,7 +349,8 @@ async function resolveAdminScope(
     payload.slug !== slug
   ) {
     return {
-      error:
+      ok: false,
+      response:
         jsonError(
           403,
           'Sesi admin tidak sesuai dengan mitra ini.',
@@ -369,7 +388,8 @@ async function resolveAdminScope(
       )
   ) {
     return {
-      error:
+      ok: false,
+      response:
         jsonError(
           403,
           'Mitra tidak ditemukan atau akses ditolak.',
@@ -408,7 +428,8 @@ async function resolveAdminScope(
 
     if (!foundBranch) {
       return {
-        error:
+        ok: false,
+        response:
           jsonError(
             404,
             'Cabang tidak ditemukan.',
@@ -423,6 +444,7 @@ async function resolveAdminScope(
   }
 
   return {
+    ok: true,
     payload,
     mitraId:
       Number(
@@ -594,8 +616,8 @@ export async function GET(
         branchSlug,
       );
 
-    if ('error' in scope) {
-      return scope.error;
+    if (!scope.ok) {
+      return scope.response;
     }
 
     const {
@@ -639,7 +661,7 @@ export async function GET(
           ORDER BY id DESC
           LIMIT 1
         `,
-      ) as MysqlExecuteResult<
+      ) as unknown as MysqlExecuteResult<
         RawSettingsRow[]
       >;
 
@@ -670,7 +692,7 @@ export async function GET(
             sort_order ASC,
             id ASC
         `,
-      ) as MysqlExecuteResult<
+      ) as unknown as MysqlExecuteResult<
         RawTierRow[]
       >;
 
@@ -721,7 +743,7 @@ export async function GET(
             )
               AS point_transactions
         `,
-      ) as MysqlExecuteResult<
+      ) as unknown as MysqlExecuteResult<
         RawStatsRow[]
       >;
 
@@ -826,8 +848,8 @@ export async function PUT(
         branchSlug,
       );
 
-    if ('error' in scope) {
-      return scope.error;
+    if (!scope.ok) {
+      return scope.response;
     }
 
     const {
@@ -1039,7 +1061,7 @@ export async function PUT(
               ORDER BY id DESC
               LIMIT 1
             `,
-          ) as MysqlExecuteResult<
+          ) as unknown as MysqlExecuteResult<
             Array<{
               id: number;
             }>
