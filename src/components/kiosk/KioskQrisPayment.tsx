@@ -1,8 +1,19 @@
 'use client';
 
-import { useEffect } from 'react';
-import { Loader2, RefreshCw, X } from 'lucide-react';
-import type { KioskQrisData } from './types';
+import {
+  useEffect,
+} from 'react';
+
+import {
+  Loader2,
+  RefreshCw,
+  ShieldCheck,
+  X,
+} from 'lucide-react';
+
+import type {
+  KioskQrisData,
+} from './types';
 
 type Props = {
   qris: KioskQrisData | null;
@@ -13,31 +24,99 @@ type Props = {
   onPoll: () => void;
 };
 
-export default function KioskQrisPayment({ qris, grandTotal, paymentStatus, onCancel, onRetry, onPoll }: Props) {
+export default function KioskQrisPayment({
+  qris,
+  grandTotal,
+  paymentStatus,
+  onCancel,
+  onRetry,
+  onPoll,
+}: Props) {
   useEffect(() => {
-    if (paymentStatus !== 'pending') return;
-    const timer = window.setInterval(onPoll, 4000);
-    return () => window.clearInterval(timer);
-  }, [onPoll, paymentStatus]);
+    if (paymentStatus !== 'pending') {
+      return;
+    }
+
+    const timer =
+      window.setInterval(
+        onPoll,
+        4000,
+      );
+
+    return () =>
+      window.clearInterval(
+        timer,
+      );
+  }, [
+    onPoll,
+    paymentStatus,
+  ]);
 
   return (
-    <section className="flex min-h-screen flex-col bg-stone-950 px-8 py-10 text-white">
-      <button type="button" onClick={onCancel} className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/10"><X className="h-6 w-6" /></button>
+    <section className="min-h-[100dvh] bg-[#171717] p-4 text-white sm:p-6 lg:p-8">
+      <div className="mx-auto flex min-h-[calc(100dvh-2rem)] max-w-6xl flex-col sm:min-h-[calc(100dvh-3rem)]">
+        <header className="flex items-center justify-between">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex h-12 w-12 items-center justify-center rounded-2xl border-2 border-white bg-white text-[#171717] shadow-[3px_3px_0_#c8ff3d]"
+          >
+            <X className="h-5 w-5" />
+          </button>
 
-      <div className="flex flex-1 flex-col items-center justify-center text-center">
-        <p className="text-sm font-bold uppercase tracking-[0.3em] text-amber-300">Scan untuk membayar</p>
-        <h1 className="mt-4 text-5xl font-black">Rp{grandTotal.toLocaleString('id-ID')}</h1>
+          <span className="flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em]">
+            <ShieldCheck className="h-4 w-4 text-[#c8ff3d]" />
+            Pembayaran aman
+          </span>
+        </header>
 
-        <div className="mt-10 flex min-h-[520px] min-w-[520px] items-center justify-center rounded-[2.5rem] bg-white p-8">
-          {qris?.qrUrl ? (
-            <img src={qris.qrUrl} alt="QRIS" className="h-[440px] w-[440px] object-contain" />
-          ) : (
-            <Loader2 className="h-16 w-16 animate-spin text-stone-400" />
-          )}
+        <div className="grid flex-1 items-center gap-8 py-8 lg:grid-cols-[0.8fr_1.2fr] lg:gap-12">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.24em] text-[#c8ff3d]">
+              Scan untuk membayar
+            </p>
+            <h1 className="mt-3 text-[clamp(2.8rem,7vw,6rem)] font-black leading-[0.9] tracking-[-0.06em]">
+              Rp{grandTotal.toLocaleString('id-ID')}
+            </h1>
+            <p className="mt-5 max-w-lg text-base font-medium leading-relaxed text-white/60 sm:text-xl">
+              Buka aplikasi bank atau e-wallet, lalu arahkan kamera ke kode QR.
+            </p>
+
+            {paymentStatus === 'pending' && (
+              <div className="mt-7 inline-flex items-center gap-3 rounded-2xl border-2 border-white bg-[#c8ff3d] px-4 py-3 font-black text-[#171717] shadow-[4px_4px_0_#ff5c35]">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Menunggu pembayaran
+              </div>
+            )}
+
+            {paymentStatus === 'expired' && (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="mt-7 flex min-h-14 items-center gap-3 rounded-2xl border-2 border-white bg-[#ff5c35] px-5 font-black shadow-[4px_4px_0_#c8ff3d]"
+              >
+                <RefreshCw className="h-5 w-5" />
+                Buat QR baru
+              </button>
+            )}
+          </div>
+
+          <div className="mx-auto w-full max-w-[560px]">
+            <div className="rotate-1 rounded-[2.5rem] border-[3px] border-white bg-white p-5 shadow-[14px_14px_0_#c8ff3d] sm:p-8">
+              <div className="flex aspect-square items-center justify-center rounded-[1.75rem] bg-[#f4f1e8] p-4">
+                {qris?.qrUrl ? (
+                  <img
+                    src={qris.qrUrl}
+                    alt="QRIS"
+                    className="h-full w-full object-contain"
+                  />
+                ) : (
+                  <Loader2 className="h-16 w-16 animate-spin text-neutral-400" />
+                )}
+              </div>
+            </div>
+          </div>
         </div>
-
-        {paymentStatus === 'pending' && <div className="mt-8 flex items-center gap-3 text-lg text-stone-300"><Loader2 className="h-5 w-5 animate-spin text-amber-300" />Menunggu pembayaran...</div>}
-        {paymentStatus === 'expired' && <button type="button" onClick={onRetry} className="mt-8 flex min-h-16 items-center gap-3 rounded-2xl bg-amber-300 px-8 text-xl font-black text-stone-950"><RefreshCw className="h-6 w-6" />Buat QR Baru</button>}
       </div>
     </section>
   );

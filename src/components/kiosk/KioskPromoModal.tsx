@@ -66,23 +66,23 @@ export default function KioskPromoModal({
 
   return (
     <div
-      className="fixed inset-0 z-[180] flex items-end justify-center bg-stone-950/70 p-0 backdrop-blur-sm sm:items-center sm:p-4 lg:p-8"
+      className="fixed inset-0 z-[180] flex items-end justify-center bg-[#171717]/70 p-0 backdrop-blur-sm sm:items-center sm:p-4 lg:p-8"
       role="dialog"
       aria-modal="true"
       aria-label="Promo yang tersedia"
     >
-      <div className="flex max-h-[94dvh] w-full max-w-5xl flex-col overflow-hidden rounded-t-[2rem] bg-stone-100 shadow-2xl sm:max-h-[90dvh] sm:rounded-[2.5rem]">
-        <header className="flex items-center justify-between border-b border-stone-200 bg-white px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6">
+      <div className="flex max-h-[94dvh] w-full max-w-5xl flex-col overflow-hidden rounded-t-[2rem] border-2 border-[#171717] bg-[#f4f1e8] shadow-[10px_10px_0_#171717] sm:max-h-[90dvh] sm:rounded-[2.5rem]">
+        <header className="flex items-center justify-between border-b border-[#171717]/20 bg-white px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6">
           <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-300 text-stone-950 sm:h-14 sm:w-14 sm:rounded-2xl">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#c8ff3d] text-[#171717] sm:h-14 sm:w-14 sm:rounded-2xl">
               <TicketPercent className="h-6 w-6 sm:h-7 sm:w-7" />
             </span>
 
             <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-700 sm:text-xs sm:tracking-[0.24em]">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#ff5c35] sm:text-xs sm:tracking-[0.24em]">
                 Promo mitra
               </p>
-              <h2 className="truncate text-xl font-black text-stone-950 sm:mt-1 sm:text-3xl">
+              <h2 className="truncate text-xl font-black text-[#171717] sm:mt-1 sm:text-3xl">
                 Pilih voucher
               </h2>
             </div>
@@ -91,7 +91,7 @@ export default function KioskPromoModal({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-stone-100 text-stone-700 sm:h-14 sm:w-14 sm:rounded-2xl"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#f4f1e8] text-stone-700 sm:h-14 sm:w-14 sm:rounded-2xl"
           >
             <X className="h-5 w-5 sm:h-6 sm:w-6" />
           </button>
@@ -126,7 +126,7 @@ export default function KioskPromoModal({
                     className={`relative overflow-hidden rounded-2xl border p-4 text-left shadow-sm transition active:scale-[0.99] sm:rounded-[2rem] sm:p-5 lg:p-6 ${
                       applied
                         ? 'border-emerald-400 bg-emerald-50 ring-2 ring-emerald-300'
-                        : 'border-amber-200 bg-white hover:border-amber-400'
+                        : 'border-amber-200 bg-white hover:border-[#171717]'
                     }`}
                   >
                     <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-amber-100 sm:h-28 sm:w-28" />
@@ -134,22 +134,22 @@ export default function KioskPromoModal({
                     <div className="relative">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700 sm:text-xs sm:tracking-[0.22em]">
+                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff5c35] sm:text-xs sm:tracking-[0.22em]">
                             Klik kode untuk pakai
                           </p>
 
-                          <span className="mt-2 inline-flex max-w-full items-center gap-2 rounded-xl bg-stone-950 px-3 py-2 font-mono text-sm font-black tracking-[0.1em] text-white sm:px-4 sm:text-lg sm:tracking-[0.16em]">
+                          <span className="mt-2 inline-flex max-w-full items-center gap-2 rounded-xl bg-[#171717] px-3 py-2 font-mono text-sm font-black tracking-[0.1em] text-white sm:px-4 sm:text-lg sm:tracking-[0.16em]">
                             <Tag className="h-4 w-4 shrink-0" />
                             <span className="truncate">{promo.couponCode}</span>
                           </span>
                         </div>
 
-                        <span className="shrink-0 rounded-xl bg-amber-300 px-3 py-2 text-lg font-black text-stone-950 sm:rounded-2xl sm:px-4 sm:py-3 sm:text-2xl">
+                        <span className="shrink-0 rounded-xl bg-[#c8ff3d] px-3 py-2 text-lg font-black text-[#171717] sm:rounded-2xl sm:px-4 sm:py-3 sm:text-2xl">
                           {formatDiscount(promo)}
                         </span>
                       </div>
 
-                      <h3 className="mt-5 line-clamp-2 text-lg font-black text-stone-950 sm:mt-6 sm:text-2xl">
+                      <h3 className="mt-5 line-clamp-2 text-lg font-black text-[#171717] sm:mt-6 sm:text-2xl">
                         {promo.title}
                       </h3>
 
@@ -159,9 +159,9 @@ export default function KioskPromoModal({
                         </p>
                       )}
 
-                      <div className="mt-4 space-y-2 border-t border-dashed border-stone-200 pt-4 text-xs font-semibold text-stone-500 sm:mt-5 sm:text-sm">
+                      <div className="mt-4 space-y-2 border-t border-dashed border-[#171717]/20 pt-4 text-xs font-semibold text-stone-500 sm:mt-5 sm:text-sm">
                         <p className="flex items-center gap-2">
-                          <CalendarClock className="h-4 w-4 text-amber-600" />
+                          <CalendarClock className="h-4 w-4 text-[#ff5c35]" />
                           {formatExpiry(promo.expiredDate)}
                         </p>
 
@@ -176,7 +176,7 @@ export default function KioskPromoModal({
                       <div className={`mt-4 flex min-h-11 items-center justify-center gap-2 rounded-xl text-sm font-black ${
                         applied
                           ? 'bg-emerald-600 text-white'
-                          : 'bg-stone-950 text-white'
+                          : 'bg-[#171717] text-white'
                       }`}>
                         {loading ? (
                           <>

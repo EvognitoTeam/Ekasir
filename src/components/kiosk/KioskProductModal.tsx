@@ -272,14 +272,14 @@ export default function KioskProductModal({
     };
 
   return (
-    <div className="fixed inset-0 z-[160] flex items-end justify-center bg-stone-950/70 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="max-h-[96dvh] w-full max-w-[1080px] overflow-y-auto rounded-t-[2rem] bg-white shadow-2xl sm:max-h-[92dvh] sm:rounded-[2.5rem]">
-        <header className="sticky top-0 z-20 flex items-center justify-between border-b border-stone-200 bg-white/95 px-8 py-6 backdrop-blur-xl">
+    <div className="fixed inset-0 z-[160] flex items-end justify-center bg-[#171717]/70 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="max-h-[96dvh] w-full max-w-[1080px] overflow-y-auto rounded-t-[2rem] border-2 border-[#171717] bg-white shadow-[10px_10px_0_#171717] sm:max-h-[92dvh] sm:rounded-[2.5rem]">
+        <header className="sticky top-0 z-20 flex items-center justify-between border-b border-[#171717]/20 bg-white/95 px-8 py-6 backdrop-blur-xl">
           <div className="min-w-0">
-            <p className="text-xs font-black uppercase tracking-[0.25em] text-amber-600">
+            <p className="text-xs font-black uppercase tracking-[0.25em] text-[#ff5c35]">
               Detail produk
             </p>
-            <h2 className="mt-1 truncate text-3xl font-black text-stone-950">
+            <h2 className="mt-1 truncate text-3xl font-black text-[#171717]">
               {product.name}
             </h2>
           </div>
@@ -287,7 +287,7 @@ export default function KioskProductModal({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-14 w-14 items-center justify-center rounded-2xl bg-stone-100"
+            className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#f4f1e8]"
           >
             <X className="h-6 w-6" />
           </button>
@@ -318,7 +318,7 @@ export default function KioskProductModal({
               </p>
             )}
 
-            <p className="mt-5 text-3xl font-black text-amber-700">
+            <p className="mt-5 text-3xl font-black text-[#ff5c35]">
               Rp
               {product.price.toLocaleString(
                 'id-ID',
@@ -339,13 +339,13 @@ export default function KioskProductModal({
                     key={group.categoryName}
                     className={`rounded-2xl border p-5 ${
                       valid
-                        ? 'border-stone-200'
-                        : 'border-red-300 bg-red-50'
+                        ? 'border-[#171717]/20'
+                        : 'border-red-300 bg-[#ffe8e2]'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-4">
                       <div>
-                        <h3 className="text-xl font-black text-stone-950">
+                        <h3 className="text-xl font-black text-[#171717]">
                           {group.categoryName}
                         </h3>
                         <p className="mt-1 text-sm font-semibold text-stone-400">
@@ -388,15 +388,15 @@ export default function KioskProductModal({
                               }
                               className={`flex min-h-20 items-center justify-between gap-3 rounded-2xl border px-4 text-left ${
                                 selected
-                                  ? 'border-amber-400 bg-amber-50'
-                                  : 'border-stone-200 bg-white'
+                                  ? 'border-[#171717] bg-[#efffc0]'
+                                  : 'border-[#171717]/20 bg-white'
                               }`}
                             >
                               <div className="min-w-0">
-                                <p className="truncate font-black text-stone-900">
+                                <p className="truncate font-black text-[#171717]">
                                   {addOn.name}
                                 </p>
-                                <p className="mt-1 text-sm font-bold text-amber-700">
+                                <p className="mt-1 text-sm font-bold text-[#ff5c35]">
                                   + Rp
                                   {addOn.price.toLocaleString(
                                     'id-ID',
@@ -404,7 +404,7 @@ export default function KioskProductModal({
                                 </p>
                               </div>
 
-                              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${selected ? 'bg-amber-400 text-stone-950' : 'bg-stone-100 text-stone-400'}`}>
+                              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${selected ? 'bg-amber-400 text-[#171717]' : 'bg-[#f4f1e8] text-stone-400'}`}>
                                 {selected ? (
                                   <Check className="h-5 w-5" />
                                 ) : (
@@ -431,10 +431,10 @@ export default function KioskProductModal({
                 )
               }
               placeholder="Catatan: tidak pedas, tanpa bawang, dan lainnya"
-              className="min-h-28 w-full resize-none rounded-2xl border border-stone-200 bg-stone-50 p-4 text-lg outline-none focus:border-amber-400"
+              className="min-h-28 w-full resize-none rounded-2xl border border-[#171717]/20 bg-stone-50 p-4 text-lg outline-none focus:border-[#171717]"
             />
 
-            <div className="flex items-center justify-between rounded-2xl bg-stone-100 p-4">
+            <div className="flex items-center justify-between rounded-2xl bg-[#f4f1e8] p-4">
               <span className="text-lg font-black">
                 Jumlah
               </span>
@@ -468,7 +468,7 @@ export default function KioskProductModal({
                         value + 1,
                     )
                   }
-                  className="flex h-14 w-14 items-center justify-center rounded-2xl bg-stone-950 text-white"
+                  className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#171717] text-white"
                 >
                   <Plus className="h-6 w-6" />
                 </button>
@@ -481,7 +481,7 @@ export default function KioskProductModal({
                 !allRequiredValid
               }
               onClick={handleAdd}
-              className="flex min-h-20 w-full items-center justify-between rounded-[1.5rem] bg-amber-300 px-7 text-stone-950 disabled:bg-stone-300"
+              className="flex min-h-20 w-full items-center justify-between rounded-[1.5rem] bg-[#c8ff3d] px-7 text-[#171717] disabled:bg-stone-300"
             >
               <span className="text-xl font-black">
                 Tambahkan

@@ -62,23 +62,23 @@ export default function KioskCartModal({
 
   return (
     <div
-      className="fixed inset-0 z-[170] flex items-end justify-center bg-stone-950/70 p-0 backdrop-blur-sm sm:items-center sm:p-4 lg:p-8"
+      className="fixed inset-0 z-[170] flex items-end justify-center bg-[#171717]/70 p-0 backdrop-blur-sm sm:items-center sm:p-4 lg:p-8"
       role="dialog"
       aria-modal="true"
       aria-label="Keranjang pesanan"
     >
-      <div className="flex max-h-[96dvh] w-full max-w-5xl flex-col overflow-hidden rounded-t-[2rem] bg-stone-100 shadow-2xl sm:max-h-[92dvh] sm:rounded-[2.5rem]">
-        <header className="flex items-center justify-between border-b border-stone-200 bg-white px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6">
+      <div className="flex max-h-[96dvh] w-full max-w-5xl flex-col overflow-hidden rounded-t-[2rem] border-2 border-[#171717] bg-[#f4f1e8] shadow-[10px_10px_0_#171717] sm:max-h-[92dvh] sm:rounded-[2.5rem]">
+        <header className="flex items-center justify-between border-b border-[#171717]/20 bg-white px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6">
           <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-300 text-stone-950 sm:h-14 sm:w-14 sm:rounded-2xl">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#c8ff3d] text-[#171717] sm:h-14 sm:w-14 sm:rounded-2xl">
               <ShoppingBag className="h-6 w-6 sm:h-7 sm:w-7" />
             </span>
 
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-700 sm:text-xs">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#ff5c35] sm:text-xs">
                 Pesanan kamu
               </p>
-              <h2 className="text-xl font-black text-stone-950 sm:mt-1 sm:text-3xl">
+              <h2 className="text-xl font-black text-[#171717] sm:mt-1 sm:text-3xl">
                 Keranjang
               </h2>
             </div>
@@ -98,7 +98,7 @@ export default function KioskCartModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex h-11 w-11 items-center justify-center rounded-xl bg-stone-100 sm:h-14 sm:w-14 sm:rounded-2xl"
+              className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#f4f1e8] sm:h-14 sm:w-14 sm:rounded-2xl"
             >
               <X className="h-5 w-5 sm:h-6 sm:w-6" />
             </button>
@@ -128,7 +128,7 @@ export default function KioskCartModal({
                   return (
                     <article
                       key={item.lineId}
-                      className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-2xl border border-stone-200 bg-white p-3 sm:grid-cols-[96px_minmax(0,1fr)] sm:gap-5 sm:p-5"
+                      className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-2xl border border-[#171717]/20 bg-white p-3 sm:grid-cols-[96px_minmax(0,1fr)] sm:gap-5 sm:p-5"
                     >
                       <div className="flex h-18 w-18 items-center justify-center overflow-hidden rounded-xl bg-stone-50 p-2 sm:h-24 sm:w-24 sm:rounded-2xl sm:p-3">
                         <img
@@ -150,7 +150,7 @@ export default function KioskCartModal({
                       <div className="min-w-0">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <h3 className="line-clamp-2 text-base font-black text-stone-950 sm:text-xl">
+                            <h3 className="line-clamp-2 text-base font-black text-[#171717] sm:text-xl">
                               {item.name}
                             </h3>
 
@@ -183,7 +183,7 @@ export default function KioskCartModal({
                                 item.lineId,
                               )
                             }
-                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600"
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#ffe8e2] text-red-600"
                           >
                             <Trash2 className="h-5 w-5" />
                           </button>
@@ -194,7 +194,7 @@ export default function KioskCartModal({
                             <p className="text-xs font-semibold text-stone-400">
                               Rp{unitTotal.toLocaleString('id-ID')} / item
                             </p>
-                            <p className="mt-1 text-lg font-black text-amber-700 sm:text-xl">
+                            <p className="mt-1 text-lg font-black text-[#ff5c35] sm:text-xl">
                               Rp{(
                                 unitTotal *
                                 item.quantity
@@ -202,7 +202,7 @@ export default function KioskCartModal({
                             </p>
                           </div>
 
-                          <div className="flex items-center gap-3 rounded-xl bg-stone-100 p-1.5">
+                          <div className="flex items-center gap-3 rounded-xl bg-[#f4f1e8] p-1.5">
                             <button
                               type="button"
                               onClick={() =>
@@ -210,7 +210,7 @@ export default function KioskCartModal({
                                   item.lineId,
                                 )
                               }
-                              className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-stone-950 shadow-sm"
+                              className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-[#171717] shadow-sm"
                             >
                               {item.quantity <= 1 ? (
                                 <Trash2 className="h-4 w-4 text-red-600" />
@@ -230,7 +230,7 @@ export default function KioskCartModal({
                                   item.lineId,
                                 )
                               }
-                              className="flex h-10 w-10 items-center justify-center rounded-lg bg-stone-950 text-white"
+                              className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#171717] text-white"
                             >
                               <Plus className="h-5 w-5" />
                             </button>
@@ -245,7 +245,7 @@ export default function KioskCartModal({
           )}
         </div>
 
-        <footer className="border-t border-stone-200 bg-white p-4 sm:p-6 lg:p-8">
+        <footer className="border-t border-[#171717]/20 bg-white p-4 sm:p-6 lg:p-8">
           <div className="space-y-2 text-sm sm:text-base">
             <div className="flex items-center justify-between text-stone-500">
               <span>Subtotal</span>
@@ -263,11 +263,11 @@ export default function KioskCartModal({
               </div>
             )}
 
-            <div className="flex items-end justify-between border-t border-dashed border-stone-200 pt-3">
+            <div className="flex items-end justify-between border-t border-dashed border-[#171717]/20 pt-3">
               <span className="font-black text-stone-700">
                 Total
               </span>
-              <span className="text-2xl font-black text-stone-950 sm:text-3xl">
+              <span className="text-2xl font-black text-[#171717] sm:text-3xl">
                 Rp{grandTotal.toLocaleString('id-ID')}
               </span>
             </div>
@@ -277,7 +277,7 @@ export default function KioskCartModal({
             type="button"
             disabled={items.length === 0}
             onClick={onCheckout}
-            className="mt-4 min-h-16 w-full rounded-2xl bg-amber-300 px-5 text-lg font-black text-stone-950 disabled:bg-stone-300 sm:min-h-18 sm:text-xl"
+            className="mt-4 min-h-16 w-full rounded-2xl bg-[#c8ff3d] px-5 text-lg font-black text-[#171717] disabled:bg-stone-300 sm:min-h-18 sm:text-xl"
           >
             Lanjutkan pesanan
           </button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { PRIVACY_CONTENT } from '@/constants/legal';
+import { LEGAL_LAST_UPDATED, PRIVACY_CONTENT } from '@/constants/legal';
 import { ArrowLeft, FileText } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
@@ -23,7 +23,7 @@ export default function PrivacyPage() {
           </div>
           <div>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight leading-none mb-1">Kebijakan Privasi</h1>
-            <p className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Terakhir Diperbarui: Mei 2026</p>
+            <p className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Terakhir Diperbarui: {LEGAL_LAST_UPDATED}</p>
           </div>
         </div>
 

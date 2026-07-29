@@ -7,7 +7,6 @@ export { default as KioskPromoBanner } from './KioskPromoBanner';
 export { default as KioskPromoModal } from './KioskPromoModal';
 export { default as KioskCatalog } from './KioskCatalog';
 export { default as KioskCartModal } from './KioskCartModal';
-export { default as KioskCustomerIdentity } from './KioskCustomerIdentity';
 export { default as KioskPaymentMethod } from './KioskPaymentMethod';
 export { default as KioskQrisPayment } from './KioskQrisPayment';
 export { default as KioskOrderSuccess } from './KioskOrderSuccess';

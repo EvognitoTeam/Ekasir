@@ -338,9 +338,9 @@ export default function KioskIdleGuard({
       {children}
 
       {warningOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-stone-950/80 p-4 backdrop-blur-md sm:p-6 lg:p-8">
-          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 text-center shadow-2xl sm:rounded-[2rem] sm:p-8 lg:rounded-[2.5rem] lg:p-10">
-            <p className="text-xs font-bold uppercase tracking-[0.22em] text-amber-600 sm:text-sm sm:tracking-[0.28em]">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#171717]/85 p-4 backdrop-blur-md sm:p-6 lg:p-8">
+          <div className="w-full max-w-2xl rounded-[2rem] border-[3px] border-[#171717] bg-white shadow-[10px_10px_0_#c8ff3d] p-6 text-center shadow-2xl sm:rounded-[2rem] sm:p-8 lg:rounded-[2.5rem] lg:p-10">
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#ff5c35] sm:text-sm sm:tracking-[0.28em]">
               Sesi hampir berakhir
             </p>
 
