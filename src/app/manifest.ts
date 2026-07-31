@@ -6,7 +6,7 @@ export default function manifest():
 MetadataRoute.Manifest {
   return {
     id:
-      '/',
+      '/login',
 
     name:
       'Evokasir POS',
@@ -18,7 +18,7 @@ MetadataRoute.Manifest {
       'Aplikasi Point of Sale Evokasir',
 
     start_url:
-      '/',
+      '/login',
 
     scope:
       '/',
