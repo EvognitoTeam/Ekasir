@@ -1,11 +1,3 @@
-import {
-  Capacitor,
-} from '@capacitor/core';
-
-import {
-  NativePrinter,
-} from '../PrinterPlugin';
-
 import type {
   PrinterDevice,
 } from '../types';
@@ -122,41 +114,6 @@ export class BluetoothDriver {
     Promise<
       PrinterDevice[]
     > {
-    if (
-      Capacitor.isNativePlatform()
-    ) {
-      const plugin =
-        NativePrinter as typeof NativePrinter & {
-          scanBluetooth?: () => Promise<{
-            devices:
-              PrinterDevice[];
-          }>;
-        };
-
-      if (
-        typeof plugin.scanBluetooth ===
-        'function'
-      ) {
-        const result =
-          await plugin.scanBluetooth();
-
-        return result.devices;
-      }
-
-      const result =
-        await NativePrinter.scan();
-
-      return result.devices.filter(
-        (
-          device
-        ) =>
-          device.type ===
-            'bluetooth' ||
-          device.type ===
-            'ble'
-      );
-    }
-
     const bluetooth =
       this.getWebBluetooth();
 
@@ -208,14 +165,6 @@ export class BluetoothDriver {
     printer:
       PrinterDevice,
   ) {
-    if (
-      Capacitor.isNativePlatform()
-    ) {
-      return NativePrinter.connect({
-        printer,
-      });
-    }
-
     const connection =
       await this.getConnection(
         printer
@@ -235,18 +184,6 @@ export class BluetoothDriver {
     data:
       Uint8Array,
   ) {
-    if (
-      Capacitor.isNativePlatform()
-    ) {
-      return NativePrinter.print({
-        printer,
-        data:
-          Array.from(
-            data
-          ),
-      });
-    }
-
     const connection =
       await this.getConnection(
         printer

@@ -1,11 +1,3 @@
-import {
-  Capacitor,
-} from '@capacitor/core';
-
-import {
-  NativePrinter,
-} from '../PrinterPlugin';
-
 import type {
   PrinterDevice,
 } from '../types';
@@ -111,47 +103,6 @@ export class UsbDriver {
     Promise<
       PrinterDevice[]
     > {
-    if (
-      Capacitor.isNativePlatform()
-    ) {
-      const plugin =
-        NativePrinter as typeof NativePrinter & {
-          scanUsb?: () => Promise<{
-            devices:
-              PrinterDevice[];
-          }>;
-        };
-
-      if (
-        typeof plugin.scanUsb ===
-        'function'
-      ) {
-        const result =
-          await plugin.scanUsb();
-
-        return result.devices.map(
-          (
-            device
-          ) => ({
-            ...device,
-            type:
-              'usb',
-          })
-        );
-      }
-
-      const result =
-        await NativePrinter.scan();
-
-      return result.devices.filter(
-        (
-          device
-        ) =>
-          device.type ===
-          'usb'
-      );
-    }
-
     const usb =
       this.getWebUsb();
 
@@ -202,14 +153,6 @@ export class UsbDriver {
     printer:
       PrinterDevice,
   ) {
-    if (
-      Capacitor.isNativePlatform()
-    ) {
-      return NativePrinter.connect({
-        printer,
-      });
-    }
-
     const connection =
       await this.openConnection(
         printer
@@ -231,18 +174,6 @@ export class UsbDriver {
     data:
       Uint8Array,
   ) {
-    if (
-      Capacitor.isNativePlatform()
-    ) {
-      return NativePrinter.print({
-        printer,
-        data:
-          Array.from(
-            data
-          ),
-      });
-    }
-
     let connection =
       runtimeConnections.get(
         printerKey(
