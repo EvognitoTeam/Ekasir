@@ -22,6 +22,8 @@ import { Toast } from '@/utils/toast';
 import { PrinterManager } from '@/lib/printer/PrinterManager';
 import { PrinterDevice } from '@/lib/printer/types';
 import { printOrder } from '@/lib/printer/orderPrint';
+import PwaInstallButton
+  from '@/components/pwa/PwaInstallButton';
 
 
 type PaperWidth =
@@ -1439,6 +1441,7 @@ export default function CashierApp() {
                 className="flex max-h-[96dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-[2rem] bg-white shadow-2xl sm:max-h-[92dvh] sm:rounded-[2rem]"
               >
                 <header className="flex items-center justify-between border-b border-stone-200 bg-gradient-to-r from-[#0E5C37] to-emerald-600 px-5 py-4 text-white sm:px-6 sm:py-5">
+                    
                   <div className="flex items-center gap-3">
                     <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15">
                       <Printer className="h-6 w-6" />
@@ -1454,6 +1457,7 @@ export default function CashierApp() {
                       </p>
                     </div>
                   </div>
+                  
 
                   <button
                     type="button"
@@ -2295,6 +2299,7 @@ export default function CashierApp() {
             </div>
           </div>
           <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
+            <PwaInstallButton />
             <button
               onClick={() => setShowPrinterModal(true)}
               title="Pengaturan Printer"

@@ -3,24 +3,6 @@ import {
 } from 'next/server';
 
 import {
-  db,
-} from '@/db';
-
-import {
-  orders,
-  orderItems,
-  mitra,
-  tableList,
-  settings,
-} from '@/db/schema';
-
-import {
-  and,
-  eq,
-  isNull,
-} from 'drizzle-orm';
-
-import {
   cookies,
 } from 'next/headers';
 
@@ -28,6 +10,31 @@ import {
   jwtVerify,
   type JWTPayload,
 } from 'jose';
+
+import {
+  and,
+  eq,
+  inArray,
+  isNull,
+} from 'drizzle-orm';
+
+import {
+  db,
+} from '@/db';
+
+import {
+  orderItems,
+  orders,
+  products,
+  settings,
+  tableList,
+} from '@/db/schema';
+
+export const dynamic =
+  'force-dynamic';
+
+export const runtime =
+  'nodejs';
 
 const SECRET_KEY =
   new TextEncoder().encode(
@@ -40,9 +47,13 @@ type AuthPayload =
     userId?: number;
     mitraId?: number;
     branchId?: number | null;
-    slug?: string;
     role?: string;
+    slug?: string;
   };
+
+type PaymentMethod =
+  | 'cash'
+  | 'qris';
 
 type CustomerPayload = {
   userId?: unknown;
@@ -50,8 +61,8 @@ type CustomerPayload = {
   email?: unknown;
   phone?: unknown;
   tableNumber?: unknown;
-  manualTableInfo?: unknown;
   serviceType?: unknown;
+  manualTableInfo?: unknown;
   method?: unknown;
 };
 
@@ -66,25 +77,34 @@ type CartItemPayload = {
   title?: unknown;
 };
 
-type PosOrderPayload = {
+type CheckoutBody = {
   total?: unknown;
+  subtotal?: unknown;
   discount?: unknown;
   totalAfterDiscount?: unknown;
+  totalPrice?: unknown;
 
   customer?: CustomerPayload;
   cartItems?: CartItemPayload[];
 
   discountId?: unknown;
   cashierId?: unknown;
+  branchId?: unknown;
   branch_id?: unknown;
+
+  idempotencyKey?: unknown;
+  idempotency_key?: unknown;
+
+  getPayment?: unknown;
+  cashChange?: unknown;
 
   /*
    * Kompatibilitas payload POS lama.
    */
+  userId?: unknown;
   name?: unknown;
   email?: unknown;
   phone?: unknown;
-  userId?: unknown;
   tableNumber?: unknown;
   table_number?: unknown;
   manualTableInfo?: unknown;
@@ -96,76 +116,145 @@ type PosOrderPayload = {
   items?: CartItemPayload[];
 };
 
+type MidtransItem = {
+  id: string;
+  price: number;
+  quantity: number;
+  name: string;
+};
+
+function jsonError(
+  status: number,
+  message: string,
+  code =
+    'REQUEST_FAILED',
+  details:
+    unknown =
+      null,
+) {
+  return NextResponse.json(
+    {
+      success:
+        false,
+      message,
+      error: {
+        code,
+        details,
+      },
+    },
+    {
+      status,
+    },
+  );
+}
+
 function normalizeString(
   value:
     unknown,
 ): string {
   return String(
     value ??
-    '',
+      '',
   ).trim();
 }
 
-function normalizeNumber(
+function toInteger(
   value:
     unknown,
 ): number {
-  const number =
+  const parsed =
     Number(
       value ??
-      0,
+        0,
     );
 
   return Number.isFinite(
-    number,
+    parsed,
   )
-    ? number
+    ? Math.floor(
+        parsed,
+      )
     : 0;
 }
 
-function normalizePaymentMethod(
-  value:
-    unknown,
-): 'cash' | 'qris' {
-  const normalized =
-    normalizeString(
-      value,
-    ).toLowerCase();
-
-  return normalized ===
-    'qris'
-      ? 'qris'
-      : 'cash';
-}
-
-function normalizeNullableInteger(
+function toPositiveInteger(
   value:
     unknown,
 ): number | null {
   if (
     value ===
-      undefined ||
-    value ===
       null ||
+    value ===
+      undefined ||
     value ===
       ''
   ) {
     return null;
   }
 
-  const number =
+  const parsed =
     Number(
       value,
     );
 
   return Number.isInteger(
-    number,
-  )
-    ? number
+    parsed,
+  ) &&
+    parsed >
+      0
+    ? parsed
     : null;
 }
 
-function generateOrderCode() {
+function normalizeRate(
+  value:
+    unknown,
+): number {
+  const parsed =
+    Number(
+      value ??
+        0,
+    );
+
+  return Number.isFinite(
+    parsed,
+  ) &&
+    parsed >=
+      0
+    ? parsed
+    : 0;
+}
+
+function normalizePaymentMethod(
+  value:
+    unknown,
+): PaymentMethod | null {
+  const method =
+    normalizeString(
+      value,
+    ).toLowerCase();
+
+  if (
+    method ===
+      'cash' ||
+    method ===
+      'tunai'
+  ) {
+    return 'cash';
+  }
+
+  if (
+    method ===
+    'qris'
+  ) {
+    return 'qris';
+  }
+
+  return null;
+}
+
+function generateOrderCode():
+string {
   const chars =
     'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
@@ -175,9 +264,9 @@ function generateOrderCode() {
   for (
     let index = 0;
     index <
-    6;
+      6;
     index +=
-    1
+      1
   ) {
     result +=
       chars.charAt(
@@ -189,6 +278,63 @@ function generateOrderCode() {
   }
 
   return result;
+}
+
+function createIdempotencyKey(
+  body:
+    CheckoutBody,
+  mitraId:
+    number,
+): string {
+  const submitted =
+    normalizeString(
+      body.idempotencyKey ??
+        body.idempotency_key,
+    );
+
+  if (
+    submitted
+  ) {
+    return submitted.slice(
+      0,
+      100,
+    );
+  }
+
+  return [
+    'POS',
+    mitraId,
+    Date.now(),
+    Math.random()
+      .toString(36)
+      .slice(2, 10),
+  ].join(
+    '-',
+  );
+}
+
+function calculatePlatformFee(
+  grossAmount:
+    number,
+  rate:
+    number,
+): number {
+  return Math.floor(
+    grossAmount *
+      (
+        rate /
+        100
+      ),
+  );
+}
+
+function getMidtransUrl(
+  production:
+    boolean,
+): string {
+  return production
+    ? 'https://api.midtrans.com/v2/charge'
+    : 'https://api.sandbox.midtrans.com/v2/charge';
 }
 
 async function getAuthPayload():
@@ -219,29 +365,17 @@ Promise<AuthPayload | null> {
   }
 }
 
-function jsonError(
-  status:
-    number,
-  message:
-    string,
-) {
-  return NextResponse.json(
-    {
-      success:
-        false,
-      message,
-    },
-    {
-      status,
-    },
-  );
-}
-
 export async function POST(
   request:
     Request,
 ) {
+  let checkoutStep =
+    'START';
+
   try {
+    checkoutStep =
+      'AUTH';
+
     const auth =
       await getAuthPayload();
 
@@ -249,142 +383,16 @@ export async function POST(
       return jsonError(
         401,
         'Unauthorized',
+        'UNAUTHORIZED',
       );
     }
 
-    const rawBody =
+    checkoutStep =
+      'PARSE_REQUEST';
+
+    const body =
       await request.json() as
-        PosOrderPayload;
-
-    /*
-     * customer tidak boleh langsung di-destructure dari body.
-     * Payload POS lama tidak selalu mengirim object customer.
-     */
-    const customer = {
-      userId:
-        normalizeNullableInteger(
-          rawBody.customer
-            ?.userId ??
-          rawBody.userId,
-        ),
-
-      name:
-        normalizeString(
-          rawBody.customer
-            ?.name ??
-          rawBody.name ??
-          'Tamu Kasir',
-        ) ||
-        'Tamu Kasir',
-
-      email:
-        normalizeString(
-          rawBody.customer
-            ?.email ??
-          rawBody.email,
-        ) ||
-        null,
-
-      phone:
-        normalizeString(
-          rawBody.customer
-            ?.phone ??
-          rawBody.phone,
-        ) ||
-        null,
-
-      tableNumber:
-        normalizeString(
-          rawBody.customer
-            ?.tableNumber ??
-          rawBody.tableNumber ??
-          rawBody.table_number,
-        ),
-
-      manualTableInfo:
-        normalizeString(
-          rawBody.customer
-            ?.manualTableInfo ??
-          rawBody.manualTableInfo ??
-          rawBody.manual_table_info,
-        ),
-
-      serviceType:
-        normalizeString(
-          rawBody.customer
-            ?.serviceType ??
-          rawBody.serviceType ??
-          rawBody.orderType ??
-          'takeaway',
-        ).toLowerCase(),
-
-      method:
-        normalizePaymentMethod(
-          rawBody.customer
-            ?.method ??
-          rawBody.method ??
-          rawBody.paymentMethod ??
-          'cash',
-        ),
-    };
-
-    const cartItems =
-      Array.isArray(
-        rawBody.cartItems,
-      )
-        ? rawBody.cartItems
-        : Array.isArray(
-            rawBody.items,
-          )
-          ? rawBody.items
-          : [];
-
-    if (
-      cartItems.length ===
-      0
-    ) {
-      return jsonError(
-        400,
-        'Keranjang pesanan kosong.',
-      );
-    }
-
-    const total =
-      normalizeNumber(
-        rawBody.total,
-      );
-
-    const discount =
-      Math.max(
-        0,
-        normalizeNumber(
-          rawBody.discount,
-        ),
-      );
-
-    const totalAfterDiscount =
-      normalizeNumber(
-        rawBody.totalAfterDiscount,
-      );
-
-    const discountId =
-      normalizeNullableInteger(
-        rawBody.discountId,
-      );
-
-    const requestedCashierId =
-      normalizeNullableInteger(
-        rawBody.cashierId,
-      );
-
-    const serverKey =
-      process.env
-        .MIDTRANS_SERVER_KEY;
-
-    const isProd =
-      process.env
-        .MIDTRANS_IS_PRODUCTION ===
-      'true';
+        CheckoutBody;
 
     const mitraId =
       Number(
@@ -401,6 +409,7 @@ export async function POST(
       return jsonError(
         403,
         'Scope mitra tidak valid.',
+        'INVALID_MITRA_SCOPE',
       );
     }
 
@@ -409,46 +418,334 @@ export async function POST(
         auth.role,
       ).toLowerCase();
 
-    const isBranchScopedStaff =
+    const isBranchStaff =
       normalizedRole ===
         'cashier' ||
       normalizedRole ===
         'kitchen';
 
     const requestedBranchId =
-      normalizeNullableInteger(
-        rawBody.branch_id,
+      toPositiveInteger(
+        body.branchId ??
+        body.branch_id,
       );
 
-    const finalBranchId =
-      isBranchScopedStaff
-        ? normalizeNullableInteger(
+    const branchId =
+      isBranchStaff
+        ? toPositiveInteger(
             auth.branchId,
           )
         : requestedBranchId;
 
-    /*
-     * Kasir sebaiknya memakai userId sesi sebagai cashier_id.
-     * cashierId dari request hanya menjadi fallback untuk owner.
-     */
-    const finalCashierId =
-      normalizedRole ===
-        'cashier'
-        ? normalizeNullableInteger(
-            auth.userId,
+    const customer = {
+      userId:
+        toPositiveInteger(
+          body.customer
+            ?.userId ??
+          body.userId,
+        ),
+
+      name:
+        normalizeString(
+          body.customer
+            ?.name ??
+          body.name ??
+          'Tamu Kasir',
+        ) ||
+        'Tamu Kasir',
+
+      email:
+        normalizeString(
+          body.customer
+            ?.email ??
+          body.email,
+        ).toLowerCase(),
+
+      phone:
+        normalizeString(
+          body.customer
+            ?.phone ??
+          body.phone,
+        ),
+
+      tableNumber:
+        normalizeString(
+          body.customer
+            ?.tableNumber ??
+          body.tableNumber ??
+          body.table_number,
+        ),
+
+      serviceType:
+        normalizeString(
+          body.customer
+            ?.serviceType ??
+          body.serviceType ??
+          body.orderType ??
+          'takeaway',
+        ).toLowerCase(),
+
+      manualTableInfo:
+        normalizeString(
+          body.customer
+            ?.manualTableInfo ??
+          body.manualTableInfo ??
+          body.manual_table_info,
+        ),
+
+      method:
+        normalizePaymentMethod(
+          body.customer
+            ?.method ??
+          body.method ??
+          body.paymentMethod,
+        ),
+    };
+
+    if (
+      !customer.method
+    ) {
+      return jsonError(
+        400,
+        'Metode pembayaran tidak valid.',
+        'INVALID_PAYMENT_METHOD',
+        {
+          allowed:
+            [
+              'cash',
+              'qris',
+            ],
+        },
+      );
+    }
+
+    const cartItems =
+      Array.isArray(
+        body.cartItems,
+      )
+        ? body.cartItems
+        : Array.isArray(
+            body.items,
           )
-        : (
-            requestedCashierId ??
-            normalizeNullableInteger(
-              auth.userId,
-            )
-          );
+          ? body.items
+          : [];
+
+    if (
+      cartItems.length ===
+      0
+    ) {
+      return jsonError(
+        400,
+        'Keranjang pesanan kosong.',
+        'EMPTY_CART',
+      );
+    }
 
     /*
-     * Prioritas settings:
-     * 1. setting cabang;
-     * 2. setting global mitra.
+     * Rumus nominal dibuat sama dengan self-checkout:
+     * subtotal = total,
+     * subtotal setelah diskon = subtotal - diskon,
+     * pajak dan service dihitung server.
      */
+    const basePrice =
+      toInteger(
+        body.total ??
+        body.subtotal,
+      );
+
+    const discountValue =
+      Math.max(
+        0,
+        toInteger(
+          body.discount,
+        ),
+      );
+
+    if (
+      basePrice <=
+        0 ||
+      discountValue >
+        basePrice
+    ) {
+      return jsonError(
+        400,
+        'Subtotal atau diskon tidak valid.',
+        'INVALID_ORDER_AMOUNT',
+        {
+          subtotal:
+            basePrice,
+          discount:
+            discountValue,
+        },
+      );
+    }
+
+    checkoutStep =
+      'NORMALIZE_ITEMS';
+
+    const normalizedItems =
+      cartItems.map(
+        (
+          item,
+          index,
+        ) => {
+          const productId =
+            toPositiveInteger(
+              item.menuItemId ??
+              item.product_id,
+            );
+
+          const quantity =
+            toInteger(
+              item.quantity,
+            );
+
+          const price =
+            toInteger(
+              item.priceAtOrder ??
+              item.price,
+            );
+
+          if (
+            productId ===
+              null ||
+            quantity <=
+              0 ||
+            price <
+              0
+          ) {
+            throw new Error(
+              `Item keranjang ke-${index + 1} tidak valid.`,
+            );
+          }
+
+          return {
+            productId,
+            quantity,
+            price,
+
+            selectedAddOnsDetails:
+              Array.isArray(
+                item.selectedAddOnsDetails,
+              )
+                ? item.selectedAddOnsDetails
+                : [],
+
+            fallbackName:
+              normalizeString(
+                item.name ??
+                item.title,
+              ),
+          };
+        },
+      );
+
+    const calculatedItemSubtotal =
+      normalizedItems.reduce(
+        (
+          sum,
+          item,
+        ) =>
+          sum +
+          (
+            item.price *
+            item.quantity
+          ),
+        0,
+      );
+
+    if (
+      calculatedItemSubtotal !==
+      basePrice
+    ) {
+      return jsonError(
+        400,
+        'Subtotal item tidak sesuai dengan nilai checkout.',
+        'ITEM_SUBTOTAL_MISMATCH',
+        {
+          calculated:
+            calculatedItemSubtotal,
+          submitted:
+            basePrice,
+        },
+      );
+    }
+
+    checkoutStep =
+      'FIND_PRODUCTS';
+
+    const productIds =
+      [
+        ...new Set(
+          normalizedItems.map(
+            (
+              item,
+            ) =>
+              item.productId,
+          ),
+        ),
+      ];
+
+    const databaseProducts =
+      await db
+        .select({
+          id:
+            products.id,
+          name:
+            products.name,
+          mitraId:
+            products.mitra_id,
+        })
+        .from(
+          products,
+        )
+        .where(
+          and(
+            inArray(
+              products.id,
+              productIds,
+            ),
+            eq(
+              products.mitra_id,
+              mitraId,
+            ),
+          ),
+        );
+
+    const productMap =
+      new Map(
+        databaseProducts.map(
+          (
+            product,
+          ) => [
+            Number(
+              product.id,
+            ),
+            product,
+          ],
+        ),
+      );
+
+    for (
+      const item of
+      normalizedItems
+    ) {
+      if (
+        !productMap.has(
+          item.productId,
+        )
+      ) {
+        return jsonError(
+          400,
+          `Produk ID ${item.productId} tidak ditemukan pada mitra ini.`,
+          'PRODUCT_NOT_FOUND',
+        );
+      }
+    }
+
+    checkoutStep =
+      'FIND_SETTINGS';
+
     let foundSettings:
       Array<
         typeof settings.$inferSelect
@@ -456,7 +753,7 @@ export async function POST(
         [];
 
     if (
-      finalBranchId !==
+      branchId !==
       null
     ) {
       foundSettings =
@@ -473,7 +770,7 @@ export async function POST(
               ),
               eq(
                 settings.branch_id,
-                finalBranchId,
+                branchId,
               ),
             ),
           )
@@ -509,24 +806,33 @@ export async function POST(
     }
 
     const storeSettings =
-      foundSettings[0] || {
-        taxRate:
-          0,
-        serviceRate:
-          0,
-        isTaxIncluded:
-          0,
-      };
+      foundSettings[0];
 
-    const subTotal =
-      Math.floor(
-        totalAfterDiscount ||
-        Math.max(
-          0,
-          total -
-            discount,
-        ),
+    const taxRate =
+      normalizeRate(
+        storeSettings
+          ?.taxRate ??
+        0,
       );
+
+    const serviceRate =
+      normalizeRate(
+        storeSettings
+          ?.serviceRate ??
+        0,
+      );
+
+    const isTaxIncluded =
+      Number(
+        storeSettings
+          ?.isTaxIncluded ??
+        0,
+      ) ===
+      1;
+
+    const subtotalAfterDiscount =
+      basePrice -
+      discountValue;
 
     let tax =
       0;
@@ -538,63 +844,54 @@ export async function POST(
       0;
 
     if (
-      Number(
-        storeSettings.isTaxIncluded,
-      ) ===
-      1
+      isTaxIncluded
     ) {
-      const serviceRate =
-        normalizeNumber(
-          storeSettings.serviceRate,
-        ) /
+      const serviceDecimal =
+        serviceRate /
         100;
 
-      const taxRate =
-        normalizeNumber(
-          storeSettings.taxRate,
-        ) /
+      const taxDecimal =
+        taxRate /
         100;
 
       const divisor =
         (
           1 +
-          serviceRate
+          serviceDecimal
         ) *
         (
           1 +
-          taxRate
+          taxDecimal
         );
 
       const trueBase =
         divisor >
-        0
+          0
           ? Math.floor(
-              subTotal /
+              subtotalAfterDiscount /
                 divisor,
             )
-          : subTotal;
+          : subtotalAfterDiscount;
 
       service =
         Math.floor(
           trueBase *
-            serviceRate,
+            serviceDecimal,
         );
 
       tax =
-        subTotal -
+        subtotalAfterDiscount -
         trueBase -
         service;
 
       finalGrandTotal =
-        subTotal;
+        subtotalAfterDiscount;
     } else {
       service =
         Math.floor(
-          subTotal *
+          subtotalAfterDiscount *
             (
-              normalizeNumber(
-                storeSettings.serviceRate,
-              ) /
+              serviceRate /
               100
             ),
         );
@@ -602,22 +899,95 @@ export async function POST(
       tax =
         Math.floor(
           (
-            subTotal +
+            subtotalAfterDiscount +
             service
           ) *
             (
-              normalizeNumber(
-                storeSettings.taxRate,
-              ) /
+              taxRate /
               100
             ),
         );
 
       finalGrandTotal =
-        subTotal +
+        subtotalAfterDiscount +
         service +
         tax;
     }
+
+    const submittedGrandTotal =
+      toInteger(
+        body.totalAfterDiscount ??
+        body.totalPrice,
+      );
+
+    if (
+      submittedGrandTotal >
+        0 &&
+      submittedGrandTotal !==
+        finalGrandTotal
+    ) {
+      return jsonError(
+        400,
+        'Terjadi ketidaksesuaian harga. Silakan muat ulang halaman.',
+        'TOTAL_MISMATCH',
+        {
+          backendTotal:
+            finalGrandTotal,
+          frontendTotal:
+            submittedGrandTotal,
+          subtotal:
+            basePrice,
+          discount:
+            discountValue,
+          tax,
+          service,
+        },
+      );
+    }
+
+    const platformFeeRate =
+      normalizeRate(
+        /*
+         * POS memakai snapshot rate yang sama seperti self-checkout.
+         * Bila field cashout tersedia di payload auth, gunakan itu.
+         * Selain itu tetap 0 dan tidak memengaruhi total customer.
+         */
+        (
+          auth as
+            AuthPayload & {
+              cashout?:
+                unknown;
+            }
+        ).cashout ??
+        0,
+      );
+
+    const platformFee =
+      calculatePlatformFee(
+        finalGrandTotal,
+        platformFeeRate,
+      );
+
+    const idempotencyKey =
+      createIdempotencyKey(
+        body,
+        mitraId,
+      );
+
+    const cashierId =
+      normalizedRole ===
+        'cashier'
+        ? toPositiveInteger(
+            auth.userId,
+          )
+        : (
+            toPositiveInteger(
+              body.cashierId,
+            ) ??
+            toPositiveInteger(
+              auth.userId,
+            )
+          );
 
     const generatedCode =
       generateOrderCode();
@@ -625,7 +995,10 @@ export async function POST(
     const now =
       new Date();
 
-    const result =
+    checkoutStep =
+      'START_TRANSACTION';
+
+    const transactionResult =
       await db.transaction(
         async (
           tx,
@@ -635,16 +1008,14 @@ export async function POST(
             null =
               null;
 
-          let manualInfo:
+          let manualTableInfo:
             string |
             null =
               null;
 
-          const tableValue =
-            customer.tableNumber;
-
-          const normalizedTableValue =
-            tableValue.toLowerCase();
+          const normalizedTable =
+            customer.tableNumber
+              .toLowerCase();
 
           const isWalkIn =
             [
@@ -653,8 +1024,15 @@ export async function POST(
               'walk in',
               'walk_in',
             ].includes(
-              normalizedTableValue,
+              normalizedTable,
             );
+
+          const isTakeaway =
+            customer.serviceType ===
+              'takeaway' ||
+            customer.manualTableInfo
+              .toLowerCase() ===
+              'takeaway';
 
           if (
             !isWalkIn
@@ -667,18 +1045,18 @@ export async function POST(
                 ),
                 eq(
                   tableList.table_code,
-                  tableValue,
+                  customer.tableNumber,
                 ),
               ];
 
             if (
-              finalBranchId !==
+              branchId !==
               null
             ) {
               tableConditions.push(
                 eq(
                   tableList.branch_id,
-                  finalBranchId,
+                  branchId,
                 ),
               );
             } else {
@@ -689,9 +1067,14 @@ export async function POST(
               );
             }
 
-            const foundTable =
+            const [
+              foundTable,
+            ] =
               await tx
-                .select()
+                .select({
+                  id:
+                    tableList.id,
+                })
                 .from(
                   tableList,
                 )
@@ -705,206 +1088,223 @@ export async function POST(
                 );
 
             if (
-              foundTable.length >
-              0
+              foundTable
             ) {
               finalTableId =
-                foundTable[0].id;
-            } else {
-              manualInfo =
-                tableValue;
+                foundTable.id;
             }
           }
 
-          /*
-           * manualTableInfo dari frontend dipakai bila:
-           * - meja tidak ditemukan;
-           * - tipe order takeaway;
-           * - frontend memang mengirim lokasi/meja manual.
-           */
           if (
+            isTakeaway
+          ) {
+            manualTableInfo =
+              'Takeaway';
+          } else if (
             customer.manualTableInfo
           ) {
-            manualInfo =
+            manualTableInfo =
               customer.manualTableInfo;
           } else if (
-            customer.serviceType ===
-              'takeaway' &&
-            !manualInfo
+            !finalTableId &&
+            !isWalkIn
           ) {
-            manualInfo =
-              'Takeaway';
+            manualTableInfo =
+              customer.tableNumber;
           }
+
+          const getPayment =
+            customer.method ===
+              'cash'
+              ? Math.max(
+                  finalGrandTotal,
+                  toInteger(
+                    body.getPayment,
+                  ),
+                )
+              : finalGrandTotal;
+
+          const cashChange =
+            customer.method ===
+              'cash'
+              ? Math.max(
+                  0,
+                  toInteger(
+                    body.cashChange,
+                  ) ||
+                  (
+                    getPayment -
+                    finalGrandTotal
+                  ),
+                )
+              : 0;
 
           const orderValues:
             typeof orders.$inferInsert = {
-                order_code:
-                  generatedCode,
+            order_code:
+              generatedCode,
 
-                mitra_id:
-                  mitraId,
+            mitra_id:
+              mitraId,
 
-                branch_id:
-                  finalBranchId,
+            branch_id:
+              branchId,
 
-                cashier_id:
-                  finalCashierId,
+            cashier_id:
+              cashierId,
 
-                user_id:
-                  customer.userId,
+            user_id:
+              customer.userId,
 
-                name:
-                  customer.name,
+            name:
+              customer.name,
 
-                email:
-                  customer.email,
+            email:
+              customer.email ||
+              null,
 
-                phone_number:
-                  customer.phone,
+            phone_number:
+              customer.phone ||
+              null,
 
-                table_number:
-                  finalTableId,
+            table_number:
+              finalTableId,
 
-                manual_table_info:
-                  manualInfo,
+            manual_table_info:
+              manualTableInfo,
 
-                total_price:
-                  String(
-                    Math.floor(
-                      total,
-                    ),
-                  ),
+            total_price:
+              String(
+                basePrice,
+              ),
 
-                discount:
-                  String(
-                    Math.floor(
-                      discount,
-                    ),
-                  ),
+            discount:
+              String(
+                discountValue,
+              ),
 
-                tax:
-                  String(
-                    tax,
-                  ),
+            tax:
+              String(
+                tax,
+              ),
 
-                service:
-                  String(
-                    service,
-                  ),
+            service:
+              String(
+                service,
+              ),
 
-                totalAfterDiscount:
-                  String(
-                    finalGrandTotal,
-                  ),
+            totalAfterDiscount:
+              String(
+                finalGrandTotal,
+              ),
 
-                payment_method:
-                  customer.method,
+            payment_method:
+              customer.method,
 
-                discountId,
+            discountId:
+              toPositiveInteger(
+                body.discountId,
+              ),
 
-                status:
-                  'pending',
+            idempotencyKey,
 
-                payment_status:
-                  '1',
+            platformFee:
+              String(
+                platformFee,
+              ),
 
-                createdAt:
-                  now,
+            platformFeeRate:
+              String(
+                platformFeeRate,
+              ),
 
-                updatedAt:
-                  now,
-              };
+            getPayment:
+              String(
+                getPayment,
+              ),
+
+            cashChange:
+              String(
+                cashChange,
+              ),
+
+            status:
+              'pending',
+
+            payment_status:
+              '1',
+
+            createdAt:
+              now,
+
+            updatedAt:
+              now,
+          };
+
+          checkoutStep =
+            'INSERT_ORDER';
 
           const [
-            orderResult,
+            insertResult,
           ] =
             await tx
               .insert(
                 orders,
               )
               .values(
-                orderValues
+                orderValues,
               );
-
 
           const newOrderId =
             Number(
-              orderResult.insertId,
+              insertResult.insertId,
             );
+
+          if (
+            !newOrderId
+          ) {
+            throw new Error(
+              'Database tidak mengembalikan insertId order.',
+            );
+          }
 
           const itemsToInsert =
-            cartItems.map(
+            normalizedItems.map(
               (
                 item,
-              ) => {
-                const productId =
-                  normalizeNullableInteger(
-                    item.menuItemId ??
-                    item.product_id,
-                  );
+              ) => ({
+                order_id:
+                  newOrderId,
 
-                if (!productId) {
-                  throw new Error(
-                    'Produk pada keranjang tidak valid.',
-                  );
-                }
+                product_id:
+                  item.productId,
 
-                const quantity =
-                  Math.max(
-                    1,
-                    Math.floor(
-                      normalizeNumber(
-                        item.quantity,
-                      ) ||
-                      1,
-                    ),
-                  );
+                mitra_id:
+                  mitraId,
 
-                const itemPrice =
-                  Math.max(
-                    0,
-                    Math.floor(
-                      normalizeNumber(
-                        item.priceAtOrder ??
-                        item.price,
-                      ),
-                    ),
-                  );
+                branch_id:
+                  branchId,
 
-                return {
-                  order_id:
-                    newOrderId,
+                quantity:
+                  item.quantity,
 
-                  product_id:
-                    productId,
+                notes:
+                  JSON.stringify(
+                    item.selectedAddOnsDetails,
+                  ),
 
-                  mitra_id:
-                    mitraId,
+                price:
+                  String(
+                    item.price,
+                  ),
 
-                  branch_id:
-                    finalBranchId,
-
-                  quantity,
-
-                  notes:
-                    JSON.stringify(
-                      Array.isArray(
-                        item.selectedAddOnsDetails,
-                      )
-                        ? item.selectedAddOnsDetails
-                        : [],
-                    ),
-
-                  price:
-                    String(
-                      itemPrice,
-                    ),
-
-                  createdAt:
-                    now,
-                };
-              },
+                createdAt:
+                  now,
+              }),
             );
+
+          checkoutStep =
+            'INSERT_ORDER_ITEMS';
 
           await tx
             .insert(
@@ -919,92 +1319,105 @@ export async function POST(
               newOrderId,
             code:
               generatedCode,
+            getPayment,
+            cashChange,
+            tableId:
+              finalTableId,
+            manualTableInfo,
           };
         },
       );
+
+    let qrisResult: {
+      qrUrl:
+        string | null;
+      qrString:
+        string | null;
+      expiryTime:
+        string | null;
+      transactionId:
+        string | null;
+    } | null =
+      null;
 
     if (
       customer.method ===
       'qris'
     ) {
+      const serverKey =
+        process.env
+          .MIDTRANS_SERVER_KEY;
+
       if (!serverKey) {
         return jsonError(
           500,
           'MIDTRANS_SERVER_KEY belum dikonfigurasi.',
+          'MIDTRANS_NOT_CONFIGURED',
         );
       }
 
-      const apiUrl =
-        isProd
-          ? 'https://api.midtrans.com/v2/charge'
-          : 'https://api.sandbox.midtrans.com/v2/charge';
+      const isProduction =
+        process.env
+          .MIDTRANS_IS_PRODUCTION ===
+        'true';
 
-      const authString =
-        Buffer.from(
-          `${serverKey}:`,
-        ).toString(
-          'base64',
+      const productNameMap =
+        new Map(
+          databaseProducts.map(
+            (
+              product,
+            ) => [
+              Number(
+                product.id,
+              ),
+              product.name,
+            ],
+          ),
         );
 
-      const midtransItems =
-        cartItems.map(
-          (
-            item,
-          ) => ({
-            id:
-              String(
-                item.menuItemId ??
-                item.product_id,
-              ).substring(
-                0,
-                50,
-              ),
-
-            price:
-              Math.floor(
-                normalizeNumber(
-                  item.priceAtOrder ??
-                  item.price,
+      const midtransItems:
+        MidtransItem[] =
+          normalizedItems.map(
+            (
+              item,
+            ) => ({
+              id:
+                String(
+                  item.productId,
+                ).substring(
+                  0,
+                  50,
                 ),
-              ),
 
-            quantity:
-              Math.max(
-                1,
-                Math.floor(
-                  normalizeNumber(
-                    item.quantity,
+              price:
+                item.price,
+
+              quantity:
+                item.quantity,
+
+              name:
+                String(
+                  productNameMap.get(
+                    item.productId,
                   ) ||
-                  1,
+                  item.fallbackName ||
+                  `Item ${item.productId}`,
+                ).substring(
+                  0,
+                  50,
                 ),
-              ),
-
-            name:
-              String(
-                item.name ||
-                item.title ||
-                `Menu Item ${
-                  item.menuItemId ??
-                  item.product_id
-                }`,
-              ).substring(
-                0,
-                50,
-              ),
-          }),
-        );
+            }),
+          );
 
       if (
-        discount >
+        discountValue >
         0
       ) {
         midtransItems.push({
           id:
             'DISC',
           price:
-            -Math.floor(
-              discount,
-            ),
+            -discountValue,
           quantity:
             1,
           name:
@@ -1013,10 +1426,7 @@ export async function POST(
       }
 
       if (
-        Number(
-          storeSettings.isTaxIncluded,
-        ) ===
-        0
+        !isTaxIncluded
       ) {
         if (
           service >
@@ -1051,7 +1461,7 @@ export async function POST(
         }
       }
 
-      const calculatedSum =
+      const calculatedMidtransTotal =
         midtransItems.reduce(
           (
             sum,
@@ -1066,7 +1476,7 @@ export async function POST(
         );
 
       if (
-        calculatedSum !==
+        calculatedMidtransTotal !==
         finalGrandTotal
       ) {
         midtransItems.push({
@@ -1074,7 +1484,7 @@ export async function POST(
             'ADJ',
           price:
             finalGrandTotal -
-            calculatedSum,
+            calculatedMidtransTotal,
           quantity:
             1,
           name:
@@ -1082,9 +1492,21 @@ export async function POST(
         });
       }
 
-      const midtransRes =
+      const authString =
+        Buffer.from(
+          `${serverKey}:`,
+        ).toString(
+          'base64',
+        );
+
+      checkoutStep =
+        'MIDTRANS_CHARGE';
+
+      const midtransResponse =
         await fetch(
-          apiUrl,
+          getMidtransUrl(
+            isProduction,
+          ),
           {
             method:
               'POST',
@@ -1104,7 +1526,7 @@ export async function POST(
 
                 transaction_details: {
                   order_id:
-                    `${result.code}-${Date.now()}`,
+                    `EKASIR-POS-${mitraId}-${generatedCode}`,
 
                   gross_amount:
                     finalGrandTotal,
@@ -1118,116 +1540,411 @@ export async function POST(
                     customer.name,
 
                   email:
-                    customer.email,
+                    customer.email ||
+                    undefined,
 
                   phone:
-                    customer.phone,
+                    customer.phone ||
+                    undefined,
                 },
               }),
           },
         );
 
-      const data =
-        await midtransRes.json();
+      const midtransData =
+        await midtransResponse.json();
 
       if (
+        !midtransResponse.ok ||
         String(
-          data.status_code,
-        ) ===
-        '201'
+          midtransData.status_code,
+        ) !==
+          '201'
       ) {
-        const qrAction =
-          data.actions?.find(
-            (
-              action:
-                any,
-            ) =>
-              action.name ===
-              'generate-qr-code-v2',
-          );
-
-        await db
-          .update(
-            orders,
-          )
-          .set({
-            transaction_id:
-              data.transaction_id,
-
-            qr_url:
-              qrAction?.url,
-
-            qr_string:
-              data.qr_string,
-
-            expiry_time:
-              data.expiry_time
-                ? new Date(
-                    data.expiry_time,
-                  )
-                : null,
-
-            updatedAt:
-              new Date(),
-          })
-          .where(
-            eq(
-              orders.id,
-              result.id,
-            ),
-          );
-
-        return NextResponse.json({
-          success:
-            true,
-          qrUrl:
-            qrAction?.url,
-          orderId:
-            result.id,
-          orderCode:
-            result.code,
-          expiryTime:
-            data.expiry_time,
-        });
+        return jsonError(
+          502,
+          midtransData.status_message ??
+            'Midtrans gagal membuat transaksi QRIS.',
+          'MIDTRANS_CHARGE_FAILED',
+          {
+            orderId:
+              transactionResult.id,
+          },
+        );
       }
 
-      return jsonError(
-        400,
-        data.status_message ||
-        'Midtrans gagal memproses QRIS',
-      );
+      const qrAction =
+        Array.isArray(
+          midtransData.actions,
+        )
+          ? midtransData.actions.find(
+              (
+                action:
+                  {
+                    name?:
+                      string;
+                    url?:
+                      string;
+                  },
+              ) =>
+                action.name ===
+                'generate-qr-code-v2',
+            )
+          : null;
+
+      await db
+        .update(
+          orders,
+        )
+        .set({
+          transaction_id:
+            midtransData.transaction_id ??
+            null,
+
+          payment_type:
+            midtransData.payment_type ??
+            'qris',
+
+          issuer:
+            midtransData.issuer ??
+            null,
+
+          qr_url:
+            qrAction?.url ??
+            null,
+
+          qr_string:
+            midtransData.qr_string ??
+            null,
+
+          expiry_time:
+            midtransData.expiry_time
+              ? new Date(
+                  midtransData.expiry_time,
+                )
+              : null,
+
+          updatedAt:
+            new Date(),
+        })
+        .where(
+          and(
+            eq(
+              orders.id,
+              transactionResult.id,
+            ),
+            eq(
+              orders.mitra_id,
+              mitraId,
+            ),
+          ),
+        );
+
+      qrisResult = {
+        qrUrl:
+          qrAction?.url ??
+          null,
+
+        qrString:
+          midtransData.qr_string ??
+          null,
+
+        expiryTime:
+          midtransData.expiry_time ??
+          null,
+
+        transactionId:
+          midtransData.transaction_id ??
+          null,
+      };
     }
 
-    return NextResponse.json({
-      success:
-        true,
-      message:
-        'Pesanan berhasil dibuat',
-      orderId:
-        result.id,
-      orderCode:
-        result.code,
-    });
-  } catch (error) {
-    console.error(
-      'Checkout Error:',
-      error,
-    );
+    /*
+     * Object printOrder dikembalikan lengkap agar frontend dapat langsung
+     * mencetak struk customer tanpa fetch riwayat order lagi.
+     */
+    const printOrder = {
+      id:
+        transactionResult.id,
+
+      order_code:
+        transactionResult.code,
+
+      branch_id:
+        branchId,
+
+      customerName:
+        customer.name,
+
+      name:
+        customer.name,
+
+      email:
+        customer.email ||
+        null,
+
+      phone_number:
+        customer.phone ||
+        null,
+
+      table_number:
+        transactionResult.tableId,
+
+      manual_table_info:
+        transactionResult.manualTableInfo,
+
+      orderType:
+        customer.serviceType ===
+          'takeaway'
+          ? 'takeaway'
+          : 'dine-in',
+
+      order_type:
+        customer.serviceType ===
+          'takeaway'
+          ? 'takeaway'
+          : 'dine-in',
+
+      serviceType:
+        customer.serviceType ===
+          'takeaway'
+          ? 'takeaway'
+          : 'dine_in',
+
+      service_type:
+        customer.serviceType ===
+          'takeaway'
+          ? 'takeaway'
+          : 'dine_in',
+
+      paymentMethod:
+        customer.method,
+
+      payment_method:
+        customer.method,
+
+      paymentStatus:
+        '1',
+
+      payment_status:
+        '1',
+
+      status:
+        'pending',
+
+      subtotal:
+        basePrice,
+
+      total_price:
+        String(
+          basePrice,
+        ),
+
+      discount:
+        String(
+          discountValue,
+        ),
+
+      tax:
+        String(
+          tax,
+        ),
+
+      service:
+        String(
+          service,
+        ),
+
+      serviceCharge:
+        service,
+
+      totalAfterDiscount:
+        String(
+          finalGrandTotal,
+        ),
+
+      total_after_discount:
+        String(
+          finalGrandTotal,
+        ),
+
+      totalPrice:
+        finalGrandTotal,
+
+      getPayment:
+        transactionResult.getPayment,
+
+      get_payment:
+        transactionResult.getPayment,
+
+      cashChange:
+        transactionResult.cashChange,
+
+      cash_change:
+        transactionResult.cashChange,
+
+      is_tax_included:
+        isTaxIncluded
+          ? 1
+          : 0,
+
+      isTaxIncluded:
+        isTaxIncluded
+          ? 1
+          : 0,
+
+      createdAt:
+        now.toISOString(),
+
+      created_at:
+        now.toISOString(),
+
+      items:
+        normalizedItems.map(
+          (
+            item,
+          ) => ({
+            product_id:
+              item.productId,
+
+            menuItemId:
+              String(
+                item.productId,
+              ),
+
+            name:
+              productMap.get(
+                item.productId,
+              )?.name ??
+              item.fallbackName ??
+              'Produk',
+
+            quantity:
+              item.quantity,
+
+            price:
+              String(
+                item.price,
+              ),
+
+            priceAtOrder:
+              item.price,
+
+            selectedAddOnsDetails:
+              item.selectedAddOnsDetails,
+
+            notes:
+              JSON.stringify(
+                item.selectedAddOnsDetails,
+              ),
+          }),
+        ),
+    };
 
     return NextResponse.json(
       {
         success:
-          false,
+          true,
+
         message:
-          error instanceof
-          Error
-            ? error.message
-            : 'Internal Server Error',
+          customer.method ===
+            'qris'
+            ? 'QRIS berhasil dibuat.'
+            : 'Pesanan berhasil dibuat.',
+
+        orderId:
+          transactionResult.id,
+
+        orderCode:
+          transactionResult.code,
+
+        paymentMethod:
+          customer.method,
+
+        paymentStatus:
+          '1',
+
+        status:
+          'pending',
+
+        idempotencyKey,
+
+        qrUrl:
+          qrisResult?.qrUrl ??
+          null,
+
+        qrString:
+          qrisResult?.qrString ??
+          null,
+
+        expiryTime:
+          qrisResult?.expiryTime ??
+          null,
+
+        transactionId:
+          qrisResult?.transactionId ??
+          null,
+
+        totals: {
+          subtotal:
+            basePrice,
+
+          discount:
+            discountValue,
+
+          tax,
+          service,
+
+          grandTotal:
+            finalGrandTotal,
+
+          platformFeeRate,
+          platformFee,
+        },
+
+        /*
+         * Digunakan langsung oleh frontend untuk cetak customer.
+         */
+        printOrder,
+        data:
+          printOrder,
       },
       {
         status:
-          500,
+          201,
       },
+    );
+  } catch (
+    error
+  ) {
+    const message =
+      error instanceof
+      Error
+        ? error.message
+        : String(
+            error,
+          );
+
+    console.error(
+      '[POS_CHECKOUT_ERROR]',
+      {
+        checkoutStep,
+        error,
+      },
+    );
+
+    return jsonError(
+      500,
+      message ||
+        'Internal Server Error',
+      'INTERNAL_SERVER_ERROR',
+      process.env.NODE_ENV ===
+        'development'
+        ? {
+            checkoutStep,
+            message,
+          }
+        : null,
     );
   }
 }

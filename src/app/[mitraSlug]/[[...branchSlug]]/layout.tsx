@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { getMitraBySlug } from '@/lib/mitra';
+import PwaRegister
+  from '@/components/pwa/PwaRegister';
 
 // 🔴 1. Tambahkan 'branchSlug' ke dalam tipe params.
 // Karena kita menggunakan [[...branchSlug]], tipenya adalah array opsional (string[])
@@ -53,6 +55,7 @@ export default function MitraLayout({
       <link
         rel="stylesheet" href="https://unpkg.com/react-quill@1.3.3/dist/quill.snow.css"
       />
+      <PwaRegister />
       {children}
     </>
   );

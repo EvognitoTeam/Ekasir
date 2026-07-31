@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Manrope, Noto_Serif } from "next/font/google";
 import "./globals.css";
+import PwaRegister
+  from '@/components/pwa/PwaRegister';
 
 // 1. Konfigurasi Google Fonts
 const manrope = Manrope({ 
@@ -23,13 +25,38 @@ export const viewport: Viewport = {
 };
 
 // 2. Metadata Default (Untuk Landing Page Ekasir)
-export const metadata: Metadata = {
-  title: "Ekasir - The Original POS & Digital Menu",
-  description: "Sistem kasir dan menu digital modern untuk bisnis F&B Anda.",
+export const metadata:
+  Metadata = {
+  title:
+    'Ekasir - The Original POS & Digital Menu',
+
+  description:
+    'Sistem kasir dan menu digital modern untuk bisnis F&B Anda.',
+
+  manifest:
+    '/manifest.webmanifest',
+
+  applicationName:
+    'Evokasir POS',
+
+  appleWebApp: {
+    capable:
+      true,
+
+    title:
+      'Evokasir',
+
+    statusBarStyle:
+      'default',
+  },
+
   openGraph: {
-    title: "Ekasir - The Original POS & Digital Menu",
-    description: "Sistem kasir dan menu digital modern untuk bisnis F&B Anda.",
-  }
+    title:
+      'Ekasir - The Original POS & Digital Menu',
+
+    description:
+      'Sistem kasir dan menu digital modern untuk bisnis F&B Anda.',
+  },
 };
 
 export default function RootLayout({
@@ -41,6 +68,7 @@ export default function RootLayout({
     <html lang="en">
       {/* Semua halaman akan menggunakan font ini */}
       <body className={`${manrope.variable} ${notoSerif.variable} antialiased`}>
+        <PwaRegister />
         {children}
       </body>
     </html>

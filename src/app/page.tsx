@@ -54,7 +54,7 @@ const freePlanFeatures = [
   'Pemesanan langsung dari meja',
   'Kitchen order',
   'Notifikasi pesanan real-time',
-  'Diskon, pajak, dan split bill',
+  'Diskon, pajak',
   'Laporan penjualan real-time',
   'Manajemen pelanggan',
   'Loyalty point',
