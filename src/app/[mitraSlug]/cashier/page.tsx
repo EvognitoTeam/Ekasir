@@ -71,7 +71,7 @@ const DEFAULT_PRINTER_SETTINGS:
     copies:
       1,
     autoPrint:
-      false,
+      true,
     autoCut:
       true,
     showLogo:
@@ -1168,10 +1168,134 @@ export default function CashierApp() {
       });
     };
 
-  const handlePOSSubmit = (newOrder: Order) => {
-    setOrders(prev => [newOrder, ...prev]);
-    setIsPOSMode(false);
-  };
+  const handlePOSSubmit =
+    async (
+      newOrder:
+        Order,
+    ) => {
+      /*
+       * Hindari order ganda ketika polling history berjalan
+       * bersamaan dengan response checkout POS.
+       */
+      setOrders(
+        (
+          previous,
+        ) => {
+          const alreadyExists =
+            previous.some(
+              (
+                order,
+              ) =>
+                String(
+                  order.id,
+                ) ===
+                  String(
+                    newOrder.id,
+                  ) ||
+                (
+                  Boolean(
+                    order.order_code,
+                  ) &&
+                  String(
+                    order.order_code,
+                  ) ===
+                    String(
+                      newOrder.order_code,
+                    )
+                ),
+            );
+
+          return alreadyExists
+            ? previous.map(
+                (
+                  order,
+                ) =>
+                  String(
+                    order.id,
+                  ) ===
+                    String(
+                      newOrder.id,
+                    ) ||
+                  (
+                    Boolean(
+                      order.order_code,
+                    ) &&
+                    String(
+                      order.order_code,
+                    ) ===
+                      String(
+                        newOrder.order_code,
+                      )
+                  )
+                    ? {
+                        ...order,
+                        ...newOrder,
+                      }
+                    : order,
+              )
+            : [
+                newOrder,
+                ...previous,
+              ];
+        },
+      );
+
+      try {
+        /*
+         * Cetak otomatis hanya ketika opsi otomatisasi aktif.
+         * Default sekarang aktif untuk instalasi baru.
+         */
+        if (
+          printerSettings.autoPrint
+        ) {
+          await handlePrintOrder(
+            newOrder,
+            'customer',
+          );
+        } else {
+          Toast.fire({
+            icon:
+              'success',
+
+            title:
+              'Pesanan berhasil dibuat',
+          });
+        }
+      } catch (
+        error
+      ) {
+        console.error(
+          '[AUTO_PRINT_CUSTOMER_ERROR]',
+          {
+            error,
+            orderId:
+              newOrder.id,
+            orderCode:
+              newOrder.order_code,
+            slug,
+            activePrinter:
+              PrinterManager.getPrinter(
+                slug,
+              ),
+          },
+        );
+
+        Toast.fire({
+          icon:
+            'warning',
+
+          title:
+            error instanceof
+            Error
+              ? `Pesanan berhasil dibuat, tetapi cetak gagal: ${error.message}`
+              : 'Pesanan berhasil dibuat, tetapi struk customer gagal dicetak',
+        });
+      } finally {
+        setIsPOSMode(
+          false,
+        );
+      }
+    };
 
   const handleUndo = () => {
     if (!undoAction) return;

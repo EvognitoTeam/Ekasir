@@ -1229,10 +1229,10 @@ export async function POST(
               ),
 
             status:
-              'pending',
+              'confirmed',
 
             payment_status:
-              '1',
+              '2',
 
             createdAt:
               now,
