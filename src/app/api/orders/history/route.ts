@@ -11,6 +11,7 @@ import {
   orderItems,
   orders,
   products,
+  settings,
   tableList,
 } from '@/db/schema';
 import {
@@ -388,7 +389,8 @@ async function loadPointSettings(
           points_require_paid_order,
           points_include_tax_service,
           points_expiration_enabled,
-          points_expiration_days
+          points_expiration_days,
+          is_tax_included
         FROM settings
         WHERE mitra_id =
           ${mitraId}
@@ -432,7 +434,8 @@ async function loadPointSettings(
             points_require_paid_order,
             points_include_tax_service,
             points_expiration_enabled,
-            points_expiration_days
+            points_expiration_days,
+            is_tax_included
           FROM settings
           WHERE mitra_id =
             ${mitraId}
@@ -1325,6 +1328,12 @@ export async function GET(
             orders.createdAt,
           coupon_code:
             coupon.coupon_code,
+          couponCode:
+            coupon.coupon_code,
+          voucher_code:
+            coupon.coupon_code,
+          voucherCode:
+            coupon.coupon_code,
           table_name:
             tableList.table_name,
           table_number:
@@ -1333,10 +1342,84 @@ export async function GET(
             orders.manual_table_info,
           manualTableInfo:
             orders.manual_table_info,
+          tax:
+            orders.tax,
+          service:
+            orders.service,
+          serviceCharge:
+            orders.service,
+          is_tax_included:
+            sql<number>`
+              COALESCE(
+                (
+                  SELECT
+                    s.is_tax_included
+                  FROM settings AS s
+                  WHERE
+                    s.mitra_id =
+                      ${orders.mitra_id}
+                    AND (
+                      s.branch_id =
+                        ${orders.branch_id}
+                      OR s.branch_id
+                        IS NULL
+                    )
+                  ORDER BY
+                    CASE
+                      WHEN s.branch_id =
+                        ${orders.branch_id}
+                      THEN 0
+                      ELSE 1
+                    END,
+                    s.id DESC
+                  LIMIT 1
+                ),
+                0
+              )
+            `,
+          isTaxIncluded:
+            sql<number>`
+              COALESCE(
+                (
+                  SELECT
+                    s.is_tax_included
+                  FROM settings AS s
+                  WHERE
+                    s.mitra_id =
+                      ${orders.mitra_id}
+                    AND (
+                      s.branch_id =
+                        ${orders.branch_id}
+                      OR s.branch_id
+                        IS NULL
+                    )
+                  ORDER BY
+                    CASE
+                      WHEN s.branch_id =
+                        ${orders.branch_id}
+                      THEN 0
+                      ELSE 1
+                    END,
+                    s.id DESC
+                  LIMIT 1
+                ),
+                0
+              )
+            `,
           paymentStatus:
             orders.payment_status,
           paymentMethod:
             orders.payment_method,
+          payment_method:
+            orders.payment_method,
+          getPayment:
+            orders.getPayment,
+          get_payment:
+            orders.getPayment,
+          cashChange:
+            orders.cashChange,
+          cash_change:
+            orders.cashChange,
           customerName:
             orders.name,
         })
@@ -1456,17 +1539,50 @@ export async function GET(
                 order.manual_table_info,
               ).toLowerCase();
 
-            const isTakeaway =
+            const manualIsTakeaway =
               [
                 'takeaway',
                 'take away',
+                'take_away',
                 'bungkus',
               ].includes(
                 normalizedManualTableInfo,
               );
 
+            const hasPhysicalTable =
+              Boolean(
+                order.table_number
+              );
+
+            /*
+             * Aturan layanan:
+             * - meja ada + manual Takeaway => Takeaway, meja tetap meja fisik;
+             * - meja kosong + manual bukan Takeaway => Dine In, meja manual;
+             * - meja ada + manual bukan Takeaway => Dine In;
+             * - meja kosong + manual Takeaway => Takeaway.
+             */
+            const isTakeaway =
+              manualIsTakeaway;
+
+            const resolvedTableLabel =
+              hasPhysicalTable
+                ? (
+                    order.table_name ||
+                    String(
+                      order.table_number
+                    )
+                  )
+                : (
+                    order.manual_table_info ||
+                    null
+                  );
+
             return {
               ...order,
+              tableLabel:
+                resolvedTableLabel,
+              table_label:
+                resolvedTableLabel,
               orderType:
                 isTakeaway
                   ? 'takeaway'

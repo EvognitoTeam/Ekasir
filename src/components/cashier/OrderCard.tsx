@@ -5,7 +5,7 @@ import { formatPrice } from '@/utils/formatters';
 import { 
   Printer, Banknote, Sparkles, Clock, User, ShoppingBag,
   Check, AlertCircle, CheckCircle2, Coffee, ChefHat, Edit3, XCircle,
-  Trash2, Loader2
+  Trash2, Loader2, Receipt, UtensilsCrossed
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import Swal from 'sweetalert2';
@@ -15,6 +15,10 @@ interface Props {
   onUpdateStatus: (id: string, status: Order['status'] | 'cancelled', paymentStatus?: Order['paymentStatus']) => void;
   onUpdateNote?: (id: string, note: string) => void;
   role?: 'cashier' | 'owner' | 'kitchen';
+  onPrintOrder?: (
+    order: Order,
+    target: 'kitchen' | 'customer',
+  ) => Promise<void> | void;
 }
 
 const normalizeOrderValue = (
@@ -102,12 +106,21 @@ const STATUS_CONFIG = {
   cancelled: { label: 'Dibatalkan',       color: '#991B1B', bg: '#FEF2F2', border: '#FCA5A5', dot: '#EF4444' },
 };
 
-export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 'cashier' }: Props) {
+export default function OrderCard({
+  order,
+  onUpdateStatus,
+  onUpdateNote,
+  role = 'cashier',
+  onPrintOrder,
+}: Props) {
   const { items: menuItems } = useMenuStore();
   const [elapsed, setElapsed] = useState('');
   const [isUrgent, setIsUrgent] = useState(false);
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [noteInput, setNoteInput] = useState(order.adminNotes || '');
+  const [showPrintPopup, setShowPrintPopup] = useState(false);
+  const [printingTarget, setPrintingTarget] =
+    useState<'kitchen' | 'customer' | null>(null);
 
   useEffect(() => {
     const calc = () => {
@@ -222,50 +235,76 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
         }
       : baseCfg;
 
-  const handlePrint = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const pw = window.open('', '_blank', 'width=300,height=500');
-    if (!pw) return;
-    
-    const itemsHtml = (order.items || []).map(item => {
-      const p = menuItems.find(m => String(m.id) === String(item.menuItemId));
-      return `<div class="row"><span>${item.quantity || 1}x ${p?.name || 'Item'}</span></div>`;
-    }).join('');
-
-    const orderIdToPrint = order.order_code || order.id;
-
-    const tableInfo = isTakeaway
-      ? hasTable
-        ? `TAKEAWAY - DARI: ${tableName}`
-        : 'TAKEAWAY'
-      : hasTable
-        ? `MEJA: ${tableName}`
-        : 'WALK-IN';
-
-    const paymentStatusPrint = order.paymentStatus === '2' || order.paymentStatus === 'paid' ? 'LUNAS' : 'BELUM BAYAR';
-
-    pw.document.write(`<html><head><style>
-      body{font-family:monospace;font-size:12px;margin:0;padding:16px;color:#000}
-      .center{text-align:center}.bold{font-weight:bold}
-      .border-b{border-bottom:1px dashed #000;margin-bottom:8px;padding-bottom:8px}
-      .row{display:flex;justify-content:space-between;margin-bottom:4px}
-    </style></head><body>
-      <div class="center bold border-b">
-        <h2 style="margin:0 0 4px 0">EKASIR</h2>
-        <p style="margin:8px 0 0 0;font-size:14px">${tableInfo}</p>
-        ${isTakeaway ? '<p style="margin:6px 0 0 0;padding:5px;border:2px solid #000;font-size:13px">BUNGKUS PESANAN</p>' : ''}
-        <p style="margin:4px 0 0 0">Pesanan: #${orderIdToPrint}</p>
-        ${order.customerName || order.name ? `<p style="margin:4px 0 0 0;font-weight:normal">Pelanggan: ${order.customerName || order.name}</p>` : ''}
-        <p style="margin:4px 0 0 0;font-weight:normal;font-size:10px">${order.paymentMethod?.toUpperCase() || 'TUNAI'} - ${paymentStatusPrint}</p>
-        ${order.adminNotes ? `<p style="margin:4px 0 0 0;font-weight:normal;font-size:10px;font-style:italic">Catatan Kasir: ${order.adminNotes}</p>` : ''}
-      </div>
-      <div class="border-b">${itemsHtml}</div>
-      <div class="row bold"><span>TOTAL</span><span>Rp ${Number(order.totalPrice || order.total_price || 0).toLocaleString('id-ID')}</span></div>
-      <p class="center" style="margin-top:24px">Terima Kasih!</p>
-      <script>window.onload=()=>{window.print();window.close()}<\/script>
-    </body></html>`);
-    pw.document.close();
+  const handleOpenPrintPopup = (
+    event:
+      React.MouseEvent,
+  ) => {
+    event.stopPropagation();
+    setShowPrintPopup(
+      true
+    );
   };
+
+  const handlePrintTarget =
+    async (
+      target:
+        'kitchen' |
+        'customer',
+    ) => {
+      if (
+        printingTarget
+      ) {
+        return;
+      }
+
+      setPrintingTarget(
+        target
+      );
+
+      try {
+        if (
+          onPrintOrder
+        ) {
+          await onPrintOrder(
+            order,
+            target
+          );
+        } else {
+          throw new Error(
+            'Handler cetak belum dipasang pada halaman kasir.'
+          );
+        }
+
+        setShowPrintPopup(
+          false
+        );
+      } catch (
+        error
+      ) {
+        console.error(
+          'Gagal mencetak pesanan:',
+          error
+        );
+
+        await Swal.fire({
+          icon:
+            'error',
+          title:
+            'Cetak gagal',
+          text:
+            error instanceof Error
+              ? error.message
+              : 'Printer tidak dapat mencetak pesanan.',
+          confirmButtonColor:
+            '#0E5C37',
+        });
+      } finally {
+        setPrintingTarget(
+          null
+        );
+      }
+    };
+
 
   useEffect(() => {
     if (
@@ -323,6 +362,135 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
         opacity: order.status === 'cancelled' ? 0.7 : 1, 
       }}
     >
+      {showPrintPopup && (
+        <div
+          onClick={(
+            event
+          ) => {
+            event.stopPropagation();
+            setShowPrintPopup(
+              false
+            );
+          }}
+          className="fixed inset-0 z-[10000] flex items-end justify-center bg-stone-950/65 p-0 backdrop-blur-sm sm:items-center sm:p-5"
+        >
+          <motion.div
+            initial={{
+              opacity: 0,
+              y: 30,
+              scale: 0.97,
+            }}
+            animate={{
+              opacity: 1,
+              y: 0,
+              scale: 1,
+            }}
+            onClick={(
+              event
+            ) =>
+              event.stopPropagation()
+            }
+            className="w-full max-w-md overflow-hidden rounded-t-[2rem] bg-white shadow-2xl sm:rounded-[2rem]"
+          >
+            <div className="flex items-center justify-between border-b border-stone-100 bg-stone-50 p-5">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#0E5C37]">
+                  Pesanan #{displayId}
+                </p>
+
+                <h3 className="mt-1 text-xl font-black text-stone-900">
+                  Pilih tujuan cetak
+                </h3>
+              </div>
+
+              <button
+                type="button"
+                disabled={
+                  printingTarget !==
+                  null
+                }
+                onClick={() =>
+                  setShowPrintPopup(
+                    false
+                  )
+                }
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-500"
+              >
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid gap-3 p-5">
+              <button
+                type="button"
+                disabled={
+                  printingTarget !==
+                  null
+                }
+                onClick={() =>
+                  void handlePrintTarget(
+                    'kitchen'
+                  )
+                }
+                className="group flex min-h-[104px] items-center gap-4 rounded-2xl border-2 border-orange-200 bg-orange-50 p-4 text-left transition hover:border-orange-400 disabled:opacity-50"
+              >
+                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-orange-500 text-white shadow-lg shadow-orange-500/20">
+                  {printingTarget ===
+                  'kitchen' ? (
+                    <Loader2 className="h-7 w-7 animate-spin" />
+                  ) : (
+                    <UtensilsCrossed className="h-7 w-7" />
+                  )}
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <p className="text-base font-black text-stone-900">
+                    Cetak Dapur
+                  </p>
+
+                  <p className="mt-1 text-xs leading-relaxed text-stone-500">
+                    Berisi item, jumlah, add-on, catatan, meja, dan tipe layanan tanpa harga.
+                  </p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  printingTarget !==
+                  null
+                }
+                onClick={() =>
+                  void handlePrintTarget(
+                    'customer'
+                  )
+                }
+                className="group flex min-h-[104px] items-center gap-4 rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-4 text-left transition hover:border-emerald-400 disabled:opacity-50"
+              >
+                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#0E5C37] text-white shadow-lg shadow-emerald-900/20">
+                  {printingTarget ===
+                  'customer' ? (
+                    <Loader2 className="h-7 w-7 animate-spin" />
+                  ) : (
+                    <Receipt className="h-7 w-7" />
+                  )}
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <p className="text-base font-black text-stone-900">
+                    Cetak Customer
+                  </p>
+
+                  <p className="mt-1 text-xs leading-relaxed text-stone-500">
+                    Struk lengkap dengan harga, total, pembayaran, uang diterima, dan kembalian.
+                  </p>
+                </div>
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
       <div style={{ height: '4px', background: isUrgent ? '#EF4444' : cfg.dot, borderRadius: '16px 16px 0 0' }} />
 
       <div style={{ padding: '12px 16px 10px', background: cfg.bg, borderBottom: `1px solid ${cfg.border}` }}>
@@ -602,8 +770,8 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
 
         <div style={{ padding: '10px 12px', display: 'flex', gap: '8px', alignItems: 'center' }}>
           <button
-            onClick={handlePrint}
-            title="Cetak Struk"
+            onClick={handleOpenPrintPopup}
+            title="Pilih Jenis Cetak"
             style={{
               width: '40px', height: '40px', borderRadius: '10px',
               background: '#fff', border: '1.5px solid #e5e2dd',

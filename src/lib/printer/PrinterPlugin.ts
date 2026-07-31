@@ -1,14 +1,30 @@
-import { registerPlugin } from '@capacitor/core';
+import {
+  registerPlugin,
+} from '@capacitor/core';
+
+import type {
+  PrinterDevice,
+} from './types';
 
 export interface ScanResult {
-  devices: {
-    id: string;
-    name: string;
-    address: string;
-    type: string;
-  }[];
+  devices: PrinterDevice[];
 }
 
-export const NativePrinter = registerPlugin<{
-  scan(): Promise<ScanResult>;
-}>('PrinterPlugin');
+export interface PrintResult {
+  success: boolean;
+  message?: string;
+}
+
+export const NativePrinter =
+  registerPlugin<{
+    scan(): Promise<ScanResult>;
+    scanUsb?(): Promise<ScanResult>;
+    scanBluetooth?(): Promise<ScanResult>;
+    connect(options: {
+      printer: PrinterDevice;
+    }): Promise<PrintResult>;
+    print(options: {
+      printer: PrinterDevice;
+      data: number[];
+    }): Promise<PrintResult>;
+  }>('PrinterPlugin');
