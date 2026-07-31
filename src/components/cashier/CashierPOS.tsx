@@ -8,7 +8,9 @@ import { useParams } from 'next/navigation';
 
 interface CashierPOSProps {
   onClose: () => void;
-  onSubmitOrder: (order: Order) => void;
+  onSubmitOrder: (
+    order: Order,
+  ) => void | Promise<void>;
 }
 
 export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) {
@@ -41,6 +43,11 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
   const [availableCoupons, setAvailableCoupons] = useState<any[]>([]);
   const [selectedCouponCode, setSelectedCouponCode] = useState<string>('');
 
+  // Settings harga dibuat sama dengan self-checkout/server.
+  const [taxRate, setTaxRate] = useState(0);
+  const [serviceRate, setServiceRate] = useState(0);
+  const [isTaxIncluded, setIsTaxIncluded] = useState(false);
+
   // State QRIS Modal
   const [qrisData, setQrisData] = useState<{ qrUrl: string, orderCode: string, optimisticOrder: Order } | null>(null);
 
@@ -59,6 +66,36 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
         const dataCoupons = await resCoupons.json();
         if (dataCoupons.success && Array.isArray(dataCoupons.data)) {
           setAvailableCoupons(dataCoupons.data);
+        }
+
+        // Fetch settings pajak/service agar tampilan POS sama dengan server.
+        const resSettings = await fetch(`/api/settings?slug=${slug}`);
+        const dataSettings = await resSettings.json();
+
+        if (dataSettings.success && dataSettings.data) {
+          setTaxRate(
+            Number(
+              dataSettings.data.taxRate ??
+              dataSettings.data.tax_rate ??
+              0,
+            ) || 0,
+          );
+
+          setServiceRate(
+            Number(
+              dataSettings.data.serviceRate ??
+              dataSettings.data.service_rate ??
+              0,
+            ) || 0,
+          );
+
+          setIsTaxIncluded(
+            Number(
+              dataSettings.data.isTaxIncluded ??
+              dataSettings.data.is_tax_included ??
+              0,
+            ) === 1,
+          );
         }
       } catch (e) {
         console.error("Gagal ambil data awal:", e);
@@ -153,8 +190,108 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
     return { discountAmount: calc, discountError: '' };
   }, [subtotal, selectedCouponCode, availableCoupons]);
 
-  const tax = subtotal * 0.00; 
-  const total = Math.max(0, subtotal + tax - discountAmount);
+  const pricing = useMemo(() => {
+    const normalizedDiscount =
+      Math.max(
+        0,
+        Math.floor(
+          Number(discountAmount) || 0,
+        ),
+      );
+
+    const subtotalAfterDiscount =
+      Math.max(
+        0,
+        Math.floor(subtotal) -
+          normalizedDiscount,
+      );
+
+    let calculatedTax = 0;
+    let calculatedService = 0;
+    let grandTotal = 0;
+
+    if (isTaxIncluded) {
+      const serviceDecimal =
+        Number(serviceRate || 0) / 100;
+
+      const taxDecimal =
+        Number(taxRate || 0) / 100;
+
+      const divisor =
+        (1 + serviceDecimal) *
+        (1 + taxDecimal);
+
+      const trueBase =
+        divisor > 0
+          ? Math.floor(
+              subtotalAfterDiscount /
+                divisor,
+            )
+          : subtotalAfterDiscount;
+
+      calculatedService =
+        Math.floor(
+          trueBase *
+            serviceDecimal,
+        );
+
+      calculatedTax =
+        subtotalAfterDiscount -
+        trueBase -
+        calculatedService;
+
+      grandTotal =
+        subtotalAfterDiscount;
+    } else {
+      calculatedService =
+        Math.floor(
+          subtotalAfterDiscount *
+            (
+              Number(serviceRate || 0) /
+              100
+            ),
+        );
+
+      calculatedTax =
+        Math.floor(
+          (
+            subtotalAfterDiscount +
+            calculatedService
+          ) *
+            (
+              Number(taxRate || 0) /
+              100
+            ),
+        );
+
+      grandTotal =
+        subtotalAfterDiscount +
+        calculatedService +
+        calculatedTax;
+    }
+
+    return {
+      discount:
+        normalizedDiscount,
+      subtotalAfterDiscount,
+      tax:
+        calculatedTax,
+      service:
+        calculatedService,
+      total:
+        grandTotal,
+    };
+  }, [
+    subtotal,
+    discountAmount,
+    taxRate,
+    serviceRate,
+    isTaxIncluded,
+  ]);
+
+  const tax = pricing.tax;
+  const serviceCharge = pricing.service;
+  const total = pricing.total;
 
   const addToCart = (productId: string, selectedAddons: number[] = [], notes: string = "") => {
     setCart(prev => {
@@ -191,97 +328,300 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
   };
 
   const handleCheckout = async () => {
-    if (cart.length === 0) return;
-    if (orderType === 'dine-in' && !tableId) {
-      alert("Masukkan nomor meja atau pager");
+    if (cart.length === 0) {
+      return;
+    }
+
+    if (
+      orderType === 'dine-in' &&
+      !tableId
+    ) {
+      alert(
+        'Masukkan nomor meja atau pager',
+      );
+      return;
+    }
+
+    if (
+      paymentMethod === 'cash' &&
+      cashAmount &&
+      Number(cashAmount) < total
+    ) {
+      alert(
+        'Nominal uang tunai masih kurang.',
+      );
       return;
     }
 
     setIsSubmitting(true);
 
-    const paid = Number(cashAmount) || total;
-    const change = paymentMethod === 'cash' ? Math.max(0, paid - total) : 0;
+    const paid =
+      paymentMethod === 'cash'
+        ? (
+            Number(cashAmount) ||
+            total
+          )
+        : total;
+
+    const change =
+      paymentMethod === 'cash'
+        ? Math.max(
+            0,
+            paid - total,
+          )
+        : 0;
 
     try {
-      const orderPayload = {
-        name: customerName || 'Tamu Kasir',
-        table_number: orderType === 'takeaway' ? null : tableId, 
-        orderType: orderType,
-        paymentMethod: paymentMethod,
-        getPayment: paymentMethod === 'cash' ? paid : total, 
-        cashChange: change, 
-        // Hanya kirim kode voucher jika diskonnya beneran valid/terpotong
-        discount: discountAmount,
-        voucher_code: discountAmount > 0 ? selectedCouponCode : null,
-        items: cart.map(c => {
-          const addonDetails = getAddonDetails(c.menuItemId, c.selectedAddOnsDetails || []);
-          const noteDetails = c.notes ? [{ name: `Note: ${c.notes}`, price: 0 }] : [];
-          const finalNotes = JSON.stringify([...addonDetails, ...noteDetails]);
+      const selectedCoupon =
+        availableCoupons.find(
+          (
+            coupon,
+          ) =>
+            String(
+              coupon.code ??
+              coupon.coupon_code ??
+              '',
+            ) ===
+            selectedCouponCode,
+        );
 
-          return {
-            menuItemId: c.menuItemId,
-            quantity: c.quantity,
-            price: calculateItemPrice(c.menuItemId, c.selectedAddOns || []), 
-            notes: finalNotes 
-          };
-        }),
-        subtotal: subtotal,
-        totalPrice: total,
+      const cartItems =
+        cart.map(
+          (
+            cartItem,
+          ) => {
+            const addonDetails =
+              getAddonDetails(
+                cartItem.menuItemId,
+                cartItem.selectedAddOnsDetails ||
+                  [],
+              );
+
+            const noteDetails =
+              cartItem.notes
+                ? [
+                    {
+                      name:
+                        `Note: ${cartItem.notes}`,
+                      price:
+                        0,
+                    },
+                  ]
+                : [];
+
+            return {
+              menuItemId:
+                cartItem.menuItemId,
+
+              quantity:
+                cartItem.quantity,
+
+              /*
+               * priceAtOrder sudah termasuk add-on, sama seperti
+               * validasi self-checkout dan penyimpanan order_items.
+               */
+              priceAtOrder:
+                calculateItemPrice(
+                  cartItem.menuItemId,
+                  cartItem.selectedAddOnsDetails ||
+                    [],
+                ),
+
+              selectedAddOnsDetails:
+                [
+                  ...addonDetails,
+                  ...noteDetails,
+                ],
+
+              name:
+                items.find(
+                  (
+                    item,
+                  ) =>
+                    String(item.id) ===
+                    String(
+                      cartItem.menuItemId,
+                    ),
+                )?.name ??
+                'Produk',
+            };
+          },
+        );
+
+      const orderPayload = {
+        total:
+          Math.floor(subtotal),
+
+        discount:
+          pricing.discount,
+
+        totalAfterDiscount:
+          total,
+
+        customer: {
+          name:
+            customerName ||
+            'Tamu Kasir',
+
+          tableNumber:
+            orderType ===
+              'takeaway'
+              ? null
+              : tableId,
+
+          manualTableInfo:
+            orderType ===
+              'takeaway'
+              ? 'Takeaway'
+              : (
+                  tableDisplay ||
+                  tableId ||
+                  null
+                ),
+
+          serviceType:
+            orderType ===
+              'takeaway'
+              ? 'takeaway'
+              : 'dine-in',
+
+          method:
+            paymentMethod,
+        },
+
+        cartItems,
+
+        discountId:
+          pricing.discount > 0
+            ? (
+                selectedCoupon?.id ??
+                null
+              )
+            : null,
+
+        voucher_code:
+          pricing.discount > 0
+            ? selectedCouponCode
+            : null,
+
+        getPayment:
+          paid,
+
+        cashChange:
+          change,
+
+        idempotencyKey:
+          `POS-${slug}-${Date.now()}-${crypto.randomUUID()}`,
       };
 
-      const res = await fetch(`/api/pos/orders?slug=${slug}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderPayload)
-      });
+      const response =
+        await fetch(
+          `/api/pos/orders?slug=${slug}`,
+          {
+            method:
+              'POST',
 
-      const result = await res.json();
+            headers: {
+              'Content-Type':
+                'application/json',
+            },
 
-      if (result.success) {
-        const optimisticOrder: Order = {
-          id: result.data?.id || Math.random().toString(36).substring(2, 6).toUpperCase(),
-          order_code: result.data?.order_code || `POS-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
-          table_number: orderType === 'takeaway' ? 'WALK-IN' : tableId,
-          getPayment: null,
-          cashChange: null,
-          items: cart,
-          subtotal,
-          tax,
-          serviceCharge: 0,
-          totalPrice: total,
-          status: 'confirmed', 
-          createdAt: new Date().toISOString(),
-          orderType,
-          customerName: customerName || 'Tamu Kasir',
-          paymentMethod,
-          paymentStatus: result.data?.payment_status === '1' ? 'pending' : 'paid', 
-          adminNotes: 'Order Kasir (POS)'
-        };
+            body:
+              JSON.stringify(
+                orderPayload,
+              ),
+          },
+        );
 
-        if (paymentMethod === 'qris' && result.data?.qr_url) {
-          setQrisData({
-            qrUrl: result.data.qr_url,
-            orderCode: result.data.order_code,
-            optimisticOrder
-          });
-        } else {
-          onSubmitOrder(optimisticOrder);
-        }
-      } else {
-        alert(result.message || "Gagal membuat pesanan");
+      const result =
+        await response.json();
+
+      if (
+        !response.ok ||
+        !result.success
+      ) {
+        throw new Error(
+          result.message ||
+          'Gagal membuat pesanan',
+        );
       }
-    } catch (e) {
-      console.error(e);
-      alert("Terjadi kesalahan jaringan.");
+
+      /*
+       * Pakai object hasil server. Jangan membangun ulang harga,
+       * tax, service, meja, dan pembayaran dari state frontend.
+       */
+      const createdOrder =
+        (
+          result.printOrder ??
+          result.data
+        ) as Order;
+
+      if (
+        !createdOrder
+      ) {
+        throw new Error(
+          'Server tidak mengembalikan data order untuk dicetak.',
+        );
+      }
+
+      /*
+       * onSubmitOrder di halaman kasir akan menambahkan order
+       * sekaligus mencetak struk customer.
+       */
+      await onSubmitOrder(
+        createdOrder,
+      );
+
+      if (
+        result.paymentMethod ===
+          'qris' &&
+        result.qrUrl
+      ) {
+        setQrisData({
+          qrUrl:
+            result.qrUrl,
+
+          orderCode:
+            result.orderCode,
+
+          optimisticOrder:
+            createdOrder,
+        });
+
+        setIsCartOpen(
+          false,
+        );
+      } else {
+        setCart([]);
+        setCashAmount('');
+        setSelectedCouponCode('');
+      }
+    } catch (error) {
+      console.error(
+        '[POS_CHECKOUT_ERROR]',
+        error,
+      );
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'Terjadi kesalahan jaringan.',
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const closeQrisModal = () => {
-    if (qrisData) {
-      onSubmitOrder(qrisData.optimisticOrder);
-    }
+    /*
+     * Order sudah dikirim ke onSubmitOrder tepat setelah API sukses,
+     * sehingga tidak boleh dikirim ulang saat modal QRIS ditutup.
+     */
+    setQrisData(null);
+    setCart([]);
+    setCashAmount('');
+    setSelectedCouponCode('');
+    onClose();
   };
 
   return (
@@ -705,12 +1045,38 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
               </div>
 
               <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #f0ede9', flexShrink: 0 }}>
-                {discountAmount > 0 && (
-                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', color: '#5a4b44' }}>
-                      <span>Subtotal</span>
-                      <span style={{ textDecoration: 'line-through' }}>{formatPrice(subtotal)}</span>
-                   </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', color: '#5a4b44' }}>
+                  <span>Subtotal</span>
+                  <span>{formatPrice(subtotal)}</span>
+                </div>
+
+                {pricing.discount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', color: '#DC2626' }}>
+                    <span>Diskon</span>
+                    <span>-{formatPrice(pricing.discount)}</span>
+                  </div>
                 )}
+
+                {!isTaxIncluded && serviceCharge > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', color: '#5a4b44' }}>
+                    <span>Service</span>
+                    <span>{formatPrice(serviceCharge)}</span>
+                  </div>
+                )}
+
+                {!isTaxIncluded && tax > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', color: '#5a4b44' }}>
+                    <span>Pajak</span>
+                    <span>{formatPrice(tax)}</span>
+                  </div>
+                )}
+
+                {isTaxIncluded && (tax > 0 || serviceCharge > 0) && (
+                  <p style={{ margin: '0 0 8px', fontSize: '10px', color: '#9CA3AF', textAlign: 'right' }}>
+                    Harga sudah termasuk pajak dan service
+                  </p>
+                )}
+
                 <button 
                   onClick={handleCheckout} 
                   disabled={isSubmitting}
