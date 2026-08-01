@@ -178,70 +178,115 @@ const normalizeAddonDetails = (
   const rawAddons =
     parsePrintArray(
       item.selectedAddOnsDetails ??
-      item.selected_add_ons_details ??
-      item.selectedAddOns ??
-      item.selected_add_ons ??
-      item.addons ??
-      item.addOns ??
-      item.notes,
+        item.selected_add_ons_details ??
+        item.selectedAddOns ??
+        item.selected_add_ons ??
+        item.addons ??
+        item.addOns ??
+        item.notes,
     );
 
   const productId =
     String(
       item.menuItemId ??
-      item.menu_item_id ??
-      item.product_id ??
-      item.productId ??
-      '',
+        item.menu_item_id ??
+        item.product_id ??
+        item.productId ??
+        '',
     );
 
   const product =
     menuItems.find(
-      (menuItem: any) =>
-        String(menuItem.id) ===
+      (
+        menuItem: any,
+      ) =>
+        String(
+          menuItem.id,
+        ) ===
         productId,
     );
 
   const allProductAddons =
-    (product?.categorizedAddons ?? [])
-      .flatMap(
-        (category: any) =>
-          Array.isArray(category?.addons)
-            ? category.addons
-            : [],
-      );
+    (
+      product?.categorizedAddons ??
+      []
+    ).flatMap(
+      (
+        category: any,
+      ) =>
+        Array.isArray(
+          category?.addons,
+        )
+          ? category.addons
+          : [],
+    );
 
   return rawAddons
     .map(
-      (rawAddon: any) => {
+      (
+        rawAddon: any,
+      ): PrintAddonDetail | null => {
+        /*
+         * Add-on hanya berbentuk ID.
+         */
         if (
-          typeof rawAddon === 'number' ||
-          typeof rawAddon === 'string'
+          typeof rawAddon ===
+            'number' ||
+          typeof rawAddon ===
+            'string'
         ) {
           const found =
             allProductAddons.find(
-              (addon: any) =>
-                String(addon.id) ===
-                String(rawAddon),
+              (
+                addon: any,
+              ) =>
+                String(
+                  addon.id,
+                ) ===
+                String(
+                  rawAddon,
+                ),
             );
 
           if (!found) {
             return null;
           }
 
+          const price =
+            Number(
+              found.price ??
+                0,
+            );
+
           return {
             id:
               found.id,
+
             name:
-              String(found.name ?? 'Add-on'),
+              String(
+                found.name ??
+                  'Add-on',
+              ),
+
             price:
-              Number(found.price ?? 0),
+              Number.isFinite(
+                price,
+              )
+                ? price
+                : 0,
           };
         }
 
+        /*
+         * Abaikan nilai kosong atau tipe yang bukan object.
+         */
         if (
           !rawAddon ||
-          typeof rawAddon !== 'object'
+          typeof rawAddon !==
+            'object' ||
+          Array.isArray(
+            rawAddon,
+          )
         ) {
           return null;
         }
@@ -249,18 +294,19 @@ const normalizeAddonDetails = (
         const addonName =
           String(
             rawAddon.name ??
-            rawAddon.addon_name ??
-            rawAddon.addOnName ??
-            rawAddon.label ??
-            '',
+              rawAddon.addon_name ??
+              rawAddon.addOnName ??
+              rawAddon.label ??
+              '',
           ).trim();
 
         const customerNote =
           String(
             rawAddon.customer_note ??
-            rawAddon.cust_notes ??
-            rawAddon.note ??
-            '',
+              rawAddon.customerNote ??
+              rawAddon.cust_notes ??
+              rawAddon.note ??
+              '',
           ).trim();
 
         if (
@@ -270,31 +316,65 @@ const normalizeAddonDetails = (
           return null;
         }
 
-        return {
-          id:
-            rawAddon.id ??
-            rawAddon.addon_id,
+        const price =
+          Number(
+            rawAddon.price ??
+              rawAddon.addon_price ??
+              rawAddon.addonPrice ??
+              0,
+          );
+
+        const normalizedAddon:
+          PrintAddonDetail = {
           name:
             addonName ||
             `Note: ${customerNote}`,
+
           price:
-            Number(
-              rawAddon.price ??
-              rawAddon.addon_price ??
-              0,
-            ),
-          customer_note:
-            customerNote ||
-            undefined,
-          cust_notes:
-            customerNote ||
-            undefined,
+            Number.isFinite(
+              price,
+            )
+              ? price
+              : 0,
         };
+
+        /*
+         * Karena id pada PrintAddonDetail bersifat opsional,
+         * hanya masukkan ketika benar-benar tersedia.
+         */
+        const addonId =
+          rawAddon.id ??
+          rawAddon.addon_id ??
+          rawAddon.addonId;
+
+        if (
+          addonId !==
+            undefined &&
+          addonId !==
+            null &&
+          addonId !==
+            ''
+        ) {
+          normalizedAddon.id =
+            addonId;
+        }
+
+        if (customerNote) {
+          normalizedAddon.customer_note =
+            customerNote;
+
+          normalizedAddon.cust_notes =
+            customerNote;
+        }
+
+        return normalizedAddon;
       },
     )
     .filter(
-      (addon): addon is PrintAddonDetail =>
-        Boolean(addon),
+      (
+        addon,
+      ): addon is PrintAddonDetail =>
+        addon !== null,
     );
 };
 
