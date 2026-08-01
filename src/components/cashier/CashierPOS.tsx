@@ -397,20 +397,39 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
                   [],
               );
 
+            const customerNote =
+              String(
+                cartItem.notes ||
+                '',
+              ).trim();
+
             const noteDetails =
-              cartItem.notes
+              customerNote
                 ? [
                     {
                       name:
-                        `Note: ${cartItem.notes}`,
+                        `Note: ${customerNote}`,
                       price:
                         0,
+                      customer_note:
+                        customerNote,
+                      cust_notes:
+                        customerNote,
                     },
                   ]
                 : [];
 
+            const selectedAddOnsDetails =
+              [
+                ...addonDetails,
+                ...noteDetails,
+              ];
+
             return {
               menuItemId:
+                cartItem.menuItemId,
+
+              product_id:
                 cartItem.menuItemId,
 
               quantity:
@@ -427,11 +446,20 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
                     [],
                 ),
 
-              selectedAddOnsDetails:
-                [
-                  ...addonDetails,
-                  ...noteDetails,
-                ],
+              selectedAddOnsDetails,
+
+              /*
+               * Simpan salinan JSON agar endpoint/history lama yang
+               * masih membaca kolom notes tetap dapat memulihkan add-on.
+               */
+              notes:
+                JSON.stringify(
+                  selectedAddOnsDetails,
+                ),
+
+              customerNote:
+                customerNote ||
+                null,
 
               name:
                 items.find(
@@ -550,11 +578,79 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
        * Pakai object hasil server. Jangan membangun ulang harga,
        * tax, service, meja, dan pembayaran dari state frontend.
        */
-      const createdOrder =
+      const serverOrder =
         (
           result.printOrder ??
           result.data
         ) as Order;
+
+      const serverItems =
+        Array.isArray(
+          (serverOrder as any)?.items,
+        )
+          ? (
+              serverOrder as any
+            ).items
+          : [];
+
+      const mergedItems =
+        cartItems.map(
+          (
+            localItem,
+            index,
+          ) => {
+            const matchingServerItem =
+              serverItems.find(
+                (serverItem: any) =>
+                  String(
+                    serverItem.menuItemId ??
+                    serverItem.menu_item_id ??
+                    serverItem.product_id ??
+                    serverItem.productId ??
+                    '',
+                  ) ===
+                  String(
+                    localItem.menuItemId,
+                  ),
+              ) ??
+              serverItems[index] ??
+              {};
+
+            return {
+              ...localItem,
+              ...matchingServerItem,
+              menuItemId:
+                String(
+                  matchingServerItem.menuItemId ??
+                  matchingServerItem.menu_item_id ??
+                  matchingServerItem.product_id ??
+                  localItem.menuItemId,
+                ),
+              product_id:
+                matchingServerItem.product_id ??
+                matchingServerItem.productId ??
+                localItem.product_id,
+              selectedAddOnsDetails:
+                localItem.selectedAddOnsDetails,
+              notes:
+                typeof matchingServerItem.notes ===
+                  'string' &&
+                matchingServerItem.notes.trim() !==
+                  ''
+                  ? matchingServerItem.notes
+                  : localItem.notes,
+            };
+          },
+        );
+
+      const createdOrder =
+        serverOrder
+          ? ({
+              ...serverOrder,
+              items:
+                mergedItems,
+            } as Order)
+          : null;
 
       if (
         !createdOrder

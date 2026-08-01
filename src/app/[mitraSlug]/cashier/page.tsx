@@ -127,6 +127,238 @@ type PrinterSettingsTab =
   | 'automation'
   | 'preview';
 
+
+type PrintAddonDetail = {
+  id?: string | number;
+  name: string;
+  price: number;
+  customer_note?: string;
+  cust_notes?: string;
+};
+
+const parsePrintArray = (
+  value: unknown,
+): unknown[] => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (
+    typeof value !== 'string' ||
+    value.trim() === ''
+  ) {
+    return [];
+  }
+
+  try {
+    const parsed =
+      JSON.parse(value);
+
+    if (Array.isArray(parsed)) {
+      return parsed;
+    }
+
+    if (
+      parsed &&
+      typeof parsed === 'object'
+    ) {
+      return [parsed];
+    }
+  } catch {
+    return [];
+  }
+
+  return [];
+};
+
+const normalizeAddonDetails = (
+  item: Record<string, any>,
+  menuItems: any[],
+): PrintAddonDetail[] => {
+  const rawAddons =
+    parsePrintArray(
+      item.selectedAddOnsDetails ??
+      item.selected_add_ons_details ??
+      item.selectedAddOns ??
+      item.selected_add_ons ??
+      item.addons ??
+      item.addOns ??
+      item.notes,
+    );
+
+  const productId =
+    String(
+      item.menuItemId ??
+      item.menu_item_id ??
+      item.product_id ??
+      item.productId ??
+      '',
+    );
+
+  const product =
+    menuItems.find(
+      (menuItem: any) =>
+        String(menuItem.id) ===
+        productId,
+    );
+
+  const allProductAddons =
+    (product?.categorizedAddons ?? [])
+      .flatMap(
+        (category: any) =>
+          Array.isArray(category?.addons)
+            ? category.addons
+            : [],
+      );
+
+  return rawAddons
+    .map(
+      (rawAddon: any) => {
+        if (
+          typeof rawAddon === 'number' ||
+          typeof rawAddon === 'string'
+        ) {
+          const found =
+            allProductAddons.find(
+              (addon: any) =>
+                String(addon.id) ===
+                String(rawAddon),
+            );
+
+          if (!found) {
+            return null;
+          }
+
+          return {
+            id:
+              found.id,
+            name:
+              String(found.name ?? 'Add-on'),
+            price:
+              Number(found.price ?? 0),
+          };
+        }
+
+        if (
+          !rawAddon ||
+          typeof rawAddon !== 'object'
+        ) {
+          return null;
+        }
+
+        const addonName =
+          String(
+            rawAddon.name ??
+            rawAddon.addon_name ??
+            rawAddon.addOnName ??
+            rawAddon.label ??
+            '',
+          ).trim();
+
+        const customerNote =
+          String(
+            rawAddon.customer_note ??
+            rawAddon.cust_notes ??
+            rawAddon.note ??
+            '',
+          ).trim();
+
+        if (
+          !addonName &&
+          !customerNote
+        ) {
+          return null;
+        }
+
+        return {
+          id:
+            rawAddon.id ??
+            rawAddon.addon_id,
+          name:
+            addonName ||
+            `Note: ${customerNote}`,
+          price:
+            Number(
+              rawAddon.price ??
+              rawAddon.addon_price ??
+              0,
+            ),
+          customer_note:
+            customerNote ||
+            undefined,
+          cust_notes:
+            customerNote ||
+            undefined,
+        };
+      },
+    )
+    .filter(
+      (addon): addon is PrintAddonDetail =>
+        Boolean(addon),
+    );
+};
+
+const normalizeOrderForPrint = (
+  rawOrder: Order,
+  menuItems: any[],
+): Order => {
+  const rawItems =
+    parsePrintArray(
+      (rawOrder as any).items ??
+      (rawOrder as any).order_items ??
+      (rawOrder as any).cartItems,
+    );
+
+  const normalizedItems =
+    rawItems.map(
+      (rawItem: any) => {
+        const item =
+          rawItem &&
+          typeof rawItem === 'object'
+            ? rawItem
+            : {};
+
+        const addonDetails =
+          normalizeAddonDetails(
+            item,
+            menuItems,
+          );
+
+        return {
+          ...item,
+          menuItemId:
+            String(
+              item.menuItemId ??
+              item.menu_item_id ??
+              item.product_id ??
+              item.productId ??
+              '',
+            ),
+          product_id:
+            item.product_id ??
+            item.productId ??
+            item.menuItemId ??
+            item.menu_item_id,
+          selectedAddOnsDetails:
+            addonDetails,
+          selected_add_ons_details:
+            addonDetails,
+          notes:
+            typeof item.notes === 'string' &&
+            item.notes.trim() !== ''
+              ? item.notes
+              : JSON.stringify(addonDetails),
+        };
+      },
+    );
+
+  return {
+    ...rawOrder,
+    items:
+      normalizedItems,
+  } as Order;
+};
+
 export default function CashierApp() {
   const params = useParams();
   const router = useRouter();
@@ -1140,8 +1372,33 @@ export default function CashierApp() {
           {};
       }
 
+      const currentMenuItems =
+        useMenuStore
+          .getState()
+          .items as any[];
+
+      const normalizedOrder =
+        normalizeOrderForPrint(
+          order,
+          currentMenuItems,
+        );
+
+      console.log(
+        '[PRINT_ORDER_NORMALIZED]',
+        {
+          orderId:
+            normalizedOrder.id,
+          orderCode:
+            normalizedOrder.order_code,
+          target,
+          items:
+            normalizedOrder.items,
+        },
+      );
+
       await printOrder({
-        order,
+        order:
+          normalizedOrder,
         target,
         printer,
         slug,
@@ -1150,9 +1407,7 @@ export default function CashierApp() {
         cashierName:
           activeStaffName,
         menuItems:
-          useMenuStore
-            .getState()
-            .items as any,
+          currentMenuItems as any,
         settings:
           receiptSettings as any,
       });
@@ -1173,6 +1428,14 @@ export default function CashierApp() {
       newOrder:
         Order,
     ) => {
+      const normalizedNewOrder =
+        normalizeOrderForPrint(
+          newOrder,
+          useMenuStore
+            .getState()
+            .items as any[],
+        );
+
       /*
        * Hindari order ganda ketika polling history berjalan
        * bersamaan dengan response checkout POS.
@@ -1190,7 +1453,7 @@ export default function CashierApp() {
                   order.id,
                 ) ===
                   String(
-                    newOrder.id,
+                    normalizedNewOrder.id,
                   ) ||
                 (
                   Boolean(
@@ -1200,7 +1463,7 @@ export default function CashierApp() {
                     order.order_code,
                   ) ===
                     String(
-                      newOrder.order_code,
+                      normalizedNewOrder.order_code,
                     )
                 ),
             );
@@ -1214,7 +1477,7 @@ export default function CashierApp() {
                     order.id,
                   ) ===
                     String(
-                      newOrder.id,
+                      normalizedNewOrder.id,
                     ) ||
                   (
                     Boolean(
@@ -1224,17 +1487,17 @@ export default function CashierApp() {
                       order.order_code,
                     ) ===
                       String(
-                        newOrder.order_code,
+                        normalizedNewOrder.order_code,
                       )
                   )
                     ? {
                         ...order,
-                        ...newOrder,
+                        ...normalizedNewOrder,
                       }
                     : order,
               )
             : [
-                newOrder,
+                normalizedNewOrder,
                 ...previous,
               ];
         },
@@ -1249,7 +1512,7 @@ export default function CashierApp() {
           printerSettings.autoPrint
         ) {
           await handlePrintOrder(
-            newOrder,
+            normalizedNewOrder,
             'customer',
           );
         } else {
@@ -1269,9 +1532,9 @@ export default function CashierApp() {
           {
             error,
             orderId:
-              newOrder.id,
+              normalizedNewOrder.id,
             orderCode:
-              newOrder.order_code,
+              normalizedNewOrder.order_code,
             slug,
             activePrinter:
               PrinterManager.getPrinter(
