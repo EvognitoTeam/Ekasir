@@ -139,7 +139,6 @@ type PrintAddonDetail = {
 
 
 const parsePrintArray = (
-  
   value: unknown,
 ): any[] => {
   if (
@@ -149,36 +148,8 @@ const parsePrintArray = (
     return [];
   }
 
-  if (
-    Array.isArray(value)
-  ) {
-    return value;
-  }
-
-  if (
-    typeof value ===
-    'object'
-  ) {
-    return [
-      value,
-    ];
-  }
-
-  if (
-    typeof value !==
-    'string'
-  ) {
-    return [];
-  }
-
   let current: unknown =
-    value.trim();
-
-  if (
-    current === ''
-  ) {
-    return [];
-  }
+    value;
 
   for (
     let attempt = 0;
@@ -186,7 +157,9 @@ const parsePrintArray = (
     attempt += 1
   ) {
     if (
-      Array.isArray(current)
+      Array.isArray(
+        current,
+      )
     ) {
       return current;
     }
@@ -211,9 +184,7 @@ const parsePrintArray = (
     const normalized =
       current.trim();
 
-    if (
-      normalized === ''
-    ) {
+    if (!normalized) {
       return [];
     }
 
@@ -222,65 +193,28 @@ const parsePrintArray = (
         JSON.parse(
           normalized,
         );
+    } catch (
+      error
+    ) {
+      console.warn(
+        '[PRINT_JSON_PARSE_FAILED]',
+        {
+          value,
+          current,
+          attempt,
+          error,
+        },
+      );
 
-      continue;
-    } catch {
-      /*
-       * Kompatibel dengan target TypeScript sebelum ES2018.
-       * [\s\S] dipakai sebagai pengganti dotAll flag /s.
-       */
-      const unwrapped =
-        normalized
-          .replace(
-            /^"([\s\S]*)"$/,
-            '$1',
-          )
-          .replace(
-            /\\"/g,
-            '"',
-          )
-          .replace(
-            /\\\\/g,
-            '\\',
-          );
-
-      if (
-        unwrapped ===
-        normalized
-      ) {
-        console.warn(
-          '[PRINT_JSON_PARSE_FAILED]',
-          {
-            value,
-            normalized,
-          },
-        );
-
-        return [];
-      }
-
-      current =
-        unwrapped;
+      return [];
     }
   }
 
-  if (
-    Array.isArray(current)
-  ) {
-    return current;
-  }
-
-  if (
-    current !== null &&
-    typeof current ===
-      'object'
-  ) {
-    return [
-      current,
-    ];
-  }
-
-  return [];
+  return Array.isArray(
+    current,
+  )
+    ? current
+    : [];
 };
 
 const normalizeAddonDetails = (
