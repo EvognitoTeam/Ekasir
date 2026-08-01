@@ -138,34 +138,143 @@ type PrintAddonDetail = {
 
 const parsePrintArray = (
   value: unknown,
-): unknown[] => {
-  if (Array.isArray(value)) {
-    return value;
-  }
-
+): any[] => {
   if (
-    typeof value !== 'string' ||
-    value.trim() === ''
+    value === null ||
+    value === undefined
   ) {
     return [];
   }
 
-  try {
-    const parsed =
-      JSON.parse(value);
+  if (
+    Array.isArray(value)
+  ) {
+    return value;
+  }
 
-    if (Array.isArray(parsed)) {
-      return parsed;
+  if (
+    typeof value ===
+    'object'
+  ) {
+    return [
+      value,
+    ];
+  }
+
+  if (
+    typeof value !==
+    'string'
+  ) {
+    return [];
+  }
+
+  let current: unknown =
+    value.trim();
+
+  if (
+    current === ''
+  ) {
+    return [];
+  }
+
+  for (
+    let attempt = 0;
+    attempt < 5;
+    attempt += 1
+  ) {
+    if (
+      Array.isArray(current)
+    ) {
+      return current;
     }
 
     if (
-      parsed &&
-      typeof parsed === 'object'
+      current !== null &&
+      typeof current ===
+        'object'
     ) {
-      return [parsed];
+      return [
+        current,
+      ];
     }
-  } catch {
-    return [];
+
+    if (
+      typeof current !==
+      'string'
+    ) {
+      return [];
+    }
+
+    const normalized =
+      current.trim();
+
+    if (
+      normalized === ''
+    ) {
+      return [];
+    }
+
+    try {
+      current =
+        JSON.parse(
+          normalized,
+        );
+
+      continue;
+    } catch {
+      /*
+       * Kompatibel dengan target TypeScript sebelum ES2018.
+       * [\s\S] dipakai sebagai pengganti dotAll flag /s.
+       */
+      const unwrapped =
+        normalized
+          .replace(
+            /^"([\s\S]*)"$/,
+            '$1',
+          )
+          .replace(
+            /\\"/g,
+            '"',
+          )
+          .replace(
+            /\\\\/g,
+            '\\',
+          );
+
+      if (
+        unwrapped ===
+        normalized
+      ) {
+        console.warn(
+          '[PRINT_JSON_PARSE_FAILED]',
+          {
+            value,
+            normalized,
+          },
+        );
+
+        return [];
+      }
+
+      current =
+        unwrapped;
+    }
+  }
+
+  if (
+    Array.isArray(current)
+  ) {
+    return current;
+  }
+
+  if (
+    current !== null &&
+    typeof current ===
+      'object'
+  ) {
+    return [
+      current,
+    ];
   }
 
   return [];
