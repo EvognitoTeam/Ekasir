@@ -77,6 +77,14 @@ type CartItemPayload = {
   title?: unknown;
 };
 
+type NormalizedAddonDetail = {
+  id?: number | string;
+  name: string;
+  price: number;
+  customer_note?: string;
+  cust_notes?: string;
+};
+
 type CheckoutBody = {
   total?: unknown;
   subtotal?: unknown;
@@ -156,6 +164,158 @@ function normalizeString(
     value ??
       '',
   ).trim();
+}
+
+function parseRepeatedJson(
+  value: unknown,
+): unknown {
+  let current = value;
+
+  for (
+    let attempt = 0;
+    attempt < 5;
+    attempt += 1
+  ) {
+    if (
+      typeof current !==
+      'string'
+    ) {
+      return current;
+    }
+
+    const trimmed =
+      current.trim();
+
+    if (!trimmed) {
+      return [];
+    }
+
+    try {
+      current =
+        JSON.parse(
+          trimmed,
+        );
+    } catch {
+      return current;
+    }
+  }
+
+  return current;
+}
+
+function normalizeAddonDetails(
+  value: unknown,
+): NormalizedAddonDetail[] {
+  const parsed =
+    parseRepeatedJson(
+      value,
+    );
+
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  return parsed.reduce<
+    NormalizedAddonDetail[]
+  >(
+    (
+      result,
+      rawAddon,
+    ) => {
+      if (
+        !rawAddon ||
+        typeof rawAddon !==
+          'object' ||
+        Array.isArray(
+          rawAddon,
+        )
+      ) {
+        return result;
+      }
+
+      const addon =
+        rawAddon as
+          Record<
+            string,
+            unknown
+          >;
+
+      const name =
+        normalizeString(
+          addon.name ??
+          addon.addon_name ??
+          addon.addOnName ??
+          addon.label,
+        );
+
+      const customerNote =
+        normalizeString(
+          addon.customer_note ??
+          addon.customerNote ??
+          addon.cust_notes ??
+          addon.note,
+        );
+
+      if (
+        !name &&
+        !customerNote
+      ) {
+        return result;
+      }
+
+      const normalized:
+        NormalizedAddonDetail = {
+          name:
+            name ||
+            `Note: ${customerNote}`,
+          price:
+            Math.max(
+              0,
+              toInteger(
+                addon.price ??
+                addon.addon_price ??
+                addon.addonPrice,
+              ),
+            ),
+        };
+
+      const addonId =
+        addon.id ??
+        addon.addon_id ??
+        addon.addonId;
+
+      if (
+        addonId !==
+          undefined &&
+        addonId !==
+          null &&
+        addonId !==
+          ''
+      ) {
+        normalized.id =
+          typeof addonId ===
+            'number'
+            ? addonId
+            : normalizeString(
+                addonId,
+              );
+      }
+
+      if (customerNote) {
+        normalized.customer_note =
+          customerNote;
+        normalized.cust_notes =
+          customerNote;
+      }
+
+      result.push(
+        normalized,
+      );
+
+      return result;
+    },
+    [],
+  );
 }
 
 function toInteger(
@@ -625,11 +785,9 @@ export async function POST(
             price,
 
             selectedAddOnsDetails:
-              Array.isArray(
+              normalizeAddonDetails(
                 item.selectedAddOnsDetails,
-              )
-                ? item.selectedAddOnsDetails
-                : [],
+              ),
 
             fallbackName:
               normalizeString(

@@ -181,6 +181,166 @@ function normalizeInteger(
   );
 }
 
+type ParsedAddonDetail = {
+  id?: number | string;
+  name: string;
+  price: number;
+  customer_note?: string;
+  cust_notes?: string;
+};
+
+function parseRepeatedJson(
+  value: unknown,
+): unknown {
+  let current = value;
+
+  for (
+    let attempt = 0;
+    attempt < 5;
+    attempt += 1
+  ) {
+    if (
+      typeof current !==
+      'string'
+    ) {
+      return current;
+    }
+
+    const trimmed =
+      current.trim();
+
+    if (!trimmed) {
+      return [];
+    }
+
+    try {
+      current =
+        JSON.parse(
+          trimmed,
+        );
+    } catch {
+      return current;
+    }
+  }
+
+  return current;
+}
+
+function parseStoredAddons(
+  value: unknown,
+): ParsedAddonDetail[] {
+  const parsed =
+    parseRepeatedJson(
+      value,
+    );
+
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  return parsed.reduce<
+    ParsedAddonDetail[]
+  >(
+    (
+      result,
+      rawAddon,
+    ) => {
+      if (
+        !rawAddon ||
+        typeof rawAddon !==
+          'object' ||
+        Array.isArray(
+          rawAddon,
+        )
+      ) {
+        return result;
+      }
+
+      const addon =
+        rawAddon as
+          Record<
+            string,
+            unknown
+          >;
+
+      const name =
+        normalizeString(
+          addon.name ??
+          addon.addon_name ??
+          addon.addOnName ??
+          addon.label,
+        );
+
+      const customerNote =
+        normalizeString(
+          addon.customer_note ??
+          addon.customerNote ??
+          addon.cust_notes ??
+          addon.note,
+        );
+
+      if (
+        !name &&
+        !customerNote
+      ) {
+        return result;
+      }
+
+      const normalized:
+        ParsedAddonDetail = {
+          name:
+            name ||
+            `Note: ${customerNote}`,
+          price:
+            Math.max(
+              0,
+              normalizeInteger(
+                addon.price ??
+                addon.addon_price ??
+                addon.addonPrice,
+              ),
+            ),
+        };
+
+      const addonId =
+        addon.id ??
+        addon.addon_id ??
+        addon.addonId;
+
+      if (
+        addonId !==
+          undefined &&
+        addonId !==
+          null &&
+        addonId !==
+          ''
+      ) {
+        normalized.id =
+          typeof addonId ===
+            'number'
+            ? addonId
+            : normalizeString(
+                addonId,
+              );
+      }
+
+      if (customerNote) {
+        normalized.customer_note =
+          customerNote;
+        normalized.cust_notes =
+          customerNote;
+      }
+
+      result.push(
+        normalized,
+      );
+
+      return result;
+    },
+    [],
+  );
+}
+
 function isBranchScopedRole(
   role?: string,
 ) {
@@ -1471,56 +1631,10 @@ export async function GET(
             const itemsWithParsedNotes =
               items.map(
                 (item) => {
-                  let parsedAddOns:
-                    unknown[] = [];
-
-                  if (
-                    item.notes
-                  ) {
-                    if (
-                      typeof item.notes ===
-                      'string'
-                    ) {
-                      if (
-                        item.notes !==
-                          '[]' &&
-                        item.notes !==
-                          ''
-                      ) {
-                        try {
-                          const parsed =
-                            JSON.parse(
-                              item.notes,
-                            );
-
-                          parsedAddOns =
-                            Array.isArray(
-                              parsed,
-                            )
-                              ? parsed
-                              : [
-                                  parsed,
-                                ];
-                        } catch {
-                          console.error(
-                            `Gagal parse notes untuk item ID ${item.id}`,
-                          );
-                        }
-                      }
-                    } else if (
-                      typeof item.notes ===
-                      'object'
-                    ) {
-                      parsedAddOns =
-                        Array.isArray(
-                          item.notes,
-                        )
-                          ? item.notes
-                          : [
-                              item.notes,
-                            ];
-                    }
-                  }
+                  const parsedAddOns =
+                    parseStoredAddons(
+                      item.notes,
+                    );
 
                   return {
                     ...item,
