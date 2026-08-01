@@ -9,152 +9,117 @@ type GattCharacteristic = {
     writeWithoutResponse: boolean;
   };
   writeValueWithResponse(
-    value:
-      BufferSource,
+    value: BufferSource,
   ): Promise<void>;
   writeValueWithoutResponse(
-    value:
-      BufferSource,
+    value: BufferSource,
   ): Promise<void>;
 };
 
 type GattService = {
   uuid: string;
-  getCharacteristics():
-    Promise<
-      GattCharacteristic[]
-    >;
+  getCharacteristics(): Promise<GattCharacteristic[]>;
   getCharacteristic(
-    uuid:
-      string,
-  ):
-    Promise<
-      GattCharacteristic
-    >;
+    uuid: string,
+  ): Promise<GattCharacteristic>;
 };
 
 type GattServer = {
   connected: boolean;
-  connect():
-    Promise<
-      GattServer
-    >;
-  getPrimaryServices():
-    Promise<
-      GattService[]
-    >;
+  connect(): Promise<GattServer>;
+  disconnect?(): void;
+  getPrimaryServices(): Promise<GattService[]>;
   getPrimaryService(
-    uuid:
-      string,
-  ):
-    Promise<
-      GattService
-    >;
+    uuid: string,
+  ): Promise<GattService>;
 };
 
 type WebBluetoothDevice = {
   id: string;
   name?: string | null;
   gatt?: GattServer;
+  addEventListener?(
+    type: 'gattserverdisconnected',
+    listener: () => void,
+  ): void;
 };
 
 type BluetoothNavigator =
   Navigator & {
     bluetooth?: {
       requestDevice(options: {
-        acceptAllDevices:
-          boolean;
-        optionalServices:
-          string[];
-      }):
-        Promise<
-          WebBluetoothDevice
-        >;
-      getDevices?():
-        Promise<
-          WebBluetoothDevice[]
-        >;
+        acceptAllDevices: boolean;
+        optionalServices: string[];
+      }): Promise<WebBluetoothDevice>;
+      getDevices?(): Promise<WebBluetoothDevice[]>;
     };
   };
 
 type BleConnection = {
-  device:
-    WebBluetoothDevice;
-  characteristic:
-    GattCharacteristic;
+  device: WebBluetoothDevice;
+  characteristic: GattCharacteristic;
 };
 
 const runtimeDevices =
-  new Map<
-    string,
-    WebBluetoothDevice
-  >();
+  new Map<string, WebBluetoothDevice>();
 
 const runtimeConnections =
-  new Map<
-    string,
-    BleConnection
-  >();
+  new Map<string, BleConnection>();
+
+const connectionPromises =
+  new Map<string, Promise<BleConnection>>();
+
+const disconnectListeners =
+  new Set<string>();
 
 /**
- * UUID yang umum ditemukan pada printer BLE.
- * Printer Bluetooth Classic/SPP tidak dapat diakses oleh Web Bluetooth.
+ * UUID umum untuk printer BLE. Printer Bluetooth Classic/SPP tidak dapat
+ * diakses melalui Web Bluetooth browser.
  */
-const COMMON_BLE_SERVICES =
-  [
-    '0000ff00-0000-1000-8000-00805f9b34fb',
-    '0000ffe0-0000-1000-8000-00805f9b34fb',
-    '0000fff0-0000-1000-8000-00805f9b34fb',
-    '000018f0-0000-1000-8000-00805f9b34fb',
-    '49535343-fe7d-4ae5-8fa9-9fafd205e455',
-  ];
+const COMMON_BLE_SERVICES = [
+  '0000ff00-0000-1000-8000-00805f9b34fb',
+  '0000ffe0-0000-1000-8000-00805f9b34fb',
+  '0000fff0-0000-1000-8000-00805f9b34fb',
+  '000018f0-0000-1000-8000-00805f9b34fb',
+  '49535343-fe7d-4ae5-8fa9-9fafd205e455',
+];
 
 export class BluetoothDriver {
-  static async scan():
-    Promise<
-      PrinterDevice[]
-    > {
+  static async scan(): Promise<PrinterDevice[]> {
     const bluetooth =
       this.getWebBluetooth();
 
     const device =
       await bluetooth.requestDevice({
-        acceptAllDevices:
-          true,
+        acceptAllDevices: true,
         optionalServices:
           COMMON_BLE_SERVICES,
       });
 
-    runtimeDevices.set(
-      device.id,
-      device
+    this.rememberDevice(
+      device,
     );
 
     const discovered =
       await this.discoverWritableCharacteristic(
-        device
+        device,
       );
 
     runtimeConnections.set(
       device.id,
-      discovered
+      discovered,
     );
 
     return [
       {
-        id:
-          device.id,
+        id: device.id,
         name:
           device.name ||
           'BLE Printer',
-        address:
-          device.id,
-        type:
-          'ble',
+        address: device.id,
+        type: 'ble',
         serviceUuid:
-          discovered.characteristic
-            ? discovered.serviceUuid
-            : undefined,
+          discovered.serviceUuid,
         characteristicUuid:
           discovered.characteristic.uuid,
       },
@@ -162,85 +127,171 @@ export class BluetoothDriver {
   }
 
   static async connect(
-    printer:
-      PrinterDevice,
+    printer: PrinterDevice,
   ) {
     const connection =
       await this.getConnection(
-        printer
+        printer,
+        true,
       );
 
     runtimeConnections.set(
       printer.id,
-      connection
+      connection,
     );
 
     return true;
   }
 
-  static async print(
-    printer:
-      PrinterDevice,
-    data:
-      Uint8Array,
+  static async reconnect(
+    printer: PrinterDevice,
+  ) {
+    return this.connect(
+      printer,
+    );
+  }
+
+  static isConnected(
+    printer: PrinterDevice,
+  ) {
+    return Boolean(
+      runtimeConnections
+        .get(printer.id)
+        ?.device.gatt
+        ?.connected,
+    );
+  }
+
+  static async disconnect(
+    printer: PrinterDevice,
   ) {
     const connection =
-      await this.getConnection(
-        printer
+      runtimeConnections.get(
+        printer.id,
       );
 
-    const characteristic =
-      connection.characteristic;
+    try {
+      connection?.device.gatt
+        ?.disconnect?.();
+    } finally {
+      runtimeConnections.delete(
+        printer.id,
+      );
+      connectionPromises.delete(
+        printer.id,
+      );
+    }
+  }
 
-    const chunkSize =
-      180;
+  static async print(
+    printer: PrinterDevice,
+    data: Uint8Array,
+  ) {
+    let lastError: unknown =
+      null;
+
+    for (
+      let attempt = 0;
+      attempt < 2;
+      attempt += 1
+    ) {
+      try {
+        const connection =
+          await this.getConnection(
+            printer,
+            attempt > 0,
+          );
+
+        await this.writeChunks(
+          connection.characteristic,
+          data,
+        );
+
+        return true;
+      } catch (error) {
+        lastError = error;
+        runtimeConnections.delete(
+          printer.id,
+        );
+        connectionPromises.delete(
+          printer.id,
+        );
+
+        if (attempt === 0) {
+          await this.delay(150);
+        }
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(
+          'Koneksi Bluetooth printer gagal.',
+        );
+  }
+
+  private static async writeChunks(
+    characteristic: GattCharacteristic,
+    data: Uint8Array,
+  ) {
+    const chunkSize = 180;
 
     for (
       let offset = 0;
-      offset <
-      data.length;
-      offset +=
-      chunkSize
+      offset < data.length;
+      offset += chunkSize
     ) {
-      const chunk =
-        data.slice(
-          offset,
-          offset +
-            chunkSize
-        );
+      const chunk = data.slice(
+        offset,
+        offset + chunkSize,
+      );
 
       if (
         characteristic.properties
           .writeWithoutResponse
       ) {
         await characteristic.writeValueWithoutResponse(
-          chunk
+          chunk,
         );
       } else if (
         characteristic.properties
           .write
       ) {
         await characteristic.writeValueWithResponse(
-          chunk
+          chunk,
         );
       } else {
         throw new Error(
-          'Characteristic Bluetooth tidak mendukung penulisan data.'
+          'Characteristic Bluetooth tidak mendukung penulisan data.',
         );
       }
 
-      await new Promise(
-        (
-          resolve
-        ) =>
+      await this.delay(12);
+    }
+  }
+
+  private static delay(
+    duration: number,
+  ) {
+    return new Promise<void>(
+      (resolve) => {
+        if (
+          typeof window !==
+          'undefined'
+        ) {
           window.setTimeout(
             resolve,
-            12
-          )
-      );
-    }
+            duration,
+          );
+          return;
+        }
 
-    return true;
+        setTimeout(
+          resolve,
+          duration,
+        );
+      },
+    );
   }
 
   private static getWebBluetooth() {
@@ -249,7 +300,7 @@ export class BluetoothDriver {
       'undefined'
     ) {
       throw new Error(
-        'Web Bluetooth tidak tersedia di lingkungan ini.'
+        'Web Bluetooth tidak tersedia di lingkungan ini.',
       );
     }
 
@@ -261,20 +312,52 @@ export class BluetoothDriver {
 
     if (!bluetooth) {
       throw new Error(
-        'Browser tidak mendukung Web Bluetooth. Gunakan Chrome/Edge melalui HTTPS.'
+        'Browser tidak mendukung Web Bluetooth. Gunakan Chrome/Edge melalui HTTPS.',
       );
     }
 
     return bluetooth;
   }
 
+  private static rememberDevice(
+    device: WebBluetoothDevice,
+  ) {
+    runtimeDevices.set(
+      device.id,
+      device,
+    );
+
+    if (
+      disconnectListeners.has(
+        device.id,
+      )
+    ) {
+      return;
+    }
+
+    device.addEventListener?.(
+      'gattserverdisconnected',
+      () => {
+        runtimeConnections.delete(
+          device.id,
+        );
+        connectionPromises.delete(
+          device.id,
+        );
+      },
+    );
+
+    disconnectListeners.add(
+      device.id,
+    );
+  }
+
   private static async findDevice(
-    printer:
-      PrinterDevice,
+    printer: PrinterDevice,
   ) {
     const cached =
       runtimeDevices.get(
-        printer.id
+        printer.id,
       );
 
     if (cached) {
@@ -293,55 +376,89 @@ export class BluetoothDriver {
 
       const device =
         devices.find(
-          (
-            candidate
-          ) =>
+          (candidate) =>
             candidate.id ===
-            printer.id
+            printer.id,
         );
 
       if (device) {
-        runtimeDevices.set(
-          printer.id,
-          device
+        this.rememberDevice(
+          device,
         );
-
         return device;
       }
     }
 
     throw new Error(
-      'Akses perangkat Bluetooth tidak tersedia lagi. Tekan Deteksi Bluetooth dan pilih ulang printer.'
+      'Izin perangkat Bluetooth tidak tersedia lagi. Tekan Deteksi Bluetooth dan pilih ulang printer.',
     );
   }
 
   private static async getConnection(
-    printer:
-      PrinterDevice,
-  ):
-    Promise<
-      BleConnection
-    > {
-    const existing =
-      runtimeConnections.get(
-        printer.id
-      );
+    printer: PrinterDevice,
+    forceReconnect = false,
+  ): Promise<BleConnection> {
+    if (!forceReconnect) {
+      const existing =
+        runtimeConnections.get(
+          printer.id,
+        );
 
-    if (
-      existing?.device.gatt
-        ?.connected
-    ) {
-      return existing;
+      if (
+        existing?.device.gatt
+          ?.connected
+      ) {
+        return existing;
+      }
+
+      const pending =
+        connectionPromises.get(
+          printer.id,
+        );
+
+      if (pending) {
+        return pending;
+      }
     }
 
+    const pendingConnection =
+      this.createConnection(
+        printer,
+      );
+
+    connectionPromises.set(
+      printer.id,
+      pendingConnection,
+    );
+
+    try {
+      const connection =
+        await pendingConnection;
+
+      runtimeConnections.set(
+        printer.id,
+        connection,
+      );
+
+      return connection;
+    } finally {
+      connectionPromises.delete(
+        printer.id,
+      );
+    }
+  }
+
+  private static async createConnection(
+    printer: PrinterDevice,
+  ): Promise<BleConnection> {
     const device =
       await this.findDevice(
-        printer
+        printer,
       );
 
     if (!device.gatt) {
       throw new Error(
-        'Perangkat ini tidak menyediakan GATT. Kemungkinan printer memakai Bluetooth Classic/SPP yang tidak dapat dicetak dari browser.'
+        'Perangkat tidak menyediakan BLE GATT. Printer kemungkinan memakai Bluetooth Classic/SPP.',
       );
     }
 
@@ -356,12 +473,12 @@ export class BluetoothDriver {
 
       const service =
         await server.getPrimaryService(
-          printer.serviceUuid
+          printer.serviceUuid,
         );
 
       const characteristic =
         await service.getCharacteristic(
-          printer.characteristicUuid
+          printer.characteristicUuid,
         );
 
       return {
@@ -371,23 +488,20 @@ export class BluetoothDriver {
     }
 
     return this.discoverWritableCharacteristic(
-      device
+      device,
     );
   }
 
   private static async discoverWritableCharacteristic(
-    device:
-      WebBluetoothDevice,
-  ):
-    Promise<
-      BleConnection & {
-        serviceUuid:
-          string;
-      }
-    > {
+    device: WebBluetoothDevice,
+  ): Promise<
+    BleConnection & {
+      serviceUuid: string;
+    }
+  > {
     if (!device.gatt) {
       throw new Error(
-        'Printer tidak menyediakan BLE GATT. Jika printer hanya paired di Android, kemungkinan menggunakan Bluetooth Classic/SPP dan tidak kompatibel dengan Chrome.'
+        'Printer tidak menyediakan BLE GATT. Jika printer hanya paired di Android, kemungkinan menggunakan Bluetooth Classic/SPP.',
       );
     }
 
@@ -396,15 +510,13 @@ export class BluetoothDriver {
         ? device.gatt
         : await device.gatt.connect();
 
-    let services:
-      GattService[];
+    let services: GattService[];
 
     try {
       services =
         await server.getPrimaryServices();
     } catch {
-      services =
-        [];
+      services = [];
 
       for (
         const uuid of
@@ -413,8 +525,8 @@ export class BluetoothDriver {
         try {
           services.push(
             await server.getPrimaryService(
-              uuid
-            )
+              uuid,
+            ),
           );
         } catch {
           // Service tidak tersedia.
@@ -423,21 +535,18 @@ export class BluetoothDriver {
     }
 
     for (
-      const service of
-      services
+      const service of services
     ) {
       const characteristics =
         await service.getCharacteristics();
 
       const writable =
         characteristics.find(
-          (
-            characteristic
-          ) =>
+          (characteristic) =>
             characteristic.properties
               .writeWithoutResponse ||
             characteristic.properties
-              .write
+              .write,
         );
 
       if (writable) {
@@ -452,7 +561,7 @@ export class BluetoothDriver {
     }
 
     throw new Error(
-      'Characteristic BLE yang dapat ditulis tidak ditemukan. Printer kemungkinan Bluetooth Classic/SPP atau memakai UUID vendor yang belum didaftarkan.'
+      'Characteristic BLE yang dapat ditulis tidak ditemukan. Printer kemungkinan Bluetooth Classic/SPP atau UUID vendor belum didaftarkan.',
     );
   }
 }

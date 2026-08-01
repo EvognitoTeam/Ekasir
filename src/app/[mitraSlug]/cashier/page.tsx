@@ -127,388 +127,6 @@ type PrinterSettingsTab =
   | 'automation'
   | 'preview';
 
-
-type PrintAddonDetail = {
-  id?: string | number;
-  name: string;
-  price: number;
-  customer_note?: string;
-  cust_notes?: string;
-};
-
-
-
-const parsePrintArray = (
-  value: unknown,
-): any[] => {
-  if (
-    value === null ||
-    value === undefined
-  ) {
-    return [];
-  }
-
-  let current: unknown =
-    value;
-
-  for (
-    let attempt = 0;
-    attempt < 5;
-    attempt += 1
-  ) {
-    if (
-      Array.isArray(
-        current,
-      )
-    ) {
-      return current;
-    }
-
-    if (
-      current !== null &&
-      typeof current ===
-        'object'
-    ) {
-      return [
-        current,
-      ];
-    }
-
-    if (
-      typeof current !==
-      'string'
-    ) {
-      return [];
-    }
-
-    const normalized =
-      current.trim();
-
-    if (!normalized) {
-      return [];
-    }
-
-    try {
-      current =
-        JSON.parse(
-          normalized,
-        );
-    } catch (
-      error
-    ) {
-      console.warn(
-        '[PRINT_JSON_PARSE_FAILED]',
-        {
-          value,
-          current,
-          attempt,
-          error,
-        },
-      );
-
-      return [];
-    }
-  }
-
-  return Array.isArray(
-    current,
-  )
-    ? current
-    : [];
-};
-
-const normalizeAddonDetails = (
-  item: Record<string, any>,
-  menuItems: any[],
-): PrintAddonDetail[] => {
-  console.log(
-  '[ADDON_RAW_DEBUG]',
-  {
-    value:
-      item.selectedAddOnsDetails ??
-      item.selected_add_ons_details ??
-      item.selectedAddOns ??
-      item.selected_add_ons ??
-      item.addons ??
-      item.addOns ??
-      item.notes,
-
-    type:
-      typeof (
-        item.selectedAddOnsDetails ??
-        item.selected_add_ons_details ??
-        item.selectedAddOns ??
-        item.selected_add_ons ??
-        item.addons ??
-        item.addOns ??
-        item.notes
-      ),
-  },
-);
-  const rawAddons =
-    parsePrintArray(
-      item.selectedAddOnsDetails ??
-        item.selected_add_ons_details ??
-        item.selectedAddOns ??
-        item.selected_add_ons ??
-        item.addons ??
-        item.addOns ??
-        item.notes,
-    );
-
-  const productId =
-    String(
-      item.menuItemId ??
-        item.menu_item_id ??
-        item.product_id ??
-        item.productId ??
-        '',
-    );
-
-  const product =
-    menuItems.find(
-      (
-        menuItem: any,
-      ) =>
-        String(
-          menuItem.id,
-        ) ===
-        productId,
-    );
-
-  const allProductAddons =
-    (
-      product?.categorizedAddons ??
-      []
-    ).flatMap(
-      (
-        category: any,
-      ) =>
-        Array.isArray(
-          category?.addons,
-        )
-          ? category.addons
-          : [],
-    );
-
-  return rawAddons
-    .map(
-      (
-        rawAddon: any,
-      ): PrintAddonDetail | null => {
-        /*
-         * Add-on hanya berbentuk ID.
-         */
-        if (
-          typeof rawAddon ===
-            'number' ||
-          typeof rawAddon ===
-            'string'
-        ) {
-          const found =
-            allProductAddons.find(
-              (
-                addon: any,
-              ) =>
-                String(
-                  addon.id,
-                ) ===
-                String(
-                  rawAddon,
-                ),
-            );
-
-          if (!found) {
-            return null;
-          }
-
-          const price =
-            Number(
-              found.price ??
-                0,
-            );
-
-          return {
-            id:
-              found.id,
-
-            name:
-              String(
-                found.name ??
-                  'Add-on',
-              ),
-
-            price:
-              Number.isFinite(
-                price,
-              )
-                ? price
-                : 0,
-          };
-        }
-
-        /*
-         * Abaikan nilai kosong atau tipe yang bukan object.
-         */
-        if (
-          !rawAddon ||
-          typeof rawAddon !==
-            'object' ||
-          Array.isArray(
-            rawAddon,
-          )
-        ) {
-          return null;
-        }
-
-        const addonName =
-          String(
-            rawAddon.name ??
-              rawAddon.addon_name ??
-              rawAddon.addOnName ??
-              rawAddon.label ??
-              '',
-          ).trim();
-
-        const customerNote =
-          String(
-            rawAddon.customer_note ??
-              rawAddon.customerNote ??
-              rawAddon.cust_notes ??
-              rawAddon.note ??
-              '',
-          ).trim();
-
-        if (
-          !addonName &&
-          !customerNote
-        ) {
-          return null;
-        }
-
-        const price =
-          Number(
-            rawAddon.price ??
-              rawAddon.addon_price ??
-              rawAddon.addonPrice ??
-              0,
-          );
-
-        const normalizedAddon:
-          PrintAddonDetail = {
-          name:
-            addonName ||
-            `Note: ${customerNote}`,
-
-          price:
-            Number.isFinite(
-              price,
-            )
-              ? price
-              : 0,
-        };
-
-        /*
-         * Karena id pada PrintAddonDetail bersifat opsional,
-         * hanya masukkan ketika benar-benar tersedia.
-         */
-        const addonId =
-          rawAddon.id ??
-          rawAddon.addon_id ??
-          rawAddon.addonId;
-
-        if (
-          addonId !==
-            undefined &&
-          addonId !==
-            null &&
-          addonId !==
-            ''
-        ) {
-          normalizedAddon.id =
-            addonId;
-        }
-
-        if (customerNote) {
-          normalizedAddon.customer_note =
-            customerNote;
-
-          normalizedAddon.cust_notes =
-            customerNote;
-        }
-
-        return normalizedAddon;
-      },
-    )
-    .filter(
-      (
-        addon,
-      ): addon is PrintAddonDetail =>
-        addon !== null,
-    );
-};
-
-const normalizeOrderForPrint = (
-  rawOrder: Order,
-  menuItems: any[],
-): Order => {
-  const rawItems =
-    parsePrintArray(
-      (rawOrder as any).items ??
-      (rawOrder as any).order_items ??
-      (rawOrder as any).cartItems,
-    );
-
-  const normalizedItems =
-    rawItems.map(
-      (rawItem: any) => {
-        const item =
-          rawItem &&
-          typeof rawItem === 'object'
-            ? rawItem
-            : {};
-
-        const addonDetails =
-          normalizeAddonDetails(
-            item,
-            menuItems,
-          );
-
-        return {
-          ...item,
-          menuItemId:
-            String(
-              item.menuItemId ??
-              item.menu_item_id ??
-              item.product_id ??
-              item.productId ??
-              '',
-            ),
-          product_id:
-            item.product_id ??
-            item.productId ??
-            item.menuItemId ??
-            item.menu_item_id,
-          selectedAddOnsDetails:
-            addonDetails,
-          selected_add_ons_details:
-            addonDetails,
-          notes:
-            typeof item.notes === 'string' &&
-            item.notes.trim() !== ''
-              ? item.notes
-              : JSON.stringify(addonDetails),
-        };
-      },
-    );
-
-  return {
-    ...rawOrder,
-    items:
-      normalizedItems,
-  } as Order;
-};
-
 export default function CashierApp() {
   const params = useParams();
   const router = useRouter();
@@ -565,6 +183,13 @@ export default function CashierApp() {
     const settingsKey =
       `evo_printer_settings_${slug}`;
 
+    let reconnectController:
+      ReturnType<
+        typeof PrinterManager.startAutoReconnect
+      > |
+      null =
+        null;
+
     try {
       const storedSettings =
         localStorage.getItem(
@@ -601,12 +226,27 @@ export default function CashierApp() {
       setSelectedPrinter(
         activePrinter
       );
+
+      /*
+       * Setelah refresh, object perangkat dipulihkan dari izin browser
+       * melalui navigator.bluetooth.getDevices() atau navigator.usb.getDevices().
+       * Tidak membuka dialog pairing selama izin perangkat masih tersimpan.
+       */
+      reconnectController =
+        PrinterManager.startAutoReconnect(
+          slug,
+          15000,
+        );
     } catch (error) {
       console.error(
         'Gagal memulihkan pengaturan printer:',
         error
       );
     }
+
+    return () => {
+      reconnectController?.stop();
+    };
   }, [slug]);
 
   const updatePrinterSetting =
@@ -1522,33 +1162,8 @@ export default function CashierApp() {
           {};
       }
 
-      const currentMenuItems =
-        useMenuStore
-          .getState()
-          .items as any[];
-
-      const normalizedOrder =
-        normalizeOrderForPrint(
-          order,
-          currentMenuItems,
-        );
-
-      console.log(
-        '[PRINT_ORDER_NORMALIZED]',
-        {
-          orderId:
-            normalizedOrder.id,
-          orderCode:
-            normalizedOrder.order_code,
-          target,
-          items:
-            normalizedOrder.items,
-        },
-      );
-
       await printOrder({
-        order:
-          normalizedOrder,
+        order,
         target,
         printer,
         slug,
@@ -1557,7 +1172,9 @@ export default function CashierApp() {
         cashierName:
           activeStaffName,
         menuItems:
-          currentMenuItems as any,
+          useMenuStore
+            .getState()
+            .items as any,
         settings:
           receiptSettings as any,
       });
@@ -1578,14 +1195,6 @@ export default function CashierApp() {
       newOrder:
         Order,
     ) => {
-      const normalizedNewOrder =
-        normalizeOrderForPrint(
-          newOrder,
-          useMenuStore
-            .getState()
-            .items as any[],
-        );
-
       /*
        * Hindari order ganda ketika polling history berjalan
        * bersamaan dengan response checkout POS.
@@ -1603,7 +1212,7 @@ export default function CashierApp() {
                   order.id,
                 ) ===
                   String(
-                    normalizedNewOrder.id,
+                    newOrder.id,
                   ) ||
                 (
                   Boolean(
@@ -1613,7 +1222,7 @@ export default function CashierApp() {
                     order.order_code,
                   ) ===
                     String(
-                      normalizedNewOrder.order_code,
+                      newOrder.order_code,
                     )
                 ),
             );
@@ -1627,7 +1236,7 @@ export default function CashierApp() {
                     order.id,
                   ) ===
                     String(
-                      normalizedNewOrder.id,
+                      newOrder.id,
                     ) ||
                   (
                     Boolean(
@@ -1637,17 +1246,17 @@ export default function CashierApp() {
                       order.order_code,
                     ) ===
                       String(
-                        normalizedNewOrder.order_code,
+                        newOrder.order_code,
                       )
                   )
                     ? {
                         ...order,
-                        ...normalizedNewOrder,
+                        ...newOrder,
                       }
                     : order,
               )
             : [
-                normalizedNewOrder,
+                newOrder,
                 ...previous,
               ];
         },
@@ -1662,7 +1271,7 @@ export default function CashierApp() {
           printerSettings.autoPrint
         ) {
           await handlePrintOrder(
-            normalizedNewOrder,
+            newOrder,
             'customer',
           );
         } else {
@@ -1682,9 +1291,9 @@ export default function CashierApp() {
           {
             error,
             orderId:
-              normalizedNewOrder.id,
+              newOrder.id,
             orderCode:
-              normalizedNewOrder.order_code,
+              newOrder.order_code,
             slug,
             activePrinter:
               PrinterManager.getPrinter(

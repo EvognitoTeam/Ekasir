@@ -168,6 +168,31 @@ export class UsbDriver {
     return true;
   }
 
+  static isConnected(
+    printer:
+      PrinterDevice,
+  ) {
+    const connection =
+      runtimeConnections.get(
+        printerKey(
+          printer
+        )
+      );
+
+    return Boolean(
+      connection?.device.opened
+    );
+  }
+
+  static async reconnect(
+    printer:
+      PrinterDevice,
+  ) {
+    return this.connect(
+      printer
+    );
+  }
+
   static async print(
     printer:
       PrinterDevice,

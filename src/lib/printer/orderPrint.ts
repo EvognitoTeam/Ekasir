@@ -134,6 +134,69 @@ function normalize(
   ).trim();
 }
 
+
+function parseJsonArray(
+  value:
+    unknown,
+): any[] {
+  let current:
+    unknown =
+      value;
+
+  for (
+    let attempt = 0;
+    attempt < 5;
+    attempt += 1
+  ) {
+    if (
+      Array.isArray(
+        current
+      )
+    ) {
+      return current;
+    }
+
+    if (
+      current &&
+      typeof current ===
+        'object'
+    ) {
+      return [
+        current,
+      ];
+    }
+
+    if (
+      typeof current !==
+      'string'
+    ) {
+      return [];
+    }
+
+    const trimmed =
+      current.trim();
+
+    if (!trimmed) {
+      return [];
+    }
+
+    try {
+      current =
+        JSON.parse(
+          trimmed
+        );
+    } catch {
+      return [];
+    }
+  }
+
+  return Array.isArray(
+    current
+  )
+    ? current
+    : [];
+}
+
 function money(
   value:
     unknown,
@@ -688,25 +751,28 @@ function getOrderItems(
             )
         );
 
-      let rawAddons =
+      const selectedAddonSource =
         rawItem.selectedAddOnsDetails ??
         rawItem.selected_add_ons_details ??
-        [];
+        rawItem.selectedAddOns ??
+        rawItem.selected_add_ons;
 
-      if (
-        typeof rawAddons ===
-        'string'
-      ) {
-        try {
-          rawAddons =
-            JSON.parse(
-              rawAddons
+      const selectedAddons =
+        parseJsonArray(
+          selectedAddonSource
+        );
+
+      /*
+       * selectedAddOnsDetails adalah sumber utama. notes hanya fallback
+       * untuk data lama yang belum mengirim field tersebut.
+       */
+      const rawAddons =
+        selectedAddons.length >
+          0
+          ? selectedAddons
+          : parseJsonArray(
+              rawItem.notes
             );
-        } catch {
-          rawAddons =
-            [];
-        }
-      }
 
       const addons:
         Array<{
@@ -717,10 +783,14 @@ function getOrderItems(
         }> =
           [];
 
+      /*
+       * Catatan item hanya boleh berasal dari cust_notes. Field notes,
+       * customer_note, atau nama add-on berawalan "Note:" tidak lagi
+       * otomatis dicetak sebagai catatan.
+       */
       let note =
         normalize(
-          rawItem.cust_notes ??
-          rawItem.notes
+          rawItem.cust_notes
         );
 
       if (
@@ -735,41 +805,25 @@ function getOrderItems(
           if (
             !rawAddon ||
             typeof rawAddon !==
-            'object'
+              'object'
           ) {
             continue;
           }
 
-          if (
-            rawAddon.cust_notes
-          ) {
-            note =
-              normalize(
-                rawAddon.cust_notes
-              );
-          }
-
-          const rawName =
+          const custNotes =
             normalize(
-              rawAddon.name
+              rawAddon.cust_notes
             );
 
-          if (
-            rawName.toLowerCase()
-              .startsWith(
-                'note:'
-              )
-          ) {
+          if (custNotes) {
             note =
-              rawName.replace(
-                /^note:\s*/i,
-                ''
-              );
-            continue;
+              custNotes;
           }
 
           let name =
-            rawName;
+            normalize(
+              rawAddon.name
+            );
 
           let price =
             Number(
@@ -799,9 +853,7 @@ function getOrderItems(
                     )
                 );
 
-              if (
-                found
-              ) {
+              if (found) {
                 name =
                   found.name;
 
@@ -816,9 +868,11 @@ function getOrderItems(
             }
           }
 
-          if (
-            name
-          ) {
+          /*
+           * Object khusus catatan yang hanya berisi cust_notes tidak
+           * dimasukkan sebagai add-on kosong.
+           */
+          if (name) {
             addons.push({
               name,
               price,
