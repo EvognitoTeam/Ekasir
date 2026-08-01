@@ -136,7 +136,10 @@ type PrintAddonDetail = {
   cust_notes?: string;
 };
 
+
+
 const parsePrintArray = (
+  
   value: unknown,
 ): any[] => {
   if (
@@ -284,6 +287,30 @@ const normalizeAddonDetails = (
   item: Record<string, any>,
   menuItems: any[],
 ): PrintAddonDetail[] => {
+  console.log(
+  '[ADDON_RAW_DEBUG]',
+  {
+    value:
+      item.selectedAddOnsDetails ??
+      item.selected_add_ons_details ??
+      item.selectedAddOns ??
+      item.selected_add_ons ??
+      item.addons ??
+      item.addOns ??
+      item.notes,
+
+    type:
+      typeof (
+        item.selectedAddOnsDetails ??
+        item.selected_add_ons_details ??
+        item.selectedAddOns ??
+        item.selected_add_ons ??
+        item.addons ??
+        item.addOns ??
+        item.notes
+      ),
+  },
+);
   const rawAddons =
     parsePrintArray(
       item.selectedAddOnsDetails ??
