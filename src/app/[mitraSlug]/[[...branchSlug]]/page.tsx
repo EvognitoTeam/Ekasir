@@ -300,7 +300,7 @@ export default function CustomerPage() {
         }
 
         setMenu(productResult.data, productResult.categoriesData);
-        setMitraName(productResult.mitraName || 'EKASIR');
+        setMitraName(productResult.mitraName || 'KALOO POS');
         setMitraAddress(productResult.mitraAddress || 'Alamat belum diatur');
         setMitraWelcome(productResult.mitraWelcome || '');
         setBranchName(productResult.branchName || null);

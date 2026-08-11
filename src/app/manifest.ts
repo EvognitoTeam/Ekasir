@@ -9,13 +9,13 @@ MetadataRoute.Manifest {
       '/login',
 
     name:
-      'Evokasir POS',
+      'KALOO POS',
 
     short_name:
       'Evokasir',
 
     description:
-      'Aplikasi Point of Sale Evokasir',
+      'Aplikasi Point of Sale KALOO POS',
 
     start_url:
       '/login',
@@ -24,7 +24,7 @@ MetadataRoute.Manifest {
       '/',
 
     display:
-      'standalone',
+      'fullscreen',
 
     orientation:
       'portrait',

@@ -24,11 +24,11 @@ export const viewport: Viewport = {
   userScalable: false,
 };
 
-// 2. Metadata Default (Untuk Landing Page Ekasir)
+// 2. Metadata Default (Untuk Landing Page KALOO POS)
 export const metadata:
   Metadata = {
   title:
-    'Ekasir - The Original POS & Digital Menu',
+    'KALOO POS - The Original POS & Digital Menu',
 
   description:
     'Sistem kasir dan menu digital modern untuk bisnis F&B Anda.',
@@ -37,14 +37,14 @@ export const metadata:
     '/manifest.webmanifest',
 
   applicationName:
-    'Evokasir POS',
+    'KALOO POS',
 
   appleWebApp: {
     capable:
       true,
 
     title:
-      'Evokasir',
+      'KALOO POS',
 
     statusBarStyle:
       'default',
@@ -52,7 +52,7 @@ export const metadata:
 
   openGraph: {
     title:
-      'Ekasir - The Original POS & Digital Menu',
+      'KALOO POS - The Original POS & Digital Menu',
 
     description:
       'Sistem kasir dan menu digital modern untuk bisnis F&B Anda.',

@@ -10,7 +10,7 @@ interface HeaderProps {
 }
 
 export default function Header({
-  mitraName = 'EKASIR',
+  mitraName = 'KALOO POS',
   branchName,
   onSearch,
 }: HeaderProps) {

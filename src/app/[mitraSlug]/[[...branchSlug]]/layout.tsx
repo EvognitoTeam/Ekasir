@@ -25,12 +25,12 @@ export async function generateMetadata({
 
     if (mitra) {
       return {
-        title: `${mitra.mitra_name} - Ekasir`,
+        title: `${mitra.mitra_name} - KALOO POS`,
         description:
           mitra.mitra_welcome ||
           `Official digital menu and ordering system for ${mitra.mitra_name}`,
         openGraph: {
-          title: `${mitra.mitra_name} - Ekasir`,
+          title: `${mitra.mitra_name} - KALOO POS`,
           description:
             mitra.mitra_welcome ||
             `Official digital menu and ordering system for ${mitra.mitra_name}`,
@@ -42,7 +42,7 @@ export async function generateMetadata({
   }
 
   return {
-    title: 'Store Not Found - Ekasir',
+    title: 'Store Not Found - KALOO POS',
   };
 }
 

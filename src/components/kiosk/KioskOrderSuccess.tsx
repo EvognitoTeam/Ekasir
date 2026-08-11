@@ -1,26 +1,77 @@
 'use client';
 
-import {
-  Check,
-  Home,
-  Sparkles,
-} from 'lucide-react';
+import { useEffect, useRef } from 'react';
+import { Check, Home, Sparkles } from 'lucide-react';
+import type { KioskPaymentMethod } from './types';
 
-import type {
-  KioskPaymentMethod,
-} from './types';
+import { PrinterManager } from '@/lib/printer/PrinterManager';
+import { printOrder } from '@/lib/printer/orderPrint';
+import { useMenuStore } from '@/store/menu.store';
+import { Order } from '@/types/menu';
 
 type Props = {
+  order: Order;
+  slug: string;
+  storeName: string;
   orderCode: string;
   paymentMethod: KioskPaymentMethod;
   onFinish: () => void;
 };
 
 export default function KioskOrderSuccess({
+  order,
+  slug,
+  storeName,
   orderCode,
   paymentMethod,
   onFinish,
 }: Props) {
+  const hasPrinted = useRef(false);
+
+  useEffect(() => {
+    if (hasPrinted.current) return;
+    hasPrinted.current = true;
+
+    const handleAutoPrint = async () => {
+      try {
+        const activePrinter = PrinterManager.getPrinter(slug);
+
+        if (!activePrinter) {
+          console.warn('Printer Kiosk belum diatur.');
+          return;
+        }
+
+        let receiptSettings: Record<string, unknown> = {};
+        try {
+          receiptSettings = JSON.parse(
+            localStorage.getItem(`evo_printer_settings_${slug}`) || '{}'
+          );
+        } catch {
+          receiptSettings = {};
+        }
+
+        // Ambil daftar produk dari Zustand store untuk dikirim ke orderPrint
+        const storeMenuItems = useMenuStore.getState().items as any;
+
+        await printOrder({
+          order,
+          target: 'customer',
+          printer: activePrinter,
+          slug,
+          storeName: storeName,
+          cashierName: 'Kiosk', // <--- Dipendekkan jadi 'Kiosk' agar rapi & tidak tindihan di 58mm
+          menuItems: storeMenuItems || [],
+          settings: receiptSettings as any,
+        });
+
+      } catch (error) {
+        console.error('Gagal mencetak struk Kiosk:', error);
+      }
+    };
+
+    void handleAutoPrint();
+  }, [order, slug, storeName]);
+
   return (
     <section className="relative flex min-h-[100dvh] flex-col overflow-hidden bg-[#c8ff3d] p-4 text-[#171717] sm:p-6 lg:p-8">
       <div className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-white/60 blur-3xl" />

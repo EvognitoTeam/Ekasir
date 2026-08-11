@@ -32,6 +32,8 @@ import type {
   KioskServiceType as ServiceType,
   KioskStep,
 } from '@/components/kiosk/types';
+import { AnimatePresence, motion } from 'framer-motion';
+import PrinterSettingsModal from './PrinterSettingsModal'; // Sesuaikan path jika berbeda
 
 type BootstrapResponse = {
   success: boolean;
@@ -106,7 +108,7 @@ type PaymentState =
   | 'failed';
 
 const DEFAULT_STORE_NAME =
-  'EKASIR';
+  'KALOO POS';
 
 function buildScopeQuery(
   mitraSlug: string,
@@ -366,6 +368,9 @@ export default function KioskApp({
 
   const [error, setError] =
     useState<string | null>(null);
+
+  const [showPrinterSettings, setShowPrinterSettings] = useState(false);
+  
 
   const scopeQuery =
     useMemo(
@@ -1309,6 +1314,7 @@ export default function KioskApp({
               'service-type',
             )
           }
+          onOpenSettings={() => setShowPrinterSettings(true)}
         />
       )}
 
@@ -1469,18 +1475,43 @@ export default function KioskApp({
 
       {step === 'success' && (
         <KioskOrderSuccess
-          orderCode={
-            createdOrder
-              ?.code ??
-            '-'
-          }
-          paymentMethod={
-            paymentMethod ??
-            'cash'
-          }
-          onFinish={
-            resetKiosk
-          }
+          // Kita bentuk objek 'order' persis sesuai yang diminta orderPrint.ts
+          order={{
+            id: createdOrder?.id || 0,
+            order_code: createdOrder?.code || '-',
+            customerName: customer?.name || 'Pelanggan',
+            serviceType: serviceType || 'dine-in',
+            paymentMethod: paymentMethod || 'cash',
+            paymentStatus: paymentStatus === 'paid' ? '1' : '0',
+            status: paymentMethod === 'cash' ? 'pending' : 'confirmed',
+            totalPrice: subtotal,
+            discountAmount: discountAmount,
+            totalAfterDiscount: grandTotal,
+            
+            // PENTING: orderPrint.ts membaca properti 'items' (baris 424)
+            items: cart.map((item) => ({
+              menuItemId: item.productId, // untuk dicocokkan ke menuItems
+              product_id: item.productId,
+              name: item.name,
+              quantity: item.quantity,
+              unitPrice: item.basePrice,
+              priceAtOrder: item.basePrice,
+              
+              // Add-ons disimpan di selectedAddOnsDetails (baris 437)
+              selectedAddOnsDetails: item.addOns.map((addOn) => ({
+                id: addOn.id,
+                name: addOn.name,
+                price: addOn.price,
+              })),
+            })),
+            
+            createdAt: new Date().toISOString(),
+          } as any}
+          slug={mitraSlug}
+          storeName={store.name}
+          orderCode={createdOrder?.code ?? '-'}
+          paymentMethod={paymentMethod ?? 'cash'}
+          onFinish={resetKiosk}
         />
       )}
 
@@ -1642,6 +1673,12 @@ export default function KioskApp({
           </button>
         </div>
       )}
+      <PrinterSettingsModal
+        open={showPrinterSettings}
+        onClose={() => setShowPrinterSettings(false)}
+        slug={mitraSlug}
+        storeName={store.name}
+      />
     </KioskIdleGuard>
   );
 }

@@ -8,7 +8,7 @@ interface FooterProps {
 }
 
 export default function Footer({ 
-  mitraName = "Evokasir.", 
+  mitraName = "KALOO POS.", 
   mitraAddress = "Alamat belum diatur",
   mitraPhone = "Belum ada kontak",
   mitraWelcome = ""

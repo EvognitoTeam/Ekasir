@@ -1,6 +1,6 @@
 {
   "name": "ekasir",
-  "version": "0.7.3",
+  "version": "26.8.11",
   "private": true,
   "scripts": {
     "dev": "next dev",

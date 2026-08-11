@@ -1,3 +1,5 @@
+import { Link } from "lucide-react";
+
 export default function OfflinePage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
@@ -11,12 +13,12 @@ export default function OfflinePage() {
           lalu muat ulang halaman.
         </p>
 
-        <a
+        <Link
           href="/"
           className="mt-5 inline-flex rounded-lg bg-green-800 px-4 py-2.5 text-sm font-semibold text-white"
         >
           Coba Lagi
-        </a>
+        </Link>
       </section>
     </main>
   );
