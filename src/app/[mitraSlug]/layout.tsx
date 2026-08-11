@@ -19,10 +19,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
     if (data.success && data.mitraName) {
       return {
-        title: `${data.mitraName} - Ekasir`,
+        title: `${data.mitraName} - KALOO POS`,
         description: data.mitraWelcome || `Official digital menu and ordering system for ${data.mitraName}`,
         openGraph: {
-          title: `${data.mitraName} - Ekasir`,
+          title: `${data.mitraName} - KALOO POS`,
           description: `Official digital menu and ordering system for ${data.mitraName}`,
         }
       };
@@ -32,7 +32,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 
   return {
-    title: "Store Not Found - Ekasir",
+    title: "Store Not Found - KALOO POS",
   };
 }
 
