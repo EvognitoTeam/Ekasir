@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Order, AddOnGroup, AddOnChoice } from '@/types/menu';
+import { Order } from '@/types/menu';
 import { useMenuStore } from '@/store/menu.store';
 import { formatPrice } from '@/utils/formatters';
 import { 
   Printer, Banknote, Sparkles, Clock, User, ShoppingBag,
   Check, AlertCircle, CheckCircle2, Coffee, ChefHat, Edit3, XCircle,
-  Trash2
+  Trash2, Loader2, Receipt, UtensilsCrossed
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import Swal from 'sweetalert2';
@@ -15,7 +15,87 @@ interface Props {
   onUpdateStatus: (id: string, status: Order['status'] | 'cancelled', paymentStatus?: Order['paymentStatus']) => void;
   onUpdateNote?: (id: string, note: string) => void;
   role?: 'cashier' | 'owner' | 'kitchen';
+  onPrintOrder?: (
+    order: Order,
+    target: 'kitchen' | 'customer',
+  ) => Promise<void> | void;
 }
+
+const normalizeOrderValue = (
+  value: unknown,
+): string => {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return '';
+  }
+
+  return String(value)
+    .trim()
+    .toLowerCase();
+};
+
+const readOrderField = (
+  order: Order,
+  fieldNames: string[],
+): unknown => {
+  const rawOrder =
+    order as unknown as Record<
+      string,
+      unknown
+    >;
+
+  for (const fieldName of fieldNames) {
+    const directValue =
+      rawOrder[fieldName];
+
+    if (
+      directValue !== null &&
+      directValue !== undefined &&
+      String(directValue).trim() !==
+        ''
+    ) {
+      return directValue;
+    }
+  }
+
+  /*
+   * Fallback case-insensitive agar tetap terbaca ketika API
+   * mengubah kapitalisasi nama properti.
+   */
+  const normalizedNames =
+    new Set(
+      fieldNames.map((name) =>
+        name
+          .replace(/_/g, '')
+          .toLowerCase(),
+      ),
+    );
+
+  for (
+    const [key, value] of
+    Object.entries(rawOrder)
+  ) {
+    const normalizedKey =
+      key
+        .replace(/_/g, '')
+        .toLowerCase();
+
+    if (
+      normalizedNames.has(
+        normalizedKey,
+      ) &&
+      value !== null &&
+      value !== undefined &&
+      String(value).trim() !== ''
+    ) {
+      return value;
+    }
+  }
+
+  return null;
+};
 
 const STATUS_CONFIG = {
   pending:   { label: 'Pesanan Baru',     color: '#B45309', bg: '#FEF3C7', border: '#FCD34D', dot: '#F59E0B' },
@@ -26,12 +106,21 @@ const STATUS_CONFIG = {
   cancelled: { label: 'Dibatalkan',       color: '#991B1B', bg: '#FEF2F2', border: '#FCA5A5', dot: '#EF4444' },
 };
 
-export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 'cashier' }: Props) {
+export default function OrderCard({
+  order,
+  onUpdateStatus,
+  onUpdateNote,
+  role = 'cashier',
+  onPrintOrder,
+}: Props) {
   const { items: menuItems } = useMenuStore();
   const [elapsed, setElapsed] = useState('');
   const [isUrgent, setIsUrgent] = useState(false);
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [noteInput, setNoteInput] = useState(order.adminNotes || '');
+  const [showPrintPopup, setShowPrintPopup] = useState(false);
+  const [printingTarget, setPrintingTarget] =
+    useState<'kitchen' | 'customer' | null>(null);
 
   useEffect(() => {
     const calc = () => {
@@ -47,43 +136,207 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
     return () => clearInterval(t);
   }, [order.createdAt, order.status]);
 
-  const cfg = STATUS_CONFIG[order.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.completed;
+  const baseCfg =
+    STATUS_CONFIG[
+      order.status as keyof typeof STATUS_CONFIG
+    ] ||
+    STATUS_CONFIG.completed;
 
-  const handlePrint = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const pw = window.open('', '_blank', 'width=300,height=500');
-    if (!pw) return;
-    
-    const itemsHtml = (order.items || []).map(item => {
-      const p = menuItems.find(m => String(m.id) === String(item.menuItemId));
-      return `<div class="row"><span>${item.quantity || 1}x ${p?.name || 'Item'}</span></div>`;
-    }).join('');
+  /*
+   * Jenis layanan dan meja asal wajib dibaca secara independen.
+   *
+   * table_number/tableId tidak menentukan apakah pesanan dine-in
+   * atau Takeaway. Pesanan Takeaway dari meja tetap mempunyai
+   * table_number.
+   */
+  const manualTableInfo =
+    readOrderField(
+      order,
+      [
+        'manualTableInfo',
+        'manual_table_info',
+        'manualInfo',
+        'manual_info',
+      ],
+    );
 
-    const orderIdToPrint = order.order_code || order.id;
-    const tableInfo = order.table_name ? `Meja: ${order.table_name}` : (order.table_number ? `Meja: ${order.table_number}` : 'TAKE AWAY');
-    const paymentStatusPrint = order.paymentStatus === '2' || order.paymentStatus === 'paid' ? 'LUNAS' : 'BELUM BAYAR';
+  const serviceType =
+    readOrderField(
+      order,
+      [
+        'serviceType',
+        'service_type',
+        'orderType',
+        'order_type',
+        'fulfillmentType',
+        'fulfillment_type',
+      ],
+    );
 
-    pw.document.write(`<html><head><style>
-      body{font-family:monospace;font-size:12px;margin:0;padding:16px;color:#000}
-      .center{text-align:center}.bold{font-weight:bold}
-      .border-b{border-bottom:1px dashed #000;margin-bottom:8px;padding-bottom:8px}
-      .row{display:flex;justify-content:space-between;margin-bottom:4px}
-    </style></head><body>
-      <div class="center bold border-b">
-        <h2 style="margin:0 0 4px 0">EKASIR</h2>
-        <p style="margin:8px 0 0 0;font-size:14px">${tableInfo}</p>
-        <p style="margin:4px 0 0 0">Pesanan: #${orderIdToPrint}</p>
-        ${order.customerName || order.name ? `<p style="margin:4px 0 0 0;font-weight:normal">Pelanggan: ${order.customerName || order.name}</p>` : ''}
-        <p style="margin:4px 0 0 0;font-weight:normal;font-size:10px">${order.paymentMethod?.toUpperCase() || 'TUNAI'} - ${paymentStatusPrint}</p>
-        ${order.adminNotes ? `<p style="margin:4px 0 0 0;font-weight:normal;font-size:10px;font-style:italic">Catatan Kasir: ${order.adminNotes}</p>` : ''}
-      </div>
-      <div class="border-b">${itemsHtml}</div>
-      <div class="row bold"><span>TOTAL</span><span>Rp ${Number(order.totalPrice || order.total_price || 0).toLocaleString('id-ID')}</span></div>
-      <p class="center" style="margin-top:24px">Terima Kasih!</p>
-      <script>window.onload=()=>{window.print();window.close()}<\/script>
-    </body></html>`);
-    pw.document.close();
+  const takeawayCandidates = [
+    manualTableInfo,
+    serviceType,
+  ].map(normalizeOrderValue);
+
+  const isTakeaway =
+    takeawayCandidates.some(
+      (value) =>
+        value === 'takeaway' ||
+        value === 'take away' ||
+        value === 'bungkus',
+    );
+
+  const rawTableName =
+    readOrderField(
+      order,
+      [
+        'tableName',
+        'table_name',
+        'tableCode',
+        'table_code',
+        'tableId',
+        'table_id',
+        'tableNumber',
+        'table_number',
+      ],
+    );
+
+  const tableName =
+    rawTableName !== null &&
+    rawTableName !== undefined
+      ? String(rawTableName)
+          .trim()
+          .replace(/^T-/i, '')
+      : '';
+
+  const normalizedTableName =
+    normalizeOrderValue(
+      tableName,
+    );
+
+  const hasTable =
+    Boolean(tableName) &&
+    normalizedTableName !==
+      'null' &&
+    normalizedTableName !==
+      'undefined' &&
+    normalizedTableName !==
+      'walk-in' &&
+    normalizedTableName !==
+      'walk in';
+
+  const cfg =
+    order.status === 'ready' &&
+    isTakeaway
+      ? {
+          ...baseCfg,
+          label:
+            'Siap Diambil',
+        }
+      : baseCfg;
+
+  const handleOpenPrintPopup = (
+    event:
+      React.MouseEvent,
+  ) => {
+    event.stopPropagation();
+    setShowPrintPopup(
+      true
+    );
   };
+
+  const handlePrintTarget =
+    async (
+      target:
+        'kitchen' |
+        'customer',
+    ) => {
+      if (
+        printingTarget
+      ) {
+        return;
+      }
+
+      setPrintingTarget(
+        target
+      );
+
+      try {
+        if (
+          onPrintOrder
+        ) {
+          await onPrintOrder(
+            order,
+            target
+          );
+        } else {
+          throw new Error(
+            'Handler cetak belum dipasang pada halaman kasir.'
+          );
+        }
+
+        setShowPrintPopup(
+          false
+        );
+      } catch (
+        error
+      ) {
+        console.error(
+          'Gagal mencetak pesanan:',
+          error
+        );
+
+        await Swal.fire({
+          icon:
+            'error',
+          title:
+            'Cetak gagal',
+          text:
+            error instanceof Error
+              ? error.message
+              : 'Printer tidak dapat mencetak pesanan.',
+          confirmButtonColor:
+            '#0E5C37',
+        });
+      } finally {
+        setPrintingTarget(
+          null
+        );
+      }
+    };
+
+
+  useEffect(() => {
+    if (
+      process.env.NODE_ENV !==
+        'production' &&
+      !manualTableInfo &&
+      !serviceType
+    ) {
+      console.warn(
+        '[ORDER_CARD_SERVICE_TYPE_MISSING]',
+        {
+          orderId:
+            order.id,
+          status:
+            order.status,
+          table_number:
+            (order as any)
+              ?.table_number,
+          table_name:
+            (order as any)
+              ?.table_name,
+          message:
+            'API daftar order belum mengirim manual_table_info/service_type.',
+        },
+      );
+    }
+  }, [
+    manualTableInfo,
+    serviceType,
+    order.id,
+    order.status,
+  ]);
 
   const paymentStatusUi = order.paymentStatus === '2' || order.paymentStatus === 'paid' ? 'LUNAS' : 'BLM BAYAR';
   const paymentMethodUi = order.paymentMethod || 'TUNAI';
@@ -109,26 +362,193 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
         opacity: order.status === 'cancelled' ? 0.7 : 1, 
       }}
     >
+      {showPrintPopup && (
+        <div
+          onClick={(
+            event
+          ) => {
+            event.stopPropagation();
+            setShowPrintPopup(
+              false
+            );
+          }}
+          className="fixed inset-0 z-[10000] flex items-end justify-center bg-stone-950/65 p-0 backdrop-blur-sm sm:items-center sm:p-5"
+        >
+          <motion.div
+            initial={{
+              opacity: 0,
+              y: 30,
+              scale: 0.97,
+            }}
+            animate={{
+              opacity: 1,
+              y: 0,
+              scale: 1,
+            }}
+            onClick={(
+              event
+            ) =>
+              event.stopPropagation()
+            }
+            className="w-full max-w-md overflow-hidden rounded-t-[2rem] bg-white shadow-2xl sm:rounded-[2rem]"
+          >
+            <div className="flex items-center justify-between border-b border-stone-100 bg-stone-50 p-5">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#0E5C37]">
+                  Pesanan #{displayId}
+                </p>
+
+                <h3 className="mt-1 text-xl font-black text-stone-900">
+                  Pilih tujuan cetak
+                </h3>
+              </div>
+
+              <button
+                type="button"
+                disabled={
+                  printingTarget !==
+                  null
+                }
+                onClick={() =>
+                  setShowPrintPopup(
+                    false
+                  )
+                }
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-500"
+              >
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid gap-3 p-5">
+              <button
+                type="button"
+                disabled={
+                  printingTarget !==
+                  null
+                }
+                onClick={() =>
+                  void handlePrintTarget(
+                    'kitchen'
+                  )
+                }
+                className="group flex min-h-[104px] items-center gap-4 rounded-2xl border-2 border-orange-200 bg-orange-50 p-4 text-left transition hover:border-orange-400 disabled:opacity-50"
+              >
+                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-orange-500 text-white shadow-lg shadow-orange-500/20">
+                  {printingTarget ===
+                  'kitchen' ? (
+                    <Loader2 className="h-7 w-7 animate-spin" />
+                  ) : (
+                    <UtensilsCrossed className="h-7 w-7" />
+                  )}
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <p className="text-base font-black text-stone-900">
+                    Cetak Dapur
+                  </p>
+
+                  <p className="mt-1 text-xs leading-relaxed text-stone-500">
+                    Berisi item, jumlah, add-on, catatan, meja, dan tipe layanan tanpa harga.
+                  </p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  printingTarget !==
+                  null
+                }
+                onClick={() =>
+                  void handlePrintTarget(
+                    'customer'
+                  )
+                }
+                className="group flex min-h-[104px] items-center gap-4 rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-4 text-left transition hover:border-emerald-400 disabled:opacity-50"
+              >
+                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#0E5C37] text-white shadow-lg shadow-emerald-900/20">
+                  {printingTarget ===
+                  'customer' ? (
+                    <Loader2 className="h-7 w-7 animate-spin" />
+                  ) : (
+                    <Receipt className="h-7 w-7" />
+                  )}
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <p className="text-base font-black text-stone-900">
+                    Cetak Customer
+                  </p>
+
+                  <p className="mt-1 text-xs leading-relaxed text-stone-500">
+                    Struk lengkap dengan harga, total, pembayaran, uang diterima, dan kembalian.
+                  </p>
+                </div>
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
       <div style={{ height: '4px', background: isUrgent ? '#EF4444' : cfg.dot, borderRadius: '16px 16px 0 0' }} />
 
       <div style={{ padding: '12px 16px 10px', background: cfg.bg, borderBottom: `1px solid ${cfg.border}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            {order.orderType === 'takeaway' || !order.table_number ? (
-              <span style={{
-                display: 'inline-flex', alignItems: 'center', gap: '4px',
-                background: '#1c1c19', color: '#fff',
-                padding: '3px 9px', borderRadius: '6px', fontSize: '10px', fontWeight: 700, fontFamily: 'var(--font-label)', letterSpacing: '0.06em'
-              }}>
-                <ShoppingBag size={10} /> BUNGKUS
-              </span>
+            {isTakeaway ? (
+              <>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  background: '#DC2626',
+                  color: '#fff',
+                  border: '1px solid #B91C1C',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  fontSize: '10px',
+                  fontWeight: 900,
+                  fontFamily: 'var(--font-label)',
+                  letterSpacing: '0.08em',
+                  boxShadow: '0 2px 8px rgba(220,38,38,0.2)',
+                }}>
+                  <ShoppingBag size={11} /> TAKEAWAY
+                </span>
+
+                {hasTable && (
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    background: '#FFFBEB',
+                    color: '#92400E',
+                    border: '1px solid #FCD34D',
+                    padding: '3px 9px',
+                    borderRadius: '6px',
+                    fontSize: '10px',
+                    fontWeight: 800,
+                    fontFamily: 'var(--font-label)',
+                    letterSpacing: '0.05em',
+                  }}>
+                    <Coffee size={10} />
+                    DARI
+                    <strong style={{ color: '#B45309', marginLeft: 1 }}>
+                      {tableName}
+                    </strong>
+                  </span>
+                )}
+              </>
             ) : (
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: '4px',
                 background: '#f0ede9', color: '#1c1c19', border: '1px solid #d6c2bd',
                 padding: '3px 9px', borderRadius: '6px', fontSize: '10px', fontWeight: 700, fontFamily: 'var(--font-label)', letterSpacing: '0.06em'
               }}>
-                <Coffee size={10} /> MEJA <strong style={{ color: '#0E5C37', marginLeft: 2 }}>{order.table_name || order.table_number}</strong>
+                <Coffee size={10} /> MEJA
+                <strong style={{ color: '#0E5C37', marginLeft: 2 }}>
+                  {hasTable ? tableName : 'WALK-IN'}
+                </strong>
               </span>
             )}
 
@@ -173,6 +593,30 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
         </div>
       </div>
 
+      {isTakeaway && (
+        <div style={{
+          background: '#FEF2F2',
+          borderBottom: '1px solid #FCA5A5',
+          padding: '9px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '7px',
+          color: '#B91C1C',
+        }}>
+          <ShoppingBag size={14} />
+          <span style={{
+            fontSize: '10px',
+            fontWeight: 900,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            textAlign: 'center',
+          }}>
+            Bungkus pesanan atas nama: {order.customerName}
+          </span>
+        </div>
+      )}
+
       <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '10px', background: '#ffffff', flex: 1 }}>
         {(order.items || []).map((cartItem, idx) => {
           const searchId = cartItem.menuItemId || String(cartItem.product_id);
@@ -180,27 +624,46 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
           if (!product) return null;
 
           const addons: string[] = [];
+          let extractedCustNotes = '';
           
-          if (cartItem.selectedAddOnsDetails && Array.isArray(cartItem.selectedAddOnsDetails)) {
-             cartItem.selectedAddOnsDetails.forEach((addonItem: any) => {
-                 // 🔴 3. Antisipasi format data addon yang dinamis
-                 const addonId = typeof addonItem === 'object' ? addonItem.id : addonItem;
-                 const fallbackName = typeof addonItem === 'object' ? addonItem.name : null;
+          let rawAddOnsDetails = cartItem.selectedAddOnsDetails;
+          if (typeof rawAddOnsDetails === 'string') {
+            try {
+              rawAddOnsDetails = JSON.parse(rawAddOnsDetails);
+            } catch (e) {
+              console.error("Gagal memproses JSON addons:", e);
+              rawAddOnsDetails = [];
+            }
+          }
+          
+          if (rawAddOnsDetails && Array.isArray(rawAddOnsDetails)) {
+            rawAddOnsDetails.forEach((addonItem: any) => {
+                if (addonItem && typeof addonItem === 'object') {
+                  // 🟢 AMBIL CUST_NOTES: Jika ada di dalam baris objek JSON
+                  if (addonItem.cust_notes) {
+                      extractedCustNotes = addonItem.cust_notes;
+                  }
 
-                 let foundName = null;
-                 product.categorizedAddons?.forEach((cat: any) => {
-                     const found = cat.addons?.find((a: any) => Number(a.id) === Number(addonId));
-                     if (found) foundName = found.name;
-                 });
+                  const addonId = addonItem.id;
+                  const fallbackName = addonItem.name;
 
-                 if (foundName) {
-                     addons.push(foundName);
-                 } else if (fallbackName) {
-                     addons.push(fallbackName);
-                 } else {
-                     addons.push(`Ekstra #${addonId}`); // Fallback terakhir
-                 }
-             });
+                  let foundName = null;
+                  if (addonId) {
+                    product.categorizedAddons?.forEach((cat: any) => {
+                        const found = cat.addons?.find((a: any) => Number(a.id) === Number(addonId));
+                        if (found) foundName = found.name;
+                    });
+                  }
+
+                  if (foundName) {
+                      addons.push(foundName);
+                  } else if (fallbackName) {
+                      addons.push(fallbackName);
+                  } else if (addonId) {
+                      addons.push(`Ekstra #${addonId}`); 
+                  }
+              }
+            });
           }
 
           return (
@@ -222,13 +685,14 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
                     {addons.join(' · ')}
                   </p>
                 )}
-                {cartItem.notes && typeof cartItem.notes === 'string' && !cartItem.notes.startsWith('[') && (
+                {/* 🟢 RENDER BARU: Catatan Kustom Pelanggan dari dalam JSON */}
+                {extractedCustNotes && (
                   <p style={{
-                    fontSize: '11px', color: '#92400E', background: '#FFFBEB',
-                    border: '1px solid #FDE68A', padding: '2px 8px', borderRadius: '5px',
+                    fontSize: '11px', color: '#0369a1', background: '#f0f9ff',
+                    border: '1px solid #bae6fd', padding: '2px 8px', borderRadius: '5px',
                     marginTop: '4px', fontStyle: 'italic', display: 'inline-block'
                   }}>
-                    &quot;{cartItem.notes}&quot;
+                    <i className="fas fa-comment-dots mr-1 text-[10px]"></i> &quot;{extractedCustNotes}&quot;
                   </p>
                 )}
               </div>
@@ -286,7 +750,7 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
           <div>
             <p style={{ fontSize: '9px', color: '#9CA3AF', fontFamily: 'var(--font-label)', letterSpacing: '0.08em', margin: 0 }}>TOTAL BAYAR</p>
             <p style={{ fontSize: '15px', fontWeight: 800, color: '#0E5C37', margin: 0, letterSpacing: '-0.01em', textDecoration: order.status === 'cancelled' ? 'line-through' : 'none' }}>
-              {formatPrice(Number(order.totalPrice || order.total_price || 0))}
+              {formatPrice(Number(order.totalAfterDiscount || order.total_after_discount || 0))}
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -306,8 +770,8 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
 
         <div style={{ padding: '10px 12px', display: 'flex', gap: '8px', alignItems: 'center' }}>
           <button
-            onClick={handlePrint}
-            title="Cetak Struk"
+            onClick={handleOpenPrintPopup}
+            title="Pilih Jenis Cetak"
             style={{
               width: '40px', height: '40px', borderRadius: '10px',
               background: '#fff', border: '1.5px solid #e5e2dd',
@@ -380,6 +844,7 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
                       onClick={() => onUpdateStatus(String(order.id), 'confirmed', '2')} 
                       style={{
                         width: '100%', padding: '11px 16px', borderRadius: '10px',
+                        // 🔴 LOGIKA DISABLE: Ubah background jika disabled
                         background: 'linear-gradient(135deg, #D97706, #B45309)',
                         color: '#fff', fontSize: '12px', fontWeight: 800,
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
@@ -390,18 +855,32 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
                       <Banknote size={15} /> Terima Tunai
                     </button>
                   ) : (
+                    // 🔴 TOMBOL QRIS / CASH LUNAS (Cek apakah sudah bayar)
                     <button
                       onClick={() => onUpdateStatus(String(order.id), 'confirmed')}
+                      // 🔴 Tambahkan disabled jika QRIS dan belum LUNAS
+                      disabled={order.paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS'}
                       style={{
                         width: '100%', padding: '11px 16px', borderRadius: '10px',
-                        background: 'linear-gradient(135deg, #0E5C37, #065F46)',
-                        color: '#fff', fontSize: '12px', fontWeight: 800,
+                        // 🔴 Style disabled
+                        background: (order.paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS') 
+                            ? '#e5e2dd' 
+                            : 'linear-gradient(135deg, #0E5C37, #065F46)',
+                        color: (order.paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS') 
+                            ? '#9CA3AF' 
+                            : '#fff',
+                        fontSize: '12px', fontWeight: 800,
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                        border: 'none', cursor: 'pointer', letterSpacing: '0.02em',
-                        boxShadow: '0 4px 14px rgba(14,92,55,0.3)',
+                        border: 'none', cursor: (order.paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS') ? 'not-allowed' : 'pointer', 
+                        letterSpacing: '0.02em',
+                        boxShadow: (order.paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS') ? 'none' : '0 4px 14px rgba(14,92,55,0.3)',
                       }}
                     >
-                      <CheckCircle2 size={15} /> Terima Pesanan
+                      {order.paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS' ? (
+                        <> <Loader2 size={15} className="animate-spin" /> Menunggu Pembayaran...</>
+                      ) : (
+                        <> <CheckCircle2 size={15} /> Terima Pesanan </>
+                      )}
                     </button>
                   )
                 )}
@@ -423,6 +902,7 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
 
                 {order.status === 'preparing' && (
                   <button
+                    disabled
                     onClick={() => onUpdateStatus(String(order.id), 'ready')}
                     style={{
                       width: '100%', padding: '11px 16px', borderRadius: '10px',
@@ -449,7 +929,8 @@ export default function OrderCard({ order, onUpdateStatus, onUpdateNote, role = 
                       boxShadow: '0 4px 14px rgba(28,28,25,0.25)',
                     }}
                   >
-                    <Check size={15} /> Sudah Disajikan
+                    <Check size={15} />
+                    {isTakeaway ? 'Sudah Diambil' : 'Sudah Disajikan'}
                   </button>
                 )}
 

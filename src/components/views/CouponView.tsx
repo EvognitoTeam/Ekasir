@@ -12,6 +12,9 @@ interface Props {
 export default function CouponView({ onBack }: Props) {
   const params = useParams();
   const slug = params.mitraSlug as string;
+  const routeSegments = Array.isArray(params.branchSlug) ? params.branchSlug : [];
+  const reservedViews = new Set(['menu', 'checkout', 'tracking', 'history', 'help', 'profile', 'coupons', 'roasts']);
+  const branchSlug = routeSegments[0] && !reservedViews.has(routeSegments[0]) ? routeSegments[0] : null;
 
   const [dbCoupons, setDbCoupons] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -25,7 +28,9 @@ export default function CouponView({ onBack }: Props) {
     const fetchCoupons = async () => {
       if (!slug) return;
       try {
-        const response = await fetch(`/api/coupons?slug=${slug}`);
+        const query = new URLSearchParams({ slug });
+        if (branchSlug) query.set('branch_slug', branchSlug);
+        const response = await fetch(`/api/coupons?${query.toString()}`);
         const result = await response.json();
         if (result.success) {
           setDbCoupons(result.data);
@@ -38,7 +43,7 @@ export default function CouponView({ onBack }: Props) {
     };
 
     fetchCoupons();
-  }, [slug]);
+  }, [branchSlug, slug]);
 
   const handleRedeem = (e: React.FormEvent) => {
     e.preventDefault();

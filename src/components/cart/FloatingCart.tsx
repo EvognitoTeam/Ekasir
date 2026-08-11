@@ -1,27 +1,34 @@
-import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingBag, ArrowRight } from 'lucide-react';
-import { useCartStore } from '../../store/cart.store';
-import { useMenuStore } from '../../store/menu.store';
+import { AnimatePresence, motion } from 'framer-motion';
+import { ArrowRight, ShoppingBag } from 'lucide-react';
 import { useParams } from 'next/navigation';
+
+import { useCartStore } from '@/store/cart.store';
+import { useMenuStore } from '@/store/menu.store';
 
 interface FloatingCartProps {
   onOpenCart: () => void;
   onCheckout: () => void;
+  showBottomNav?: boolean;
 }
 
-// Menggunakan formatIDR yang konsisten dengan halaman Checkout dan CartSheet
-const formatIDR = (n: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 })
-    .format(n)
+const formatIDR = (value: number) =>
+  new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+  })
+    .format(value)
     .replace(/\s/g, '');
 
-export default function FloatingCart({ onOpenCart, onCheckout }: FloatingCartProps) {
+export default function FloatingCart({
+  onOpenCart,
+  onCheckout,
+  showBottomNav = true,
+}: FloatingCartProps) {
   const params = useParams();
-  const slug = (params.mitraSlug as string) || "";
-
+  const slug = typeof params.mitraSlug === 'string' ? params.mitraSlug : '';
   const { getTotalItems, calculateTotal } = useCartStore();
-  const { items: menuItems } = useMenuStore();
-
+  const menuItems = useMenuStore((state) => state.items);
   const totalItems = getTotalItems(slug);
   const cartTotal = calculateTotal(slug, menuItems);
 
@@ -33,47 +40,47 @@ export default function FloatingCart({ onOpenCart, onCheckout }: FloatingCartPro
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 80, opacity: 0 }}
           transition={{ type: 'spring', damping: 28, stiffness: 320 }}
-          className="absolute bottom-[84px] left-0 right-0 z-50 px-4 pb-2 pointer-events-none"
+          className={`pointer-events-none absolute inset-x-0 z-20 px-3 pb-2 sm:px-4 ${
+            showBottomNav
+              ? 'bottom-[calc(80px+env(safe-area-inset-bottom))] md:bottom-4'
+              : 'bottom-4'
+          }`}
         >
-          <div
-            className="max-w-[420px] mx-auto bg-white/95 backdrop-blur-md rounded-2xl shadow-xl shadow-stone-200/50 border border-stone-100 pointer-events-auto flex items-center gap-3 p-3"
-          >
-            {/* Icon with badge */}
+          <div className="pointer-events-auto mx-auto flex max-w-[420px] items-center gap-3 rounded-2xl border border-stone-100 bg-white/95 p-3 shadow-[0_16px_45px_rgba(28,28,25,0.15)] backdrop-blur-xl">
             <button
+              type="button"
               onClick={onOpenCart}
-              className="relative flex-shrink-0 active:scale-95 transition-transform"
+              aria-label="Buka keranjang"
+              className="relative shrink-0 active:scale-95"
             >
-              <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center bg-emerald-50 text-[#0E5C37]"
-              >
-                <ShoppingBag className="w-5 h-5" />
-              </div>
-              <span
-                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center bg-[#0E5C37] text-white ring-2 ring-white shadow-sm"
-              >
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-[var(--color-primary)]">
+                <ShoppingBag className="h-5 w-5" />
+              </span>
+              <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-primary)] px-1 text-[10px] font-bold text-white ring-2 ring-white">
                 {totalItems}
               </span>
             </button>
 
-            {/* Info — tappable to open cart sheet */}
             <button
+              type="button"
               onClick={onOpenCart}
-              className="flex-1 text-left min-w-0 flex flex-col justify-center px-1"
+              className="flex min-w-0 flex-1 flex-col items-start px-1 text-left"
             >
-              <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400 mb-0.5">
-                {totalItems === 1 ? '1 Item' : `${totalItems} Items`}
-              </p>
-              <p className="text-base font-black text-stone-900 truncate tracking-tight">
+              <span className="text-[9px] font-label uppercase tracking-widest text-stone-400">
+                {totalItems} menu dipilih
+              </span>
+              <span className="truncate text-base font-black tracking-tight text-stone-900">
                 {formatIDR(cartTotal)}
-              </p>
+              </span>
             </button>
 
-            {/* Checkout button */}
             <button
+              type="button"
               onClick={onCheckout}
-              className="rounded-xl px-5 py-3.5 text-[11px] font-bold tracking-widest uppercase whitespace-nowrap active:scale-[0.97] transition-all flex-shrink-0 bg-[#0E5C37] text-white flex items-center gap-2 shadow-md shadow-emerald-900/20 hover:bg-emerald-800"
+              className="flex shrink-0 items-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-3 text-[10px] font-label uppercase tracking-widest text-white shadow-md hover:bg-[var(--color-primary-container)] active:scale-[0.97]"
             >
-              Order <ArrowRight className="w-3.5 h-3.5" />
+              Pesan
+              <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </div>
         </motion.div>

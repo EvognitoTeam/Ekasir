@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { useState, useEffect, useMemo } from 'react';
@@ -5,7 +6,7 @@ import { motion } from 'framer-motion';
 import { X, MinusCircle, PlusCircle, AlertCircle, ImageIcon } from 'lucide-react';
 import { MenuItem } from '@/types/menu';
 import { useParams } from 'next/navigation';
-import Image from 'next/image';
+import { applyFallbackImage, normalizeImageSrc } from '@/utils/image';
 
 // IMPORT TOAST SWEETALERT
 import { Toast } from '@/utils/toast'; 
@@ -160,21 +161,17 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
   };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-50 flex flex-col bg-white overflow-hidden font-sans">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-[120] flex flex-col overflow-hidden bg-white font-sans">
       <motion.div layoutId={`product-${item.id}`} className="w-full h-full flex flex-col relative z-10">
         
         {/* Header Image */}
-        <div className="w-full h-[220px] sm:h-[280px] relative bg-stone-100 flex-shrink-0 overflow-hidden">
+        <div className="relative h-[190px] w-full flex-shrink-0 overflow-hidden bg-stone-100 sm:h-[220px]">
           {item.image ? (
-            <Image 
-              src={item.image.startsWith('blob:') || item.image.startsWith('http') || item.image.startsWith('/') 
-                ? item.image 
-                : `/${item.image}`
-              } 
-              alt={item.name} 
-              fill // 🔴 Ganti w-full h-full absolute inset-0 jadi 'fill'
-              className="object-cover z-0" 
-              unoptimized={item.image.startsWith('blob:')} // 🔴 Wajib untuk nampilin preview file lokal (blob)
+            <img
+              src={normalizeImageSrc(item.image)}
+              alt={item.name}
+              onError={applyFallbackImage}
+              className="absolute inset-0 z-0 h-full w-full object-cover"
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center z-0">
@@ -184,9 +181,9 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
           
           <button 
             onClick={onClose} 
-            className="absolute top-4 right-4 z-50 w-9 h-9 bg-white/90 backdrop-blur-sm text-stone-900 rounded-full flex items-center justify-center shadow-sm active:scale-95 transition-transform"
+            className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-[140] flex h-11 w-11 items-center justify-center rounded-full bg-stone-950/75 text-white shadow-xl ring-1 ring-white/20 backdrop-blur-md transition-transform active:scale-95"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" strokeWidth={2.25} />
           </button>
         </div>
 

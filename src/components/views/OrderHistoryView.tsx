@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useOrderStore } from '../../store/order.store';
 import { useAuthStore } from '../../store/auth.store'; 
@@ -37,39 +38,145 @@ const formatIDR = (n: number) =>
     .format(n)
     .replace(/\s/g, '');
 
+const normalizeOrderText = (
+  value: unknown,
+): string =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase();
+
+const isTakeawayOrder = (
+  order: any,
+): boolean => {
+  const candidates = [
+    order?.manual_table_info,
+    order?.manualTableInfo,
+    order?.service_type,
+    order?.serviceType,
+    order?.order_type,
+    order?.orderType,
+  ].map(normalizeOrderText);
+
+  return candidates.some(
+    (value) =>
+      value === 'takeaway' ||
+      value === 'take away' ||
+      value === 'bungkus',
+  );
+};
+
+const getOrderTableName = (
+  order: any,
+): string => {
+  const value =
+    order?.table_name ||
+    order?.tableName ||
+    order?.table_code ||
+    order?.tableCode ||
+    order?.table_number ||
+    order?.tableNumber ||
+    '';
+
+  return String(value)
+    .trim()
+    .replace(/^T-/i, '');
+};
+
 export default function OrderHistoryView({ onBackToMenu, onTrackOrder }: Props) {
+  const params = useParams<{ mitraSlug?: string }>();
+  const slug = params?.mitraSlug || '';
+
   const { userId, isLoggedIn } = useAuthStore();
   const { currentOrder } = useOrderStore(); 
   const { items: menuItems } = useMenuStore(); 
   
   const [historyData, setHistoryData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'active' | 'past'>('active');
 
   useEffect(() => {
+    const controller = new AbortController();
+
     const fetchHistory = async () => {
-      if (!isLoggedIn || !userId) {
-        setIsLoading(false);
-        return;
-      }
+      setIsLoading(true);
+      setHistoryError(null);
+
       try {
-        const res = await fetch(`/api/orders/history?userId=${userId}`);
-        const result = await res.json();
-        if (result.success) {
-          setHistoryData(result.data);
+        let resolvedUserId = Number(userId) > 0 ? Number(userId) : null;
+
+        if (!resolvedUserId) {
+          const authQuery = new URLSearchParams();
+          if (slug) authQuery.set('slug', slug);
+
+          const authResponse = await fetch(
+            `/api/auth/me${authQuery.toString() ? `?${authQuery.toString()}` : ''}`,
+            {
+              credentials: 'include',
+              cache: 'no-store',
+              signal: controller.signal,
+            },
+          );
+
+          const authResult = await authResponse.json();
+
+          resolvedUserId =
+            Number(
+              authResult?.user?.id ||
+                authResult?.data?.user?.id ||
+                authResult?.data?.id ||
+                authResult?.userId ||
+                0,
+            ) || null;
         }
+
+        if (!resolvedUserId) {
+          setHistoryData([]);
+          setHistoryError('Silakan login untuk melihat riwayat pesanan.');
+          return;
+        }
+
+        const historyQuery = new URLSearchParams({
+          userId: String(resolvedUserId),
+        });
+
+        const response = await fetch(
+          `/api/orders/history?${historyQuery.toString()}`,
+          {
+            credentials: 'include',
+            cache: 'no-store',
+            signal: controller.signal,
+          },
+        );
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Gagal mengambil riwayat pesanan.');
+        }
+
+        setHistoryData(Array.isArray(result.data) ? result.data : []);
       } catch (error) {
-        console.error("Gagal sinkronisasi riwayat:", error);
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+
+        console.error('Gagal sinkronisasi riwayat:', error);
+        setHistoryData([]);
+        setHistoryError(
+          error instanceof Error ? error.message : 'Gagal mengambil riwayat pesanan.',
+        );
       } finally {
-        setIsLoading(false);
+        if (!controller.signal.aborted) setIsLoading(false);
       }
     };
-    fetchHistory();
-  }, [userId, isLoggedIn]);
 
-  const activeOrders = historyData.filter(order => 
-    ['pending', 'confirmed', 'preparing'].includes(order.status)
+    void fetchHistory();
+
+    return () => controller.abort();
+  }, [userId, isLoggedIn, slug]);
+
+  const activeOrders = historyData.filter(order =>
+    ['pending', 'confirmed', 'preparing', 'ready'].includes(order.status)
   );
 
   const pastOrders = historyData.filter(order => 
@@ -108,6 +215,25 @@ export default function OrderHistoryView({ onBackToMenu, onTrackOrder }: Props) 
         <p className="text-xs font-bold text-stone-400 uppercase tracking-widest text-center px-6">
             Membuka Arsip Pengalaman Anda...
         </p>
+      </div>
+    );
+  }
+
+  if (historyError && historyData.length === 0) {
+    return (
+      <div className="min-h-screen bg-[#F7F8FA] px-6 py-12">
+        <div className="mx-auto flex max-w-md flex-col items-center rounded-[2rem] border border-amber-200 bg-white p-8 text-center shadow-sm">
+          <History className="mb-5 h-10 w-10 text-amber-500" />
+          <h2 className="mb-2 text-xl font-black text-stone-900">Riwayat belum tersedia</h2>
+          <p className="mb-6 text-sm text-stone-500">{historyError}</p>
+          <button
+            type="button"
+            onClick={onBackToMenu}
+            className="rounded-full bg-[#0E5C37] px-7 py-3 text-[10px] font-bold uppercase tracking-widest text-white"
+          >
+            Kembali ke Menu
+          </button>
+        </div>
       </div>
     );
   }
@@ -169,6 +295,9 @@ export default function OrderHistoryView({ onBackToMenu, onTrackOrder }: Props) 
               {activeOrders.length > 0 ? (
                 activeOrders.map((activeOrder) => {
                   const statusInfo = getStatusInfo(activeOrder.status);
+                  const isTakeaway = isTakeawayOrder(activeOrder);
+                  const tableName = getOrderTableName(activeOrder);
+
                   return (
                     <motion.div 
                       key={activeOrder.id}
@@ -189,8 +318,29 @@ export default function OrderHistoryView({ onBackToMenu, onTrackOrder }: Props) 
                                 </p>
                              </div>
                              <h2 className="text-2xl font-black mb-1">{statusInfo.title}</h2>
-                             <p className="text-[11px] text-stone-400 font-medium">
-                                Station {activeOrder.table_name || 'Walk-in'} • {statusInfo.desc}
+                             <div className="flex flex-wrap items-center gap-2">
+                               {isTakeaway && (
+                                 <span className="inline-flex items-center gap-1.5 rounded-md border border-red-400/30 bg-red-500/15 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-red-300">
+                                   <ShoppingBag className="h-3 w-3" />
+                                   Takeaway
+                                 </span>
+                               )}
+
+                               {tableName && (
+                                 <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-400/20 bg-amber-400/10 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-amber-300">
+                                   <Coffee className="h-3 w-3" />
+                                   {isTakeaway ? 'Dari' : 'Meja'} {tableName}
+                                 </span>
+                               )}
+                             </div>
+
+                             <p className="mt-2 text-[11px] text-stone-400 font-medium">
+                               {isTakeaway
+                                 ? tableName
+                                   ? `Pesanan takeaway dari ${tableName}.`
+                                   : 'Pesanan takeaway.'
+                                 : `Station ${tableName || 'Walk-in'}.`}{' '}
+                               {statusInfo.desc}
                              </p>
                           </div>
                        </div>
@@ -248,8 +398,47 @@ export default function OrderHistoryView({ onBackToMenu, onTrackOrder }: Props) 
               {pastOrders.length > 0 ? (
                 pastOrders.map((order) => {
                   const isExpanded = expandedId === order.id;
-                  const finalPaid = Number(order.total_after_discount) > 0 ? order.total_after_discount : order.total_price;
-                  
+                  const isTakeaway = isTakeawayOrder(order);
+                  const tableName = getOrderTableName(order);
+
+                  const totalPrice = Number(
+                    order.total_price ||
+                      order.totalPrice ||
+                      0,
+                  );
+
+                  const totalAfterDiscount = Number(
+                    order.total_after_discount ||
+                      order.totalAfterDiscount ||
+                      0,
+                  );
+
+                  const discountValue = Number(
+                    order.discount ||
+                      0,
+                  );
+
+                  const hasCoupon = Boolean(
+                    order.discount_id ||
+                      order.discountId ||
+                      order.coupon_code,
+                  );
+
+                  const hasDiscount =
+                    hasCoupon &&
+                    (
+                      discountValue > 0 ||
+                      (
+                        totalAfterDiscount > 0 &&
+                        totalAfterDiscount < totalPrice
+                      )
+                    );
+
+                  const finalPaid =
+                    totalAfterDiscount > 0
+                      ? totalAfterDiscount
+                      : totalPrice;
+
                   return (
                     <div key={order.id} className={`bg-white rounded-3xl border transition-all ${isExpanded ? 'border-[#0E5C37]/30 shadow-md' : 'border-stone-100'}`}>
                       <div onClick={() => toggleExpand(order.id)} className="p-6 flex items-center gap-4 cursor-pointer">
@@ -259,6 +448,22 @@ export default function OrderHistoryView({ onBackToMenu, onTrackOrder }: Props) 
                         <div className="flex-1">
                           <p className="text-[9px] font-bold text-stone-400 uppercase mb-0.5">{formatDate(order.created_at)}</p>
                           <h4 className="font-black text-stone-900 uppercase">#{order.order_code}</h4>
+
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            {isTakeaway && (
+                              <span className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-red-700">
+                                <ShoppingBag className="h-3 w-3" />
+                                Takeaway
+                              </span>
+                            )}
+
+                            {tableName && (
+                              <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-amber-700">
+                                <Coffee className="h-3 w-3" />
+                                {isTakeaway ? 'Dari' : 'Meja'} {tableName}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-transform ${isExpanded ? 'rotate-180 bg-stone-100' : ''}`}>
                           <ChevronDown className="w-4 h-4 text-stone-400" />
@@ -301,7 +506,7 @@ export default function OrderHistoryView({ onBackToMenu, onTrackOrder }: Props) 
                               {/* 🔴 SEKSI DISKON & KUPON */}
                               <div className="pt-4 border-t border-dashed space-y-2">
                                 {/* Cek jika ada discountId atau coupon_code */}
-                                {(order.discount_id || order.coupon_code) && (
+                                {hasDiscount && (
                                   <div className="flex justify-between items-center bg-emerald-50 px-3 py-2 rounded-lg">
                                     <div className="flex items-center gap-2">
                                       <ShoppingBag className="w-3 h-3 text-[#0E5C37]" />
@@ -316,9 +521,18 @@ export default function OrderHistoryView({ onBackToMenu, onTrackOrder }: Props) 
                                 )}
 
                                 <div className="flex justify-between items-center px-1">
-                                  <span className="text-[10px] font-bold uppercase text-stone-400">Subtotal</span>
-                                  <span className="text-xs font-bold text-stone-400 line-through">
-                                    {Number(order.total_after_discount) > 0 ? formatIDR(order.total_price) : ''}
+                                  <span className="text-[10px] font-bold uppercase text-stone-400">
+                                    {hasDiscount ? 'Subtotal' : 'Total Pesanan'}
+                                  </span>
+
+                                  <span
+                                    className={`text-xs font-bold ${
+                                      hasDiscount
+                                        ? 'text-stone-400 line-through'
+                                        : 'text-stone-700'
+                                    }`}
+                                  >
+                                    {formatIDR(totalPrice)}
                                   </span>
                                 </div>
 

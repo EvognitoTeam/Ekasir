@@ -13,7 +13,33 @@ export default function LoginView() {
   const [error, setError] = useState('');
 
   // 🔴 TANGKAP ERROR DARI URL MIDDLEWARE
+  const checkSession = async () => {
+    try {
+      const res = await fetch('/api/auth/session', {
+        credentials: 'include'
+      });
+
+      if (!res.ok) return;
+
+      const data = await res.json();
+
+      if (!data.authenticated) return;
+
+      const role = data.user.role;
+      const slug = data.user.slug;
+
+      if (role === 'Owner') {
+        window.location.href = `/${slug}/admin/dashboard`;
+      } else if (role === 'Cashier') {
+        window.location.href = `/${slug}/cashier`;
+      } else if (role === 'Kitchen') {
+        window.location.href = `/${slug}/kitchen`;
+      }
+    } catch {}
+  };
+  
   useEffect(() => {
+    checkSession();
     // Pake window.location biar aman dari error 'Suspense Boundary' Next.js
     const searchParams = new URLSearchParams(window.location.search);
     const urlError = searchParams.get('error');
@@ -75,9 +101,11 @@ export default function LoginView() {
 
       // REDIRECT BERDASARKAN ROLE
       if (role === 'Owner') {
-        window.location.href = `/${storeSlug}/dashboard`;
+        window.location.href = `/${storeSlug}/admin/dashboard`;
       } else if (role === 'Cashier') {
         window.location.href = `/${storeSlug}/cashier`;
+      }else if (role === 'Kitchen') {
+        window.location.href = `/${storeSlug}/kitchen`;
       } else {
         // fallback role lain
         window.location.href = '/';

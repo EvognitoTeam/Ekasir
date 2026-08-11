@@ -4,6 +4,7 @@ import { users, mitra } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { SignJWT } from 'jose';
+import { generateUniqueMemberId } from '@/lib/member/memberId';
 
 // Kunci rahasia untuk enkripsi JWT
 const SECRET_KEY = new TextEncoder().encode(
@@ -65,6 +66,15 @@ export async function POST(request: Request) {
 
     const currentMitra = foundMitra[0];
 
+    // Akun lama akan memperoleh member ID saat login pertama setelah migrasi.
+    let memberId = user.memberId;
+    if (!memberId) {
+      memberId = await generateUniqueMemberId(db, currentMitra.mitra_name);
+      await db.update(users)
+        .set({ memberId, updatedAt: new Date() })
+        .where(eq(users.id, user.id));
+    }
+
     // 5. PROTEKSI MULTI-TENANT
     // Jika login dilakukan dari halaman spesifik toko (slug ada), pastikan kecocokannya.
     // Aturan ini dikecualikan untuk role 'User' biasa (pelanggan) agar bisa fleksibel bertransaksi.
@@ -82,7 +92,9 @@ export async function POST(request: Request) {
       slug: currentMitra.mitra_slug, 
       role: user.role,
       name: user.name,
-      email: user.email
+      email: user.email,
+      memberId,
+      branchId: user.branch_id ?? null
     })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
@@ -100,6 +112,9 @@ export async function POST(request: Request) {
         phone: user.phone,
         role: user.role,
         mitra_id: user.mitra_id,
+        memberId,
+        branchId: user.branch_id ?? null,
+        branch_id: user.branch_id ?? null,
         slug: currentMitra.mitra_slug // Dikembalikan agar LoginView global tahu arah redirect
       }
     });

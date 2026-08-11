@@ -9,12 +9,12 @@
 }
 
 .kitchen-ticket.warning {
-  border-color: #FCD34D;
+  border-color: #fcd34d;
   box-shadow: 0 4px 16px rgba(245, 158, 11, 0.15);
 }
 
 .kitchen-ticket.urgent {
-  border-color: #EF4444;
+  border-color: #ef4444;
   box-shadow: 0 4px 16px rgba(239, 68, 68, 0.15);
 }
 
@@ -26,8 +26,14 @@
   background: #fcfcfc;
 }
 
-.kitchen-ticket.warning .kitchen-ticket-header { background: #FEF3C7; border-bottom-color: #FCD34D; }
-.kitchen-ticket.urgent .kitchen-ticket-header { background: #FEF2F2; border-bottom-color: #FCA5A5; }
+.kitchen-ticket.warning .kitchen-ticket-header {
+  background: #fef3c7;
+  border-bottom-color: #fcd34d;
+}
+.kitchen-ticket.urgent .kitchen-ticket-header {
+  background: #fef2f2;
+  border-bottom-color: #fca5a5;
+}
 
 .kitchen-ticket-id-box {
   padding: 12px 16px;
@@ -42,8 +48,14 @@
   min-width: 80px;
 }
 
-.kitchen-ticket.warning .kitchen-ticket-id-box { border-right-color: #FCD34D; color: #B45309; }
-.kitchen-ticket.urgent .kitchen-ticket-id-box { border-right-color: #FCA5A5; color: #991B1B; }
+.kitchen-ticket.warning .kitchen-ticket-id-box {
+  border-right-color: #fcd34d;
+  color: #b45309;
+}
+.kitchen-ticket.urgent .kitchen-ticket-id-box {
+  border-right-color: #fca5a5;
+  color: #991b1b;
+}
 
 .kitchen-ticket-info {
   flex: 1;
@@ -73,12 +85,22 @@
   color: #1c1c19;
 }
 
-.kitchen-ticket.warning .kitchen-ticket-timer { color: #D97706; }
-.kitchen-ticket.urgent .kitchen-ticket-timer { color: #DC2626; animation: blink 2s infinite; }
+.kitchen-ticket.warning .kitchen-ticket-timer {
+  color: #d97706;
+}
+.kitchen-ticket.urgent .kitchen-ticket-timer {
+  color: #dc2626;
+  animation: blink 2s infinite;
+}
 
 @keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .kitchen-ticket-body {
@@ -131,7 +153,7 @@
   font-family: var(--font-sans);
   font-size: 14px;
   font-weight: 600;
-  color: #0E5C37; /* A deep green for modifiers so they stand out */
+  color: #0e5c37; /* A deep green for modifiers so they stand out */
   margin-bottom: 4px;
 }
 
@@ -140,23 +162,23 @@
   font-size: 14px;
   font-style: italic;
   font-weight: 500;
-  color: #D97706;
-  background: #FFFBEB;
+  color: #d97706;
+  background: #fffbeb;
   padding: 6px 10px;
   border-radius: 6px;
-  border-left: 3px solid #FCD34D;
+  border-left: 3px solid #fcd34d;
 }
 
 .kitchen-ticket-admin-notes {
   margin-top: auto;
   padding: 12px;
-  background: #FEF2F2;
-  border: 1px solid #FCA5A5;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
   border-radius: 8px;
   font-family: var(--font-sans);
   font-size: 14px;
   font-weight: 600;
-  color: #991B1B;
+  color: #991b1b;
 }
 
 .kitchen-ticket-footer {
@@ -181,7 +203,9 @@
   border: none;
   cursor: pointer;
   color: white;
-  transition: transform 0.1s, box-shadow 0.2s;
+  transition:
+    transform 0.1s,
+    box-shadow 0.2s;
 }
 
 .kitchen-ticket-btn:active {
@@ -189,18 +213,62 @@
 }
 
 .kitchen-ticket-btn.start {
-  background: linear-gradient(135deg, #7C3AED, #6D28D9);
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
   box-shadow: 0 6px 20px rgba(124, 58, 237, 0.3);
 }
 
 .kitchen-ticket-btn.ready {
-  background: linear-gradient(135deg, #0E5C37, #065F46);
+  background: linear-gradient(135deg, #0e5c37, #065f46);
   box-shadow: 0 6px 20px rgba(14, 92, 55, 0.3);
 }
 
 .kitchen-ticket-btn.completed {
   background: #e5e2dd;
-  color: #9CA3AF;
+  color: #9ca3af;
   box-shadow: none;
   cursor: default;
+}
+
+/* Penanda pesanan Takeaway */
+.kitchen-ticket-takeaway-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 16px;
+  background: #dc2626;
+  color: #ffffff;
+  border-bottom: 1px solid #fecaca;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.kitchen-ticket-takeaway-table {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #fee2e2;
+}
+
+.kitchen-ticket-takeaway-reminder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 2px solid #fecaca;
+  border-radius: 12px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
 }

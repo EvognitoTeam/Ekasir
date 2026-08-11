@@ -19,6 +19,8 @@ export async function GET(request: Request) {
         id: orders.id,
         order_code: orders.order_code,
         status: orders.status,
+        payment_status: orders.payment_status,
+        payment_method: orders.payment_method,
         table_number: orders.table_number, // ID meja yang disimpan di order
         // Ambil nama asli meja dari table_list
         table_name: tableList.table_name, 
@@ -28,7 +30,7 @@ export async function GET(request: Request) {
       .leftJoin(tableList, eq(orders.table_number, tableList.id))
       .where(eq(orders.order_code, code))
       .limit(1);
-    //   console.log(result);
+      // console.log(result);
     
     if (result.length > 0) {
       // Karena result adalah array (limit 1), kita kirim objek pertama

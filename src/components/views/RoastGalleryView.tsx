@@ -1,9 +1,11 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { MenuItem } from '@/types/menu';
 import { ChevronRight, Coffee, ImageIcon, AlertCircle } from 'lucide-react';
 import { useMenuStore } from '@/store/menu.store'; 
 import { formatPrice } from '@/utils/formatters';
+import { applyFallbackImage, normalizeImageSrc } from '@/utils/image';
 
 interface Props {
   items: MenuItem[];
@@ -35,8 +37,9 @@ function PortfolioCard({ item, onClick, aspect = 'aspect-[4/5]' }: { item: MenuI
         
         {item.image ? (
           <img 
-            src={item.image.startsWith('blob:') ? item.image : "/" + item.image} 
-            alt={item.name} 
+            src={normalizeImageSrc(item.image)}
+            alt={item.name}
+            onError={applyFallbackImage}
             className="absolute inset-0 w-full h-full object-cover opacity-95 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700"
           />
         ) : (

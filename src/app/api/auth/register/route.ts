@@ -4,6 +4,7 @@ import { mitra, users, settings } from '@/db/schema'; // Path skema kamu
 import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import { generateUniqueMemberId } from '@/lib/member/memberId';
 
 export async function POST(req: Request) {
   try {
@@ -53,11 +54,14 @@ export async function POST(req: Request) {
       // Ambil ID Mitra yang baru saja digenerate oleh MySQL
       const newMitraId = mitraResult.insertId;
 
+      const memberId = await generateUniqueMemberId(tx, businessName);
+
       // LANGKAH 2: Masukkan data ke tabel User menggunakan mitra_id dari Langkah 1
       await tx.insert(users).values({
         name: ownerName,
         email: email,
         password: hashedPassword,
+        memberId,
         mitra_id: newMitraId,
         role: 'Owner', // Default 'Owner' sesuai spesifikasi kamu
         token: userToken,

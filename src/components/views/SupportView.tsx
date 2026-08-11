@@ -119,21 +119,36 @@ export default function SupportView() {
   const hasFaqs = !!(settings?.faqs && settings.faqs.length > 0);
 
   return (
-    <div className="py-8 px-6 bg-[#F7F8FA] min-h-full">
+    <div className="py-8 px-6 bg-[#F7F8FA] min-h-full mb-20">
       {/* Toast Notification */}
       <AnimatePresence>
         {toastMessage && (
           <motion.div
-            initial={{ opacity: 0, y: -60 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -60 }}
-            className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-stone-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 text-sm font-bold whitespace-nowrap"
+            initial={{ opacity: 0, y: -40, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -30, scale: 0.95, filter: "blur(4px)" }}
+            // 🔴 PERBAIKAN: Tambah left-1/2 agar pas di tengah, bg dibikin agak transparan dengan efek backdrop-blur
+            className="fixed top-6 -translate-x-1/2 z-[100] bg-stone-900/90 backdrop-blur-md text-white px-4 py-3.5 rounded-2xl shadow-2xl border border-stone-700/50 flex items-center gap-3.5 w-[90%] max-w-sm overflow-hidden"
           >
-            <motion.span animate={{ rotate: [0, -15, 15, -10, 10, 0] }} transition={{ duration: 0.6 }} className="text-xl">
+            {/* Garis Aksen Hijau di kiri agar lebih elegan */}
+            <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-[#0E5C37]" />
+            
+            <motion.span 
+              animate={{ rotate: [0, -15, 15, -10, 10, 0] }} 
+              transition={{ duration: 0.6 }} 
+              className="text-xl shrink-0 pl-1"
+            >
               👋
             </motion.span>
-            <span>{toastMessage}</span>
-            <Icons.CheckCircle2 className="w-5 h-5 ml-2 text-[#0E5C37]" />
+            
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-medium leading-relaxed break-words text-stone-100">
+                {toastMessage}
+              </p>
+            </div>
+            
+            {/* 🔴 PERBAIKAN: Warna ikon dicerahkan menjadi emerald-400 agar kontras dengan background gelap */}
+            <Icons.CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 drop-shadow-sm" />
           </motion.div>
         )}
       </AnimatePresence>

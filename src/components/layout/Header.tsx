@@ -1,55 +1,65 @@
-import { Search, Radio } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useTableStore } from '../../store/table.store'; // Sesuaikan path-nya
+import { MapPin, Radio, Search } from 'lucide-react';
+
+import { useTableStore } from '@/store/table.store';
 
 interface HeaderProps {
-  onOpenSearch: () => void;
   mitraName?: string;
+  branchName?: string | null;
+  onSearch?: () => void;
 }
 
-export default function Header({ onOpenSearch, mitraName = "Evognito" }: HeaderProps) {
-  // Ambil data nama meja dari session store
+export default function Header({
+  mitraName = 'KALOO POS',
+  branchName,
+  onSearch,
+}: HeaderProps) {
   const { tableName } = useTableStore();
 
   return (
-    <header className="sticky top-0 z-10 bg-[var(--color-surface)] border-b border-stone-200">
-      <div className="px-6 py-4 flex justify-between items-center gap-4">
-        <div className="flex items-center gap-6 min-w-0">
-          {/* Logo */}
-          <div className="flex flex-col">
-             <span className="text-[8px] font-label uppercase tracking-[0.4em] opacity-30 mb-1">The Original</span>
-             <h2 className="text-2xl font-display text-[var(--color-on-surface)] leading-none tracking-tighter">
-                {mitraName} <span className="opacity-20 italic">.</span>
-             </h2>
+    <header className="sticky top-0 z-20 border-b border-stone-200 bg-[var(--color-surface)]/95 backdrop-blur-xl">
+      <div className="flex items-center justify-between gap-3 px-4 py-3.5 sm:px-6">
+        <div className="min-w-0 md:hidden">
+          <div className="mb-1 flex items-center gap-1.5">
+            {branchName ? (
+              <MapPin className="h-3 w-3 text-[var(--color-primary)]" />
+            ) : null}
+            <span className="truncate text-[8px] font-label uppercase tracking-[0.32em] text-stone-500">
+              {branchName || 'Digital menu'}
+            </span>
           </div>
+          <h1 className="truncate font-display text-[22px] font-bold leading-none tracking-tight text-[var(--color-on-surface)]">
+            {mitraName}
+          </h1>
+        </div>
 
-          {/* Menampilkan Nama Meja jika ada di session */}
+        <div className="ml-auto flex shrink-0 items-center gap-2.5">
+          {onSearch && (
+            <button
+              type="button"
+              onClick={onSearch}
+              aria-label="Cari menu"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-600 shadow-sm transition hover:bg-stone-50 active:scale-95"
+            >
+              <Search className="h-4.5 w-4.5" />
+            </button>
+          )}
           {tableName && (
-            <div className="flex items-center gap-4 py-2 px-6 bg-stone-50 rounded-full border border-stone-200 group ">
-               <div className="relative">
-                  <Radio className="w-3 h-3 text-[#0E5C37] opacity-40 group-hover:opacity-100 transition-opacity" />
-                  <motion.div 
-                    animate={{ scale: [1, 2, 1], opacity: [0.5, 0, 0.5] }}
-                    transition={{ repeat: Infinity, duration: 2 }}
-                    className="absolute inset-0 bg-[#0E5C37] rounded-full"
-                  />
-               </div>
-               <span className="text-[10px] font-label font-bold uppercase tracking-widest text-stone-600">
-                 {tableName}
-               </span>
+            <div className="flex h-10 items-center gap-2 rounded-full border border-stone-200 bg-white px-3.5 shadow-sm md:hidden">
+              <div className="relative flex items-center justify-center">
+                <Radio className="h-3 w-3 text-[var(--color-primary)]" />
+                <motion.div
+                  animate={{ scale: [1, 2.2, 1], opacity: [0.35, 0, 0.35] }}
+                  transition={{ repeat: Infinity, duration: 2 }}
+                  className="absolute inset-0 rounded-full bg-[var(--color-primary)]"
+                />
+              </div>
+              <span className="max-w-[90px] truncate text-[9px] font-label uppercase tracking-widest text-stone-600">
+                {tableName}
+              </span>
             </div>
           )}
         </div>
-        
-        {/* Tombol Search (Bisa di-uncomment jika dipakai) */}
-        {/* <div className="flex items-center gap-6">
-          <button 
-            onClick={onOpenSearch}
-            className="w-10 h-10 bg-white border border-stone-200 rounded-full flex items-center justify-center hover:bg-[var(--color-on-surface)] hover:text-white transition-all group shadow-sm"
-          >
-            <Search className="w-4 h-4 group-hover:scale-110 transition-transform" />
-          </button>
-        </div> */}
       </div>
     </header>
   );

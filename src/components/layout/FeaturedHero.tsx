@@ -1,6 +1,8 @@
-import { MenuItem } from '../../types/menu';
-import { ArrowRight, Image as ImageIcon } from 'lucide-react'; // 🔴 1. Import ImageIcon
-import Image from 'next/image';
+/* eslint-disable @next/next/no-img-element */
+import { ArrowRight, Sparkles } from 'lucide-react';
+
+import type { MenuItem } from '@/types/menu';
+import { applyFallbackImage, normalizeImageSrc } from '@/utils/image';
 
 interface Props {
   item: MenuItem;
@@ -8,59 +10,48 @@ interface Props {
 }
 
 export default function FeaturedHero({ item, onExplore }: Props) {
+  const price = Number(item.basePrice || 0);
+
   return (
-    <section className="px-6 py-4 bg-white">
-      <div 
+    <section className="bg-white px-4 pb-2 pt-4 sm:px-6">
+      <button
+        type="button"
         onClick={() => onExplore(item)}
-        className="relative overflow-hidden rounded-2xl bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)] border border-stone-200 flex flex-col cursor-pointer active:scale-[0.98] transition-all group"
+        className="group relative block min-h-0 w-full overflow-hidden rounded-[24px] border border-stone-200 bg-white text-left shadow-[0_12px_32px_rgba(28,28,25,0.08)] active:scale-[0.985]"
       >
-        {/* Banner Image / Placeholder */}
-        {/* 🔴 2. Tambah flex center di container untuk posisi icon */}
-        <div className="w-full relative h-40 md:h-48 overflow-hidden bg-stone-50 flex items-center justify-center">
-          
-          {/* 🔴 3. Logic: Tampilkan gambar jika ada, jika tidak render icon */}
-          {item.image ? (
-            <Image 
-              src={item.image} 
-              alt={item.name} 
-              fill
-              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-              className="object-cover group-hover:scale-105 transition-transform duration-500"
-              priority 
-            />
-          ) : (
-            <div className="flex flex-col items-center gap-2 text-stone-300">
-              <ImageIcon className="w-10 h-10" strokeWidth={1.5} />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-stone-400">
-                No Image
-              </span>
+        <div className="relative h-48 w-full overflow-hidden bg-stone-100 sm:h-52">
+          <img
+            src={normalizeImageSrc(item.image)}
+            alt={item.name}
+            onError={applyFallbackImage}
+            className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
+
+          <div className="absolute left-4 top-4 flex items-center gap-1.5 rounded-full border border-white/30 bg-white/90 px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.18em] text-stone-800 backdrop-blur">
+            <Sparkles className="h-3 w-3 text-[var(--color-primary)]" />
+            Pilihan utama
+          </div>
+
+          <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 p-5 text-white">
+            <div className="min-w-0">
+              <p className="mb-1 text-[9px] font-bold uppercase tracking-[0.2em] text-white/65">
+                Rekomendasi hari ini
+              </p>
+              <h2 className="truncate font-display text-2xl font-bold leading-tight">
+                {item.name}
+              </h2>
+              <p className="mt-1 text-sm font-semibold text-white/85">
+                Rp{price.toLocaleString('id-ID')}
+              </p>
             </div>
-          )}
-          
-          {/* Badge */}
-          <div className="absolute top-4 left-4 flex gap-2 z-10">
-            <span className="px-3 py-1 bg-white/90 backdrop-blur text-stone-900 text-[10px] font-sans font-bold uppercase tracking-wider rounded-md shadow-sm border border-stone-100">
-              Featured Standard
+
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-[var(--color-primary)] shadow-lg">
+              <ArrowRight className="h-4 w-4" />
             </span>
           </div>
         </div>
-
-        {/* Content Block */}
-        <div className="w-full p-4 flex justify-between items-center bg-white z-10">
-          <div className="flex flex-col">
-            <h2 className="text-sm font-bold font-sans text-stone-900 mb-1">
-              {item.name}
-            </h2>
-            <p className="text-xs font-sans text-stone-500 font-medium">
-              Rp {(item.basePrice || 0).toLocaleString('id-ID')}
-            </p>
-          </div>
-          
-          <button className="h-8 px-4 rounded-md border border-[#0E5C37] text-[#0E5C37] bg-white text-xs font-bold font-sans flex items-center gap-1 active:bg-stone-50 transition-colors">
-            View <ArrowRight className="w-3 h-3" />
-          </button>
-        </div>
-      </div>
+      </button>
     </section>
   );
 }

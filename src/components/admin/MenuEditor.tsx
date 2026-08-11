@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useMenuStore } from '@/store/menu.store';
 import { useInventoryStore } from '@/store/inventory.store';
-import { Search, Save, Power, Edit3, Loader2, Image as ImageIcon, Plus, X, Layers, Box, Tag, Settings, CheckCircle2, BookOpen, Trash2 } from 'lucide-react';
+import { Search, Save, Power, Edit3, Loader2, Image as ImageIcon, Plus, X, Layers, Box, Tag, Settings, CheckCircle2, BookOpen, Trash2, Store } from 'lucide-react'; // 🔴 Tambah Store icon
 import { formatPrice } from '@/utils/formatters';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toast } from '@/utils/toast';
@@ -24,6 +24,10 @@ export default function MenuEditor() {
   const { materials, initializeDefaultMaterials } = useInventoryStore();
   const [search, setSearch] = useState('');
   
+  // 🔴 STATE UNTUK CABANG
+  const [dbBranches, setDbBranches] = useState<any[]>([]);
+  const [activeBranchId, setActiveBranchId] = useState<string>(''); // '' berarti Pusat / Semua Cabang
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [tempPrice, setTempPrice] = useState<string>('');
   
@@ -43,7 +47,6 @@ export default function MenuEditor() {
   const [addonType, setAddonType] = useState<AddonType>('group');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 🔴 STATE UNTUK EDIT SUB-ENTITAS INTERNAL DI DALAM MODAL
   const [editingSubId, setEditingSubId] = useState<number | null>(null);
 
   const [tempMat, setTempMat] = useState('');
@@ -59,26 +62,34 @@ export default function MenuEditor() {
     category: '', 
     description: '',
     addonGroups: [] as number[],
-    recipes: [] as { materialId: string, amount: string, materialName: string, unit: string }[] // 🔴 State baru
+    recipes: [] as { materialId: string, amount: string, materialName: string, unit: string }[] 
   });
   const [formCategory, setFormCategory] = useState({ name: '' });
   const [formAddonGroup, setFormAddonGroup] = useState({ name: '', isRequired: '0', maxSelected: '1' });
   const [formAddonItem, setFormAddonItem] = useState({ name: '', price: '', groupId: '' });
   const [formRecipe, setFormRecipe] = useState({ productId: '', materialId: '', amount: '' });
 
-  // FETCH DATA
+  // 🔴 FETCH DATA DENGAN FILTER CABANG
   const fetchAllData = useCallback(async () => {
     if (!slug) return;
     setIsLoading(true);
     try {
-      const [menuRes, recipeRes, invRes] = await Promise.all([
-        fetch(`/api/menu?slug=${slug}`),
+      // Tambahkan branch_id ke URL jika tidak kosong
+      const menuUrl = activeBranchId 
+        ? `/api/menu?slug=${slug}&branch_id=${activeBranchId}` 
+        : `/api/menu?slug=${slug}`;
+
+      const [menuRes, recipeRes, invRes, branchRes] = await Promise.all([
+        fetch(menuUrl),
         fetch('/api/recipes'),
-        fetch('/api/inventory') // Fetch dari API database
+        fetch('/api/inventory'), 
+        fetch(`/api/pos/branches?slug=${slug}`) // Ambil data cabang
       ]);
+
       const data = await menuRes.json();
       const recipeData = await recipeRes.json();
-      const invData = await invRes.json(); // Ambil response inventory
+      const invData = await invRes.json(); 
+      const branchData = await branchRes.json();
       
       if (data.success) {
         setMenu(data.items, data.categories);
@@ -87,13 +98,14 @@ export default function MenuEditor() {
         setDbAddons(data.addons || []); 
       }
       if (recipeData.success) setRecipes(recipeData.data);
-      if (invData.success) setDbMaterials(invData.data); // Simpan ke state
+      if (invData.success) setDbMaterials(invData.data); 
+      if (branchData.success) setDbBranches(branchData.data);
+
     } catch (e) { console.error(e); }
     finally { setIsLoading(false); }
-  }, [slug, setMenu]);
+  }, [slug, activeBranchId, setMenu]); // 🔴 activeBranchId masuk dependency agar re-fetch saat tab diganti
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchAllData();
     initializeDefaultMaterials();
   }, [fetchAllData, initializeDefaultMaterials]);
@@ -115,7 +127,6 @@ export default function MenuEditor() {
       setFormMenu(prev => ({ ...prev, recipes: prev.recipes.filter((_, i) => i !== index) }));
   };
 
-  // 🟢 1. TOAST UNTUK TOGGLE STATUS KETERSEDIAAN
   const toggleAvailability = async (id: string, currentStatus: boolean) => {
     setSavingId(id);
     try {
@@ -130,29 +141,20 @@ export default function MenuEditor() {
         const newItems = items.map(item => item.id === id ? { ...item, isAvailable: !currentStatus } : item);
         setMenu(newItems, dbCategories);
         
-        // Munculkan Toast sukses sesuai status baru
         Toast.fire({
           icon: 'success',
           title: !currentStatus ? 'Menu berhasil diaktifkan!' : 'Menu ditandai sebagai habis!'
         });
       } else {
-        Toast.fire({
-          icon: 'error',
-          title: `Gagal: ${result.message}`
-        });
+        Toast.fire({ icon: 'error', title: `Gagal: ${result.message}` });
       }
     } catch (error) {
-      console.error("Gagal mengubah status:", error);
-      Toast.fire({
-        icon: 'error',
-        title: 'Terjadi kesalahan sistem.'
-      });
+      Toast.fire({ icon: 'error', title: 'Terjadi kesalahan sistem.' });
     } finally {
       setSavingId(null);
     }
   };
 
-  // 🟢 2. TOAST UNTUK EDIT HARGA CEPAT (INLINE)
   const saveInlinePrice = async (id: string) => {
     const priceNum = parseInt(tempPrice);
     if (isNaN(priceNum)) return;
@@ -169,24 +171,12 @@ export default function MenuEditor() {
         const newItems = items.map(item => item.id === id ? { ...item, basePrice: priceNum } : item);
         setMenu(newItems, dbCategories);
         setEditingId(null);
-
-        // Munculkan Toast sukses ganti harga
-        Toast.fire({
-          icon: 'success',
-          title: 'Harga menu berhasil diperbarui!'
-        });
+        Toast.fire({ icon: 'success', title: 'Harga menu berhasil diperbarui!' });
       } else {
-        Toast.fire({
-          icon: 'error',
-          title: `Gagal: ${result.message}`
-        });
+        Toast.fire({ icon: 'error', title: `Gagal: ${result.message}` });
       }
     } catch (error) {
-      console.error("Gagal menyimpan harga:", error);
-      Toast.fire({
-        icon: 'error',
-        title: 'Gagal memperbarui harga menu.'
-      });
+      Toast.fire({ icon: 'error', title: 'Gagal memperbarui harga menu.' });
     } finally {
       setSavingId(null);
     }
@@ -197,15 +187,6 @@ export default function MenuEditor() {
     setTempPrice(price.toString());
   };
 
-  const handleSaveRecipe = async () => {
-    if (!formRecipe.productId || !formRecipe.materialId || !formRecipe.amount) return;
-    await fetch('/api/recipes', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(formRecipe) });
-    Toast.fire({ icon: 'success', title: 'Resep tersimpan!' });
-    setFormRecipe({ productId: '', materialId: '', amount: '' });
-    fetchAllData();
-  };
-
-  
   const openAddModal = () => {
     setModalMode('add');
     setActiveTab('menu');
@@ -226,13 +207,11 @@ export default function MenuEditor() {
       const res = await fetch(`/api/recipes?productId=${item.id}`);
       const result = await res.json();
     
-      // 2. Format data resep agar sesuai dengan state formMenu.recipes
-      // Ganti bagian loadedRecipes ini:
       const loadedRecipes = result.success ? result.data.map((r: any) => ({
-          materialId: r.materialId?.toString() || r.material_id?.toString(), // Coba dua-duanya
-          amount: r.amountNeeded?.toString() || r.amount_needed?.toString(), // Coba dua-duanya
-          materialName: r.materialName || r.material_name, // 🔴 INI KUNCINYA, samain sama API lu
-          unit: r.unit // 🔴 INI KUNCINYA, samain sama API lu
+          materialId: r.materialId?.toString() || r.material_id?.toString(), 
+          amount: r.amountNeeded?.toString() || r.amount_needed?.toString(), 
+          materialName: r.materialName || r.material_name, 
+          unit: r.unit 
       })) : [];
 
       setFormMenu({
@@ -245,7 +224,6 @@ export default function MenuEditor() {
         description: item.description || '',
         addonGroups: Array.isArray(item.addonGroups) ? item.addonGroups.map(Number) : [],
         recipes: loadedRecipes
-        
       });
     }catch (error) {
         console.error("Gagal load resep:", error);
@@ -272,7 +250,6 @@ export default function MenuEditor() {
     });
   };
 
-  // 🔴 HANDLER EDIT SUB ENTITAS (KATEGORI / ADDON) DI DALAM TABEL MODAL
   const startEditCategory = (cat: any) => {
     setEditingSubId(cat.id);
     setFormCategory({ name: cat.name });
@@ -295,20 +272,17 @@ export default function MenuEditor() {
     setFormAddonItem({ name: '', price: '', groupId: '' });
   };
 
-  // 🔴 PERBAIKAN UTAMA: Penanganan Payload FormData Dinamis untuk Semua Tab
   const handleSaveForm = async () => {
     setIsSubmitting(true);
     try {
       const formData = new FormData();
       
-      // Beritahu API backend, entitas apa yang sedang kita proses (menu / category / addon)
       formData.append('entity', activeTab); 
 
-      // 🔴 MASUKIN CONSOLE.LOG NYA DI SINI! 🔴
-      // console.log("=== DEBUGGING SIMPAN DATA ===");
-      // console.log("1. Tab yang sedang aktif (activeTab):", activeTab);
-      // console.log("2. Nilai 'entity' di FormData:", formData.get('entity'));
-      // console.log("=============================");
+      // 🔴 SUNTIKKAN BRANCH ID SAAT MENAMBAHKAN/MENGEDIT
+      if (activeBranchId) {
+        formData.append('branch_id', activeBranchId);
+      }
 
       if (activeTab === 'menu') {
         formData.append('name', formMenu.name);
@@ -340,8 +314,6 @@ export default function MenuEditor() {
         if (editingSubId) formData.append('id', editingSubId.toString());
       }
 
-      // --- HIT ENDPOINT API BENERAN ---
-      // Jika mode edit ATAU ada editingSubId (untuk kategori/addon), gunakan PUT. Jika tidak, POST.
       const method = (modalMode === 'edit' || editingSubId) ? 'PUT' : 'POST';
       
       const response = await fetch('/api/menu', { 
@@ -352,8 +324,6 @@ export default function MenuEditor() {
       const result = await response.json();
       
       if (result.success) {
-        
-        // 2. GANTI ALERT DENGAN TOAST SWEETALERT2 🎉
         Toast.fire({
           icon: 'success',
           title: modalMode === 'edit' || editingSubId ? 'Data berhasil diperbarui!' : 'Data baru berhasil disimpan!'
@@ -364,19 +334,11 @@ export default function MenuEditor() {
         if (activeTab === 'menu') setShowModal(false);
 
       } else {
-        // Toast untuk Error
-        Toast.fire({
-          icon: 'error',
-          title: `Gagal: ${result.message}`
-        });
+        Toast.fire({ icon: 'error', title: `Gagal: ${result.message}` });
       }
       
     } catch (error) {
-      console.error("Gagal menyimpan data:", error);
-      Toast.fire({
-        icon: 'error',
-        title: 'Terjadi kesalahan server.'
-      });
+      Toast.fire({ icon: 'error', title: 'Terjadi kesalahan server.' });
     } finally {
       setIsSubmitting(false);
     }
@@ -384,6 +346,32 @@ export default function MenuEditor() {
 
   return (
     <div className="w-full pb-10 relative">
+
+      {/* 🔴 TAB FILTER CABANG */}
+      {dbBranches.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto no-scrollbar mb-6 pb-2 border-b border-stone-200">
+          <button
+            onClick={() => setActiveBranchId('')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-all ${
+              activeBranchId === '' ? 'bg-[#0E5C37] text-white shadow-md' : 'bg-white text-stone-500 hover:bg-stone-50 border border-stone-200'
+            }`}
+          >
+            Semua Cabang (Pusat)
+          </button>
+          {dbBranches.map(branch => (
+            <button
+              key={branch.id}
+              onClick={() => setActiveBranchId(branch.id.toString())}
+              className={`px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-all flex items-center gap-2 ${
+                activeBranchId === branch.id.toString() ? 'bg-[#0E5C37] text-white shadow-md' : 'bg-white text-stone-500 hover:bg-stone-50 border border-stone-200'
+              }`}
+            >
+              <Store className="w-3.5 h-3.5" />
+              {branch.name}
+            </button>
+          ))}
+        </div>
+      )}
       
       {/* HEADER BAR */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -421,11 +409,11 @@ export default function MenuEditor() {
           <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Sinkronisasi Database...</p>
         </div>
       ) : filteredItems.length === 0 ? (
-        <div className="py-20 border-2 border-dashed border-stone-200 rounded-[1.5rem] flex flex-col items-center justify-center bg-white/50">
+        <div className="py-20 border-2 border-dashed border-stone-200 rounded-[1.5rem] flex flex-col items-center justify-center bg-white/50 mt-6">
           <p className="text-sm font-bold text-stone-400">Tidak ada menu yang ditemukan.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-6">
           <AnimatePresence>
             {filteredItems.map((item, index) => (
               <motion.div 
@@ -496,9 +484,6 @@ export default function MenuEditor() {
                           <Edit3 className="w-3.5 h-3.5" />
                         </button>
                       </div>
-                      <div className="text-[8px] font-bold uppercase tracking-widest text-[#0E5C37]/40 bg-emerald-50/50 px-2 py-1 rounded border border-emerald-100/50">
-                        Db Record
-                      </div>
                     </>
                   )}
                 </div>
@@ -530,6 +515,8 @@ export default function MenuEditor() {
                     </h3>
                     <p className="text-[10px] uppercase tracking-widest font-bold text-stone-400">
                       {modalMode === 'edit' ? 'Modifikasi Entitas' : 'Penambahan Entitas Baru'}
+                      {/* 🔴 Tampilkan info cabang yang sedang dituju */}
+                      {activeBranchId && ` • ${dbBranches.find(b => b.id.toString() === activeBranchId)?.name}`}
                     </p>
                   </div>
                 </div>
@@ -544,7 +531,7 @@ export default function MenuEditor() {
                     { id: 'menu', label: 'Produk Menu', icon: <Box className="w-4 h-4" /> },
                     { id: 'category', label: 'Kategori Utama', icon: <Layers className="w-4 h-4" /> },
                     { id: 'addon', label: 'Addon Ekstra', icon: <Tag className="w-4 h-4" /> },
-                    { id: 'recipe', label: 'Resep (BoM)', icon: <BookOpen className="w-4 h-4" /> }
+                    // { id: 'recipe', label: 'Resep (BoM)', icon: <BookOpen className="w-4 h-4" /> }
 
                   ].map(tab => (
                     <button 
@@ -693,8 +680,8 @@ export default function MenuEditor() {
                           
                           <button type="button" onClick={() => {
                               addRecipe(tempMat, tempAmt);
-                              setTempMat(''); // Reset setelah ditambah
-                              setTempAmt(''); // Reset setelah ditambah
+                              setTempMat(''); 
+                              setTempAmt(''); 
                           }} className="bg-[#0E5C37] text-white p-2.5 rounded-xl">
                               <Plus className="w-4 h-4" />
                           </button>
@@ -704,9 +691,6 @@ export default function MenuEditor() {
                       <div className="space-y-2">
                           {formMenu.recipes.map((r, i) => (
                               <div key={i} className="flex justify-between items-center p-3 bg-stone-50 rounded-xl border">
-                                {/* <pre className="text-[8px] text-red-500">
-                                    {JSON.stringify(r)}
-                                </pre> */}
                                   <span className="text-xs font-bold text-stone-700">{r.materialName}</span>
                                   <div className="flex items-center gap-3">
                                       <span className="text-xs font-black text-[#0E5C37]">{r.amount}</span>

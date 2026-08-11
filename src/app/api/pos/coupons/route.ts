@@ -1,155 +1,123 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/db';
-import { coupon } from '@/db/schema';
-import { eq, and, isNull } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 import { jwtVerify } from 'jose';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 
-const SECRET_KEY = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'rahasia-super-aman-evokasir-2026'
-);
+import { db } from '@/db';
+import { branches, coupon, couponBranches } from '@/db/schema';
 
+const SECRET_KEY = new TextEncoder().encode(process.env.JWT_SECRET || 'rahasia-super-aman-evokasir-2026');
 export const dynamic = 'force-dynamic';
 
-// ─── HELPER AUTHENTICATION ──────────────────────────────────────────
-async function getAuthPayload() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('ekasir_session')?.value;
-  if (!token) return null;
+type AuthPayload = { role?: string; mitraId?: number | string; branchId?: number | string | null };
 
-  try {
-    const verified = await jwtVerify(token, SECRET_KEY);
-    return verified.payload as any;
-  } catch (err) {
-    return null;
-  }
+async function getAuthPayload(): Promise<AuthPayload | null> {
+  const token = (await cookies()).get('ekasir_session')?.value;
+  if (!token) return null;
+  try { return (await jwtVerify(token, SECRET_KEY)).payload as AuthPayload; } catch { return null; }
 }
 
-// ─── [GET] AMBIL SEMUA KUPON UNTUK ADMIN ────────────────────────────
-export async function GET(request: Request) {
+async function resolveBranchIds(payload: AuthPayload, requested: unknown): Promise<number[]> {
+  if (payload.branchId) return [Number(payload.branchId)];
+  if (!Array.isArray(requested)) return [];
+  const ids = [...new Set(requested.map(Number).filter(Number.isInteger))];
+  if (ids.length === 0) return [];
+  const valid = await db.select({ id: branches.id }).from(branches).where(and(
+    eq(branches.mitra_id, Number(payload.mitraId)),
+    inArray(branches.id, ids),
+    isNull(branches.deletedAt),
+  ));
+  if (valid.length !== ids.length) throw new Error('Salah satu cabang tidak valid');
+  return ids;
+}
+
+async function attachBranchIds(rows: Array<typeof coupon.$inferSelect>) {
+  if (rows.length === 0) return [];
+  const mappings = await db.select().from(couponBranches).where(inArray(couponBranches.coupon_id, rows.map((row) => row.id)));
+  const map = new Map<number, number[]>();
+  for (const item of mappings) map.set(item.coupon_id, [...(map.get(item.coupon_id) || []), item.branch_id]);
+  return rows.map((row) => ({ ...row, branch_ids: map.get(row.id) || [] }));
+}
+
+export async function GET() {
   try {
     const payload = await getAuthPayload();
-    if (!payload || payload.role === 'User') {
-      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    if (!payload || payload.role === 'User' || !payload.mitraId) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    let rows = await db.select().from(coupon).where(and(eq(coupon.mitra_id, Number(payload.mitraId)), isNull(coupon.deletedAt))).orderBy(coupon.id);
+    let data = await attachBranchIds(rows);
+    if (payload.branchId) {
+      const branchId = Number(payload.branchId);
+      data = data.filter((item) => item.branch_ids.length === 0 || item.branch_ids.includes(branchId));
     }
-
-    // Ambil semua kupon (termasuk yang expired), KECUALI yang udah di-soft delete
-    const data = await db.select()
-      .from(coupon)
-      .where(
-        and(
-          eq(coupon.mitra_id, Number(payload.mitraId)),
-          isNull(coupon.deletedAt)
-        )
-      )
-      .orderBy(coupon.id); 
-
     return NextResponse.json({ success: true, data });
   } catch (error) {
-    console.error("GET Coupons Error:", error);
+    console.error('GET Coupons Error:', error);
     return NextResponse.json({ success: false, message: 'Internal Server Error' }, { status: 500 });
   }
 }
 
-// ─── [POST] BUAT KUPON BARU ─────────────────────────────────────────
 export async function POST(request: Request) {
   try {
     const payload = await getAuthPayload();
-    if (!payload || payload.role === 'User') {
-      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-    }
-
+    if (!payload || payload.role === 'User' || !payload.mitraId) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     const body = await request.json();
-
-    await db.insert(coupon).values({
-      mitra_id: Number(payload.mitraId),
-      title: body.title,
-      description: body.description,
-      coupon_code: body.coupon_code,
-      is_member_only: body.is_member_only,
-      discount_rate: body.discount_rate || null,
-      discount_price: body.discount_price || null,
-      max_use: Number(body.max_use) || 0,
-      already_used: 0,
-      // 🔴 Nambahin start_date di sini
+    const branchIds = await resolveBranchIds(payload, body.branch_ids);
+    const inserted = await db.insert(coupon).values({
+      mitra_id: Number(payload.mitraId), branch_id: null, title: body.title, description: body.description,
+      coupon_code: String(body.coupon_code).toUpperCase(), is_member_only: Boolean(body.is_member_only),
+      discount_rate: body.discount_rate || null, discount_price: body.discount_price || null,
+      max_use: Number(body.max_use) || 0, already_used: 0,
       start_date: body.start_date ? new Date(body.start_date) : null,
       expired_date: body.expired_date ? new Date(body.expired_date) : null,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    });
-
-    return NextResponse.json({ success: true, message: 'Kupon berhasil dibuat!' });
+      createdAt: new Date(), updatedAt: new Date(),
+    }).$returningId();
+    const couponId = inserted[0]?.id;
+    if (couponId && branchIds.length > 0) {
+      await db.insert(couponBranches).values(branchIds.map((branchId) => ({ coupon_id: couponId, branch_id: branchId })));
+    }
+    return NextResponse.json({ success: true, message: 'Promo berhasil dibuat' });
   } catch (error) {
-    console.error("POST Coupon Error:", error);
-    return NextResponse.json({ success: false, message: 'Gagal membuat kupon' }, { status: 500 });
+    console.error('POST Coupon Error:', error);
+    return NextResponse.json({ success: false, message: error instanceof Error ? error.message : 'Gagal membuat promo' }, { status: 400 });
   }
 }
 
-// ─── [PUT] UPDATE KUPON ─────────────────────────────────────────────
 export async function PUT(request: Request) {
   try {
     const payload = await getAuthPayload();
-    if (!payload || payload.role === 'User') {
-      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
+    if (!payload || payload.role === 'User' || !payload.mitraId) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    const id = Number(new URL(request.url).searchParams.get('id'));
+    if (!id) return NextResponse.json({ success: false, message: 'ID promo dibutuhkan' }, { status: 400 });
     const body = await request.json();
-
-    if (!id) return NextResponse.json({ success: false, message: 'ID Kupon dibutuhkan' }, { status: 400 });
-
+    const branchIds = await resolveBranchIds(payload, body.branch_ids);
     await db.update(coupon).set({
-      title: body.title,
-      description: body.description,
-      coupon_code: body.coupon_code,
-      is_member_only: body.is_member_only,
-      discount_rate: body.discount_rate || null,
-      discount_price: body.discount_price || null,
+      branch_id: null, title: body.title, description: body.description,
+      coupon_code: String(body.coupon_code).toUpperCase(), is_member_only: Boolean(body.is_member_only),
+      discount_rate: body.discount_rate || null, discount_price: body.discount_price || null,
       max_use: Number(body.max_use) || 0,
-      // 🔴 Nambahin update start_date di sini
       start_date: body.start_date ? new Date(body.start_date) : null,
       expired_date: body.expired_date ? new Date(body.expired_date) : null,
-      updatedAt: new Date()
-    }).where(
-      and(
-        eq(coupon.id, Number(id)),
-        eq(coupon.mitra_id, Number(payload.mitraId))
-      )
-    );
-
-    return NextResponse.json({ success: true, message: 'Kupon berhasil diperbarui!' });
+      updatedAt: new Date(),
+    }).where(and(eq(coupon.id, id), eq(coupon.mitra_id, Number(payload.mitraId)), isNull(coupon.deletedAt)));
+    await db.delete(couponBranches).where(eq(couponBranches.coupon_id, id));
+    if (branchIds.length > 0) await db.insert(couponBranches).values(branchIds.map((branchId) => ({ coupon_id: id, branch_id: branchId })));
+    return NextResponse.json({ success: true, message: 'Promo berhasil diperbarui' });
   } catch (error) {
-    console.error("PUT Coupon Error:", error);
-    return NextResponse.json({ success: false, message: 'Gagal memperbarui kupon' }, { status: 500 });
+    console.error('PUT Coupon Error:', error);
+    return NextResponse.json({ success: false, message: error instanceof Error ? error.message : 'Gagal memperbarui promo' }, { status: 400 });
   }
 }
 
-// ─── [DELETE] SOFT DELETE KUPON ─────────────────────────────────────
 export async function DELETE(request: Request) {
   try {
     const payload = await getAuthPayload();
-    if (!payload || payload.role === 'User') {
-      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
-
-    if (!id) return NextResponse.json({ success: false, message: 'ID Kupon dibutuhkan' }, { status: 400 });
-
-    await db.update(coupon).set({
-      deletedAt: new Date() // Soft delete
-    }).where(
-      and(
-        eq(coupon.id, Number(id)),
-        eq(coupon.mitra_id, Number(payload.mitraId))
-      )
-    );
-
-    return NextResponse.json({ success: true, message: 'Kupon berhasil dihapus!' });
+    if (!payload || payload.role === 'User' || !payload.mitraId) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    const id = Number(new URL(request.url).searchParams.get('id'));
+    if (!id) return NextResponse.json({ success: false, message: 'ID promo dibutuhkan' }, { status: 400 });
+    await db.update(coupon).set({ deletedAt: new Date() }).where(and(eq(coupon.id, id), eq(coupon.mitra_id, Number(payload.mitraId))));
+    return NextResponse.json({ success: true, message: 'Promo berhasil dihapus' });
   } catch (error) {
-    console.error("DELETE Coupon Error:", error);
-    return NextResponse.json({ success: false, message: 'Gagal menghapus kupon' }, { status: 500 });
+    console.error('DELETE Coupon Error:', error);
+    return NextResponse.json({ success: false, message: 'Gagal menghapus promo' }, { status: 500 });
   }
 }

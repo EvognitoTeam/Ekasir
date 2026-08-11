@@ -1,58 +1,50 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/db'; // Sesuaikan path database Drizzle kamu
-import { mitra, coupon } from '@/db/schema'; // Sesuaikan path skema
-import { eq, and, gt, lt, or, isNull } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, lt, or } from 'drizzle-orm';
+
+import { db } from '@/db';
+import { branches, coupon, couponBranches, mitra } from '@/db/schema';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const slug = searchParams.get('slug');
-
-  // 🔴 SOLUSI: Gunakan objek Date() langsung agar tipe datanya cocok dengan Drizzle
-  // Drizzle/MySQL akan otomatis menyesuaikan konversi waktunya.
-  const currentDate = new Date();
-
-  if (!slug) {
-    return NextResponse.json({ success: false, message: 'Slug diperlukan' }, { status: 400 });
-  }
+  const branchSlug = searchParams.get('branch_slug');
+  if (!slug) return NextResponse.json({ success: false, message: 'Slug diperlukan' }, { status: 400 });
 
   try {
-    // 1. Cari ID Mitra berdasarkan Slug
-    const foundMitra = await db.select().from(mitra).where(eq(mitra.mitra_slug, slug)).limit(1);
-    
-    if (foundMitra.length === 0) {
-      return NextResponse.json({ success: false, message: 'Mitra tidak ditemukan' }, { status: 404 });
+    const [foundMitra] = await db.select().from(mitra).where(eq(mitra.mitra_slug, slug)).limit(1);
+    if (!foundMitra) return NextResponse.json({ success: false, message: 'Mitra tidak ditemukan' }, { status: 404 });
+
+    let branchId: number | null = null;
+    if (branchSlug) {
+      const [branch] = await db.select({ id: branches.id }).from(branches).where(and(
+        eq(branches.mitra_id, foundMitra.id), eq(branches.branch_slug, branchSlug), isNull(branches.deletedAt),
+      )).limit(1);
+      if (!branch) return NextResponse.json({ success: false, message: 'Cabang tidak ditemukan' }, { status: 404 });
+      branchId = branch.id;
     }
-    
-    const mitraId = foundMitra[0].id;
 
-    // 2. Ambil Semua Kupon yang Aktif (Member & Publik)
-    const activeCoupons = await db.select()
-        .from(coupon)
-        .where(
-            and(
-                eq(coupon.mitra_id, mitraId),
-                
-                // Validasi Waktu: Expired date > hari ini ATAU expired_date nya kosong/null
-                or(
-                    // Karena currentDate sekarang adalah tipe Date(), Drizzle tidak akan protes lagi
-                    gt(coupon.expired_date, currentDate),
-                    isNull(coupon.expired_date)
-                ),
-                
-                // Validasi Kuota: Belum sentuh limit ATAU max_use diset 0 (Unlimited)
-                or(
-                    eq(coupon.max_use, 0),
-                    lt(coupon.already_used, coupon.max_use)
-                )
-            )
-        );
+    const now = new Date();
+    const rows = await db.select().from(coupon).where(and(
+      eq(coupon.mitra_id, foundMitra.id), isNull(coupon.deletedAt),
+      or(isNull(coupon.start_date), lt(coupon.start_date, now)),
+      or(gt(coupon.expired_date, now), isNull(coupon.expired_date)),
+      or(eq(coupon.max_use, 0), lt(coupon.already_used, coupon.max_use)),
+    ));
+    if (rows.length === 0) return NextResponse.json({ success: true, data: [] });
 
-    return NextResponse.json({ success: true, data: activeCoupons });
+    const mappings = await db.select().from(couponBranches).where(inArray(couponBranches.coupon_id, rows.map((row) => row.id)));
+    const map = new Map<number, number[]>();
+    for (const item of mappings) map.set(item.coupon_id, [...(map.get(item.coupon_id) || []), item.branch_id]);
 
+    const data = rows
+      .map((row) => ({ ...row, branch_ids: map.get(row.id) || [] }))
+      .filter((row) => row.branch_ids.length === 0 || (branchId !== null && row.branch_ids.includes(branchId)));
+
+    return NextResponse.json({ success: true, data });
   } catch (error) {
-    console.error("Error fetching coupon:", error);
+    console.error('Error fetching coupon:', error);
     return NextResponse.json({ success: false, message: 'Internal Server Error' }, { status: 500 });
   }
 }

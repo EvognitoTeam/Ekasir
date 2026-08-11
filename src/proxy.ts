@@ -3,166 +3,99 @@ import type { NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
 
 const SECRET_KEY = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'rahasia-super-aman-evokasir-2026'
+  process.env.JWT_SECRET || 'rahasia-super-aman-evokasir-2026',
 );
 
+function parseProtectedPath(pathname: string) {
+  const segments = pathname.split('/').filter(Boolean);
+  if (segments.length < 2) return null;
+
+  const slug = segments[0];
+
+  // URL admin baru: /slug/admin/dashboard atau /slug/branch/admin/dashboard
+  const adminIndex = segments.indexOf('admin');
+  if (adminIndex === 1 || adminIndex === 2) {
+    return {
+      slug,
+      area: 'dashboard' as const,
+      branchSlug: adminIndex === 2 ? segments[1] : undefined,
+      isAdminPrettyUrl: true,
+    };
+  }
+
+  // URL lama/internal: /slug/dashboard, /slug/cashier, /slug/kitchen
+  const area = segments[1];
+  if (area === 'dashboard' || area === 'cashier' || area === 'kitchen') {
+    return {
+      slug,
+      area,
+      branchSlug: undefined,
+      isAdminPrettyUrl: false,
+    };
+  }
+
+  return null;
+}
+
 export async function proxy(request: NextRequest) {
-  const path = request.nextUrl.pathname;
+  const parsed = parseProtectedPath(request.nextUrl.pathname);
+  if (!parsed) return NextResponse.next();
 
-  // Match:
-  // /slug/dashboard
-  // /slug/dashboard/xxx
-  // /slug/cashier
-  // /slug/cashier/xxx
-  const match = path.match(
-    /^\/([^\/]+)\/(dashboard|cashier)(\/.*)?$/
-  );
-
-  // Route publik
-  if (!match) {
-    return NextResponse.next();
-  }
-
-  // =========================
-  // DATA URL
-  // =========================
-
-  const requestedSlug = match[1];
-  const requestedArea = match[2]; // dashboard | cashier
-
-  // =========================
-  // TOKEN
-  // =========================
-
-  const token =
-    request.cookies.get('ekasir_session')?.value;
-
-  // Belum login
-  if (!token) {
-    return NextResponse.redirect(
-      new URL('/login', request.url)
-    );
-  }
+  const token = request.cookies.get('ekasir_session')?.value;
+  if (!token) return NextResponse.redirect(new URL('/login', request.url));
 
   try {
-    // =========================
-    // VERIFY JWT
-    // =========================
+    const { payload } = await jwtVerify(token, SECRET_KEY);
+    const userRole = String(payload.role || '');
+    const userSlug = String(payload.slug || '');
 
-    const { payload } = await jwtVerify(
-      token,
-      SECRET_KEY
-    );
-
-    const userRole = payload.role as string;
-    const userSlug = payload.slug as string;
-
-    // =========================
-    // VALID ROLE
-    // =========================
-
-    const allowedRoles = ['Owner', 'Cashier'];
-
-    if (!allowedRoles.includes(userRole)) {
-      return NextResponse.redirect(
-        new URL(
-          '/login?error=not_authorized',
-          request.url
-        )
-      );
+    if (parsed.slug !== userSlug) {
+      const target = userRole === 'Owner'
+        ? `/${userSlug}/admin/dashboard`
+        : `/${userSlug}/${userRole.toLowerCase()}`;
+      return NextResponse.redirect(new URL(target, request.url));
     }
 
-    // =========================
-    // VALID SLUG
-    // =========================
+    const isOwner = userRole === 'Owner';
+    const isCashier = userRole === 'Cashier';
+    const isKitchen = userRole === 'Kitchen';
 
-    if (!userSlug) {
-      console.error(
-        '❌ payload.slug kosong! Cek API login.'
-      );
-
-      const response = NextResponse.redirect(
-        new URL(
-          '/login?error=invalid_tenant',
-          request.url
-        )
-      );
-
-      response.cookies.delete('ekasir_session');
-
-      return response;
+    if (isOwner && parsed.area !== 'dashboard') {
+      return NextResponse.redirect(new URL(`/${userSlug}/admin/dashboard`, request.url));
+    }
+    if (isCashier && parsed.area !== 'cashier') {
+      return NextResponse.redirect(new URL(`/${userSlug}/cashier`, request.url));
+    }
+    if (isKitchen && parsed.area !== 'kitchen') {
+      return NextResponse.redirect(new URL(`/${userSlug}/kitchen`, request.url));
     }
 
-    // Tenant isolation
-    if (requestedSlug !== userSlug) {
-      console.warn(
-        `⚠️ Akses ilegal: ${userSlug} mencoba akses ${requestedSlug}`
-      );
-
-      // Redirect sesuai role
-      if (userRole === 'Cashier') {
-        return NextResponse.redirect(
-          new URL(`/${userSlug}/cashier`, request.url)
-        );
-      }
-
-      return NextResponse.redirect(
-        new URL(`/${userSlug}/dashboard`, request.url)
-      );
+    // Pretty URL admin ditulis ulang ke route internal dashboard tanpa mengubah URL browser.
+    if (parsed.isAdminPrettyUrl) {
+      const rewriteUrl = request.nextUrl.clone();
+      rewriteUrl.pathname = `/${parsed.slug}/dashboard`;
+      return NextResponse.rewrite(rewriteUrl);
     }
 
-    // =========================
-    // ROLE ACCESS CONTROL
-    // =========================
-
-    // CASHIER buka dashboard
-    if (
-      userRole === 'Cashier' &&
-      requestedArea === 'dashboard'
-    ) {
-      return NextResponse.redirect(
-        new URL(`/${userSlug}/cashier`, request.url)
-      );
+    // URL dashboard lama diarahkan ke base URL baru.
+    if (isOwner && request.nextUrl.pathname === `/${parsed.slug}/dashboard`) {
+      return NextResponse.redirect(new URL(`/${parsed.slug}/admin/dashboard`, request.url));
     }
-
-    // OWNER buka cashier
-    if (
-      userRole === 'Owner' &&
-      requestedArea === 'cashier'
-    ) {
-      return NextResponse.redirect(
-        new URL(`/${userSlug}/dashboard`, request.url)
-      );
-    }
-
-    // =========================
-    // AMAN
-    // =========================
 
     return NextResponse.next();
-
-  } catch (error) {
-    console.error(
-      '❌ Middleware: Token invalid / expired',
-      error
-    );
-
-    const response = NextResponse.redirect(
-      new URL(
-        '/login?error=session_expired',
-        request.url
-      )
-    );
-
+  } catch {
+    const response = NextResponse.redirect(new URL('/login?error=session_expired', request.url));
     response.cookies.delete('ekasir_session');
-
     return response;
   }
 }
 
 export const config = {
   matcher: [
+    '/:slug/admin/:path*',
+    '/:slug/:branch/admin/:path*',
     '/:slug/dashboard/:path*',
     '/:slug/cashier/:path*',
+    '/:slug/kitchen/:path*',
   ],
 };

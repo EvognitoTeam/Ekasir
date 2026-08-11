@@ -1,7 +1,9 @@
+/* eslint-disable @next/next/no-img-element */
 import { motion } from 'framer-motion';
-import { ArrowRight } from 'lucide-react';
-import Image from 'next/image'; // 🔴 1. Import next/image
-import { Category, MenuItem } from '../../types/menu';
+import { ArrowRight, ImageIcon } from 'lucide-react';
+
+import type { Category, MenuItem } from '@/types/menu';
+import { applyFallbackImage, normalizeImageSrc } from '@/utils/image';
 
 interface Props {
   categories: Category[];
@@ -20,93 +22,77 @@ function CategoryCard({
   onClick: () => void;
   index: number;
 }) {
-  const previewImages = items
-    .filter(i => i.isAvailable && i.image) // Pastikan hanya ambil yang isAvailable DAN punya image
-    .slice(0, 2)
-    .map(i => i.image);
-
-  const words = category.name.split(' ');
-  const half = Math.ceil(words.length / 2);
-  const line1 = words.slice(0, half).join(' ');
-  const line2 = words.slice(half).join(' ');
-
-  // Gambar default/fallback
-  const fallbackImage = 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?auto=format&fit=crop&w=200&q=60';
+  const previewItems = items
+    .filter((item) => item.isAvailable && item.image)
+    .slice(0, 2);
+  const words = category.name.trim().split(/\s+/);
+  const splitAt = Math.ceil(words.length / 2);
+  const line1 = words.slice(0, splitAt).join(' ');
+  const line2 = words.slice(splitAt).join(' ');
 
   return (
     <motion.button
+      type="button"
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.06, duration: 0.22 }}
+      transition={{ delay: index * 0.045, duration: 0.24 }}
       onClick={onClick}
-      className="w-full bg-white rounded-2xl overflow-hidden shadow-sm border border-stone-100 active:scale-[0.98] transition-transform text-left"
+      className="block min-h-0 w-full overflow-hidden rounded-2xl border border-stone-100 bg-white text-left shadow-sm active:scale-[0.985]"
     >
-      {/* Banner */}
-      <div className="relative h-[130px] overflow-hidden bg-stone-50">
-        {/* Ghost watermark */}
-        <span
-          className="absolute right-2 bottom-[-10px] text-[86px] font-black leading-none select-none pointer-events-none uppercase"
-          style={{ color: 'rgba(0,0,0,0.04)', letterSpacing: '-0.04em' }}
-        >
-          {words}
+      <div className="relative h-[132px] overflow-hidden bg-stone-50">
+        <span className="pointer-events-none absolute bottom-[-12px] right-2 select-none text-[84px] font-black uppercase leading-none tracking-[-0.05em] text-black/[0.035]">
+          {words[0]}
         </span>
 
-        {/* + icon */}
-        <span
-          className="absolute top-4 left-4 text-2xl font-black leading-none text-[#0E5C37]"
-        >
+        <span className="absolute left-4 top-4 text-2xl font-black leading-none text-[var(--color-primary)]">
           +
         </span>
 
-        {/* Category name */}
-        <div className="absolute left-6 top-1/2 -translate-y-1/2 z-10 max-w-[55%]">
-          <p className="text-[22px] font-black leading-tight uppercase tracking-tight text-stone-900">
+        <div className="absolute left-6 top-1/2 z-10 max-w-[54%] -translate-y-1/2">
+          <p className="text-[21px] font-black uppercase leading-tight tracking-tight text-stone-900">
             {line1}
           </p>
           {line2 && (
-            <p
-              className="text-[22px] font-black leading-tight uppercase tracking-tight text-[#0E5C37]"
-            >
+            <p className="text-[21px] font-black uppercase leading-tight tracking-tight text-[var(--color-primary)]">
               {line2}
             </p>
           )}
         </div>
 
-        {/* Food images — stacked on right */}
-        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center">
-          {previewImages.map((src, i) => {
-            // 🔴 Periksa apakah src valid (string url atau path lokal), jika tidak pakai fallback
-            const imageSrc = src || fallbackImage;
-            
-            return (
+        <div className="absolute right-4 top-1/2 flex -translate-y-1/2 items-center">
+          {previewItems.length > 0 ? (
+            previewItems.map((item, imageIndex) => (
               <div
-                key={i}
-                className="w-[90px] h-[90px] rounded-2xl overflow-hidden border-2 border-white shadow-md flex-shrink-0 relative"
-                style={{ marginLeft: i > 0 ? '-18px' : '0', zIndex: previewImages.length - i }}
+                key={item.id}
+                className="relative h-[88px] w-[88px] flex-shrink-0 overflow-hidden rounded-2xl border-2 border-white bg-stone-100 shadow-md"
+                style={{
+                  marginLeft: imageIndex > 0 ? '-20px' : '0',
+                  zIndex: previewItems.length - imageIndex,
+                }}
               >
-                {/* 🔴 2. Ganti <img> dengan <Image> */}
-                {/* next/image wajib tau width dan height kecuali pakai fill */}
-                <Image
-                  src={imageSrc}
-                  alt={category.name}
-                  fill
-                  sizes="90px"
-                  className="object-cover"
+                <img
+                  src={normalizeImageSrc(item.image)}
+                  alt=""
+                  onError={applyFallbackImage}
+                  className="h-full w-full object-cover"
                 />
               </div>
-            );
-          })}
+            ))
+          ) : (
+            <div className="flex h-[88px] w-[88px] items-center justify-center rounded-2xl border-2 border-white bg-stone-100 text-stone-300 shadow-md">
+              <ImageIcon className="h-8 w-8" />
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Caption row */}
-      <div className="px-4 py-2.5 border-t border-stone-100 flex items-center justify-between">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
+      <div className="flex items-center justify-between border-t border-stone-100 px-4 py-2.5">
+        <span className="text-[10px] font-label uppercase tracking-wider text-stone-500">
           {category.name}
         </span>
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] font-sans text-stone-400">{items.length} items</span>
-          <ArrowRight className="w-3 h-3 text-stone-300" />
+          <span className="text-[10px] text-stone-500">{items.length} menu</span>
+          <ArrowRight className="h-3 w-3 text-stone-300" />
         </div>
       </div>
     </motion.button>
@@ -114,32 +100,37 @@ function CategoryCard({
 }
 
 export default function CategoryList({ categories, allItems, onSelectCategory }: Props) {
+  const categoriesWithItems = categories
+    .map((category) => ({
+      category,
+      items: allItems.filter(
+        (item) => item.categoryId?.toString() === category.id?.toString(),
+      ),
+    }))
+    .filter(({ items }) => items.length > 0);
+
+  if (categoriesWithItems.length === 0) return null;
+
   return (
-    <section className="px-4 pt-2 pb-4 space-y-3">
-      {/* Section label */}
-      <div className="flex items-center gap-3 pt-2 pb-0.5">
-        <div className="w-6 h-px bg-[#0E5C37] opacity-40" />
-        <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-stone-500">
-          Category List
+    <section className="bg-[var(--color-surface)] px-4 pb-8 pt-2">
+      <div className="flex items-center gap-3 pb-2 pt-2">
+        <div className="h-px w-6 bg-[var(--color-primary)] opacity-40" />
+        <p className="text-[10px] font-label uppercase tracking-[0.25em] text-[var(--color-on-surface-variant)]">
+          Jelajahi semua kategori
         </p>
       </div>
 
-      {categories.map((category, i) => {
-        // 🔴 3. FIX TYPE ERROR: Pastikan tipe datanya sama-sama string
-        const catItems = allItems.filter(item => item.categoryId?.toString() === category.id?.toString());
-        
-        if (catItems.length === 0) return null;
-        
-        return (
+      <div className="mt-1 space-y-3">
+        {categoriesWithItems.map(({ category, items }, index) => (
           <CategoryCard
             key={category.id}
             category={category}
-            items={catItems}
-            onClick={() => onSelectCategory(category.id.toString())} // 🔴 Pastikan lempar string
-            index={i}
+            items={items}
+            onClick={() => onSelectCategory(category.id.toString())}
+            index={index}
           />
-        );
-      })}
+        ))}
+      </div>
     </section>
   );
 }

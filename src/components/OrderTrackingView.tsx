@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { useOrderStore } from '../store/order.store';
+import { useOrderStore } from '@/store/order.store';
 import { useParams } from 'next/navigation';
 import { 
   Clock, 
@@ -15,9 +15,12 @@ import {
   User,
   Zap,
   Hash,
-  Loader2
+  Loader2,
+  Banknote,
+  QrCode
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { QRCodeSVG } from 'qrcode.react'; 
 
 interface Props {
   onBackToMenu: () => void;
@@ -32,75 +35,214 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
   const [activeStep, setActiveStep] = useState(0);
   const storeName = slug ? slug.replace(/-/g, ' ').toUpperCase() : 'OUR RESTAURANT';
   
-  // Inisialisasi awal mengambil dari store, jika kosong tampilkan 'Locating...'
-  // const [actualTableName, setActualTableName] = useState((currentOrder as any)?.tableName || (currentOrder as any)?.table_name || 'Locating...');
   const [actualTableName, setActualTableName] = useState(
-      (currentOrder as any)?.tableName || (currentOrder as any)?.table_name || 'Locating...'
-    );
-  // 1. Sinkronisasi Nama Toko & Meja Awal
-  useEffect(() => {
-    const newTableName = (currentOrder as any)?.tableName || (currentOrder as any)?.table_name;
+    (currentOrder as any)?.tableName ||
+      (currentOrder as any)?.table_name ||
+      'Locating...'
+  );
 
-    if (newTableName && newTableName !== actualTableName) {
+  const [manualTableInfo, setManualTableInfo] = useState<string | null>(
+    (currentOrder as any)?.manualTableInfo ||
+      (currentOrder as any)?.manual_table_info ||
+      null
+  );
+
+  const [actualPaymentStatus, setActualPaymentStatus] = useState(
+    (currentOrder as any)?.paymentStatus || (currentOrder as any)?.payment_status || '1'
+  );
+  const [paymentMethod, setPaymentMethod] = useState(
+    (currentOrder as any)?.paymentMethod || (currentOrder as any)?.payment_method || 'qris'
+  );
+
+  const [timestamps, setTimestamps] = useState({
+    created: (currentOrder as any)?.createdAt || (currentOrder as any)?.created_at,
+    confirmed: (currentOrder as any)?.confirmedAt || (currentOrder as any)?.confirmed_at,
+    preparing: (currentOrder as any)?.preparingAt || (currentOrder as any)?.preparing_at,
+    ready: (currentOrder as any)?.readyAt || (currentOrder as any)?.ready_at,
+  });
+
+  // 🔴 STATE UNTUK ESTIMASI DINAMIS (Nilai awalnya adalah fallback statis)
+  const [estimates, setEstimates] = useState({
+    confirmed: 1,
+    preparing: 5,
+    ready: 10
+  });
+
+  const orderCodeToDisplay = (currentOrder as any)?.order_code || (currentOrder as any)?.orderCode || currentOrder?.id?.toString().slice(-6);
+
+  // 🔴 FETCH ESTIMASI DINAMIS (Hanya jalan 1x saat halaman dibuka)
+  useEffect(() => {
+    const fetchDynamicEstimates = async () => {
+      try {
+        // Panggil API backend yang ngitung rata-rata waktu (Kodenya ada di bawah)
+        const res = await fetch(`/api/orders/estimates?slug=${slug}`);
+        const json = await res.json();
+        
+        if (json.success && json.data) {
+          setEstimates({
+            confirmed: json.data.avgConfirm || 1,
+            preparing: json.data.avgPrepare || 5,
+            ready: json.data.avgReady || 10,
+          });
+        }
+      } catch (error) {
+        console.error("Gagal mengambil estimasi dinamis, menggunakan nilai default", error);
+      }
+    };
+
+    if (slug) fetchDynamicEstimates();
+  }, [slug]);
+
+  // Sinkronisasi Nama Toko & Meja Awal
+  useEffect(() => {
+    const newTableName =
+      (currentOrder as any)?.tableName ||
+      (currentOrder as any)?.table_name;
+
+    const newManualTableInfo =
+      (currentOrder as any)?.manualTableInfo ||
+      (currentOrder as any)?.manual_table_info ||
+      null;
+
+    if (
+      newTableName &&
+      newTableName !== actualTableName
+    ) {
       setActualTableName(newTableName);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentOrder]);
 
-  // 2. Real-time Status & Table Polling
+    if (
+      newManualTableInfo !==
+      manualTableInfo
+    ) {
+      setManualTableInfo(
+        newManualTableInfo,
+      );
+    }
+  }, [
+    currentOrder,
+    actualTableName,
+    manualTableInfo,
+  ]);
+
+  // Real-time Status & Table Polling
   useEffect(() => {
     const trackOrder = async () => {
-      // Pastikan menggunakan order_code untuk fetch ke API track
-      const orderCode = (currentOrder as any)?.order_code || (currentOrder as any)?.orderCode || currentOrder?.id?.toString().slice(-6);
-      if (!orderCode) return;
-
+      if (!orderCodeToDisplay) return;
       try {
-        const res = await fetch(`/api/orders/track?code=${orderCode}`);
+        const res = await fetch(`/api/orders/track?code=${orderCodeToDisplay}`);
         const result = await res.json();
 
-        if (result.success && result.data) {
-          // A. Sinkronisasi Status (Pending -> Confirmed -> Preparing -> Completed)
-          if (result.data.status !== currentOrder?.status) {
-            updateStatus(result.data[0].status);
+        if (result.success && result.data && result.data.length > 0) {
+          const fetchedOrder = result.data[0];
+
+          if (
+            fetchedOrder.status !==
+            currentOrder?.status
+          ) {
+            updateStatus(
+              fetchedOrder.status,
+            );
           }
-          // console.log(result.data[0]);
-          
-          // B. Sinkronisasi Nama Meja dari hasil JOIN API
-          if (result.data[0].table_name) {
-            setActualTableName(result.data[0].table_name);
-          } else if (!result.data.table_number) {
-            setActualTableName('Walk-in');
+
+          if (
+            fetchedOrder.table_name
+          ) {
+            setActualTableName(
+              fetchedOrder.table_name,
+            );
+          } else if (
+            !fetchedOrder.table_number
+          ) {
+            setActualTableName(
+              'Walk-in',
+            );
           }
+
+          setManualTableInfo(
+            fetchedOrder.manual_table_info ||
+              fetchedOrder.manualTableInfo ||
+              null,
+          );
+
+          if (
+            fetchedOrder.payment_status
+          ) {
+            setActualPaymentStatus(
+              fetchedOrder.payment_status.toString(),
+            );
+          }
+          if (fetchedOrder.payment_method) setPaymentMethod(fetchedOrder.payment_method);
+
+          setTimestamps({
+            created: fetchedOrder.createdAt || fetchedOrder.created_at,
+            confirmed: fetchedOrder.confirmedAt || fetchedOrder.confirmed_at,
+            preparing: fetchedOrder.preparingAt || fetchedOrder.preparing_at,
+            ready: fetchedOrder.readyAt || fetchedOrder.ready_at,
+          });
         }
       } catch (error) {
         console.error("Polling error:", error);
       }
     };
 
-    // Jalankan pertama kali dan set interval setiap 10 detik
     trackOrder();
-    const interval = setInterval(trackOrder, 10000);
+    const interval = setInterval(trackOrder, 5000); 
     return () => clearInterval(interval);
-  }, [(currentOrder as any)?.order_code, (currentOrder as any)?.orderCode, currentOrder?.status, updateStatus]);
+  }, [orderCodeToDisplay, currentOrder?.status, updateStatus]);
 
-  // 3. Mapping Step Status Berdasarkan Role Alur Kerja Baru
+  const formatTime = (dateString?: string | null) => {
+    if (!dateString) return null;
+    return new Date(dateString).toLocaleTimeString('id-ID', {
+      hour: '2-digit', minute: '2-digit',
+    });
+  };
+
+  const orderTime = formatTime(timestamps.created);
+  const confirmedTime = formatTime(timestamps.confirmed);
+  const preparingTime = formatTime(timestamps.preparing);
+  const readyTime = formatTime(timestamps.ready);
+
+  const isTakeaway =
+    manualTableInfo
+      ?.trim()
+      .toLowerCase() ===
+    'takeaway';
+
+  const stationLabel = isTakeaway
+    ? actualTableName &&
+      actualTableName !==
+        'Walk-in' &&
+      actualTableName !==
+        'Locating...'
+      ? `Takeaway • ${actualTableName}`
+      : 'Takeaway'
+    : actualTableName;
+
+  const readyDescription = isTakeaway
+    ? actualTableName &&
+      actualTableName !==
+        'Walk-in' &&
+      actualTableName !==
+        'Locating...'
+      ? `Takeaway order from ${actualTableName}`
+      : 'Takeaway order is ready'
+    : `Served at ${actualTableName}`;
+
+  // 🔴 MAPPING STEPS MENGGUNAKAN STATE ESTIMATES
   const STEPS = [
-    { id: 'pending', label: 'Order Received', icon: Clock, description: 'Waiting for confirmation', time: '0m' },
-    { id: 'confirmed', label: 'Confirmed', icon: CheckCircle2, description: 'Accepted by our team', time: '1m' },
-    { id: 'preparing', label: 'In Preparation', icon: ChefHat, description: 'Prepared fresh by our chef', time: '5m' },
-    { id: 'completed', label: 'Ready!', icon: Package, description: `Served at ${actualTableName}`, time: '10m' },
+    { id: 'pending', label: 'Order Received', icon: Clock, description: 'Waiting for confirmation', time: orderTime || 'Just now' },
+    { id: 'confirmed', label: 'Confirmed', icon: CheckCircle2, description: 'Accepted by our team', time: confirmedTime || (activeStep >= 1 ? 'Processing...' : `Est. ${estimates.confirmed}m`) },
+    { id: 'preparing', label: 'In Preparation', icon: ChefHat, description: 'Prepared fresh by our chef', time: preparingTime || (activeStep >= 2 ? 'Processing...' : `Est. ${estimates.preparing}m`) },
+    { id: 'completed', label: 'Ready!', icon: Package, description: readyDescription, time: readyTime || (activeStep >= 3 ? 'Done' : `Est. ${estimates.ready}m`) },
   ];
 
   useEffect(() => {
     if (!currentOrder) return;
-    
     const statusMap: Record<string, number> = {
-      'pending': 0,
-      'confirmed': 1,
-      'preparing': 2,
-      'completed': 3
+      'pending': 0, 'confirmed': 1, 'preparing': 2, 'completed': 3, 'ready': 3
     };
-    
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setActiveStep(statusMap[currentOrder.status] ?? 0);
   }, [currentOrder?.status]);
 
@@ -118,6 +260,8 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
     );
   }
 
+  const isUnpaidCash = paymentMethod === 'cash' && actualPaymentStatus === '1';
+
   return (
     <div className="min-h-screen bg-[#F7F8FA] relative overflow-hidden font-sans text-stone-900">
       <div className="fixed inset-0 pointer-events-none">
@@ -125,8 +269,8 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
          <div className="absolute bottom-0 left-0 w-[60vw] h-[60vw] bg-emerald-200 opacity-[0.05] blur-[100px] rounded-full translate-y-1/2 -translate-x-1/2" />
       </div>
 
-      <main className="px-6 py-12 relative z-10 max-w-[480px] mx-auto">
-        <header className="flex flex-col items-start mb-16 gap-8">
+      <main className="px-6 py-12 relative z-10 max-w-[480px] mx-auto pb-32">
+        <header className="flex flex-col items-start mb-10 gap-8">
            <div className="space-y-6 w-full">
               <motion.button 
                 initial={{ opacity: 0, x: -20 }}
@@ -147,7 +291,7 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
                     <div className="flex items-center gap-2 bg-white px-3 py-1 rounded-lg border border-stone-100 shadow-sm">
                       <Hash className="w-3 h-3 text-stone-400" />
                       <span className="text-[11px] font-black text-stone-900 uppercase tracking-widest">
-                        {(currentOrder as any).order_code || (currentOrder as any).orderCode || currentOrder.id?.toString().slice(-6)}
+                        {orderCodeToDisplay}
                       </span>
                     </div>
                  </div>
@@ -158,11 +302,73 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
               </div>
            </div>
 
-           <div className="flex flex-col items-start gap-1">
-              <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Assigned Station</p>
-              <p className="text-4xl font-black text-[#0E5C37] uppercase">{actualTableName}</p>
+           <div className="flex w-full flex-col items-start gap-2">
+              <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">
+                {isTakeaway
+                  ? 'Order Type'
+                  : 'Assigned Station'}
+              </p>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-4xl font-black text-[#0E5C37] uppercase">
+                  {stationLabel}
+                </p>
+
+                {isTakeaway && (
+                  <span className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-700">
+                    <Package className="h-3.5 w-3.5" />
+                    Takeaway
+                  </span>
+                )}
+              </div>
+
+              {isTakeaway &&
+                actualTableName &&
+                actualTableName !==
+                  'Walk-in' &&
+                actualTableName !==
+                  'Locating...' && (
+                  <p className="text-xs font-medium text-stone-500">
+                    Pesanan takeaway dibuat dari meja{' '}
+                    <span className="font-bold text-stone-700">
+                      {actualTableName}
+                    </span>
+                    .
+                  </p>
+                )}
            </div>
         </header>
+
+        <AnimatePresence>
+          {isUnpaidCash && orderCodeToDisplay && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0, scale: 0.9 }}
+              animate={{ opacity: 1, height: 'auto', scale: 1 }}
+              exit={{ opacity: 0, height: 0, scale: 0.9, marginBottom: 0 }}
+              className="mb-12 overflow-hidden"
+            >
+              <div className="bg-white rounded-3xl p-6 border-2 border-amber-400 shadow-xl shadow-amber-500/10 relative">
+                <div className="absolute top-0 right-0 bg-amber-400 text-amber-950 px-4 py-1 rounded-bl-xl font-bold text-[10px] uppercase tracking-widest flex items-center gap-2">
+                  <Banknote className="w-3 h-3" /> Pay at Cashier
+                </div>
+                
+                <div className="mt-4 flex flex-col items-center text-center">
+                  <p className="text-sm font-bold text-stone-800 mb-1">Awaiting Payment</p>
+                  <p className="text-xs text-stone-500 mb-6">Please show this QR Code or Order Code to the cashier to proceed.</p>
+                  
+                  <div className="p-4 bg-white rounded-2xl border border-stone-200 mb-4 shadow-sm relative group flex items-center justify-center">
+                    <QRCodeSVG value={orderCodeToDisplay} size={160} bgColor="#ffffff" fgColor="#1c1c19" level="H" />
+                  </div>
+
+                  <div className="bg-amber-50 px-6 py-3 rounded-xl border border-amber-200">
+                    <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mb-1">Order Code</p>
+                    <p className="text-3xl font-black text-amber-700 tracking-widest">{orderCodeToDisplay}</p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <div className="flex flex-col gap-12">
            <div className="w-full">
@@ -218,8 +424,13 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
                              </div>
                              <p className="text-xs text-stone-500 font-medium">{step.description}</p>
                           </div>
-                          <span className="text-[9px] font-bold text-stone-400 uppercase tracking-widest bg-stone-100 px-2 py-1 rounded-md">
-                            {step.time} Est.
+                          
+                          <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-1 rounded-md ${
+                            step.time?.includes(':') 
+                              ? 'bg-emerald-50 text-[#0E5C37]' 
+                              : 'bg-stone-100 text-stone-400'
+                          }`}>
+                            {step.time}
                           </span>
                        </div>
                      </motion.div>

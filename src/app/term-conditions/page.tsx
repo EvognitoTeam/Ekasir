@@ -1,6 +1,6 @@
 "use client";
 
-import { TERMS_CONTENT } from '@/constants/legal';
+import { LEGAL_LAST_UPDATED, TERMS_CONTENT } from '@/constants/legal';
 import { ArrowLeft, ScrollText } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
@@ -23,7 +23,7 @@ export default function TermsPage() {
           </div>
           <div>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight leading-none mb-1">Syarat & Ketentuan</h1>
-            <p className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Terakhir Diperbarui: Mei 2026</p>
+            <p className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Terakhir Diperbarui: {LEGAL_LAST_UPDATED}</p>
           </div>
         </div>
 

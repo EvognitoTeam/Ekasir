@@ -125,6 +125,8 @@ export interface Order {
   serviceCharge?: number;
   totalPrice?: number; // Dari format camelCase kasir
   total_price?: number | string; // Dari DB asli
+  totalAfterDiscount?: number;
+  total_after_discount?: number;
   
   // Status & Tipe Pesanan
   status: 'pending' | 'confirmed' | 'preparing' | 'ready' | 'failed' | 'cancelled' | 'completed';
@@ -132,6 +134,7 @@ export interface Order {
   
   // Pembayaran
   paymentStatus?: '1' | '2' | '3' | '4' | 'paid' | 'pending'; // 2/paid = Lunas
+  payment_status?: '1' | '2' | '3' | '4' | 'paid' | 'pending'; // 2/paid = Lunas
   paymentMethod?: 'cash' | 'qris' | string;
   payment_method?: 'cash' | 'qris';
   

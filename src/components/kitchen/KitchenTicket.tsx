@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Order, AddOnGroup, AddOnChoice } from '@/types/menu';
+import { Order } from '@/types/menu';
 import { useMenuStore } from '@/store/menu.store';
 import { ChefHat, Sparkles, ShoppingBag, Coffee, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
 
@@ -29,6 +29,49 @@ export default function KitchenTicket({ order, onUpdateStatus }: Props) {
   const minutes = Math.floor(elapsedTime / 60);
   const seconds = elapsedTime % 60;
   const timeText = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+  const manualTableInfo =
+    (order as any)?.manualTableInfo ||
+    (order as any)?.manual_table_info ||
+    '';
+
+  const normalizedOrderType =
+    String(
+      (order as any)?.orderType ||
+        (order as any)?.order_type ||
+        manualTableInfo ||
+        '',
+    )
+      .trim()
+      .toLowerCase();
+
+  const isTakeaway =
+    normalizedOrderType === 'takeaway' ||
+    String(manualTableInfo)
+      .trim()
+      .toLowerCase() === 'takeaway';
+
+  const rawTableName =
+    (order as any)?.tableName ||
+    (order as any)?.table_name ||
+    (order as any)?.tableId ||
+    (order as any)?.table_id ||
+    (order as any)?.tableNumber ||
+    (order as any)?.table_number ||
+    '';
+
+  const tableName =
+    typeof rawTableName === 'string'
+      ? rawTableName.replace(/^T-/, '')
+      : rawTableName
+        ? String(rawTableName)
+        : '';
+
+  const hasTable =
+    Boolean(tableName) &&
+    tableName !== 'null' &&
+    tableName !== 'undefined' &&
+    tableName.toLowerCase() !== 'walk-in';
 
   let urgencyClass = 'border-stone-200 bg-white';
   let headerClass = 'bg-stone-50 border-b border-stone-200';
@@ -70,11 +113,32 @@ export default function KitchenTicket({ order, onUpdateStatus }: Props) {
           <div className="px-2.5 py-1 rounded-md bg-stone-900 text-white font-mono font-bold text-sm tracking-widest shadow-sm">
             #{order.id}
           </div>
-          <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-stone-700">
-            {order.orderType === 'takeaway' ? (
-              <><ShoppingBag className="w-4 h-4 text-stone-400" /> BUNGKUS</>
+          <div className="flex flex-col gap-1">
+            {isTakeaway ? (
+              <>
+                <div className="flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-black uppercase tracking-widest text-red-700">
+                  <ShoppingBag className="h-4 w-4 shrink-0" />
+                  TAKEAWAY
+                </div>
+
+                {hasTable && (
+                  <div className="flex items-center gap-1.5 pl-1 text-[10px] font-bold uppercase tracking-widest text-stone-600">
+                    <Coffee className="h-3.5 w-3.5 text-amber-600" />
+                    DARI MEJA
+                    <strong className="ml-0.5 text-xs text-amber-700">
+                      {tableName}
+                    </strong>
+                  </div>
+                )}
+              </>
             ) : (
-              <><Coffee className="w-4 h-4 text-amber-600" /> MEJA <strong className="text-amber-600 text-sm ml-1">{order.tableId?.replace('T-', '')}</strong></>
+              <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-stone-700">
+                <Coffee className="h-4 w-4 text-amber-600" />
+                MEJA
+                <strong className="ml-1 text-sm text-amber-600">
+                  {hasTable ? tableName : 'WALK-IN'}
+                </strong>
+              </div>
             )}
           </div>
         </div>
@@ -86,6 +150,21 @@ export default function KitchenTicket({ order, onUpdateStatus }: Props) {
           </div>
         )}
       </div>
+
+      {isTakeaway && (
+        <div className="border-b border-red-200 bg-red-600 px-4 py-3 text-white">
+          <div className="flex items-center justify-center gap-2 text-sm font-black uppercase tracking-[0.18em]">
+            <ShoppingBag className="h-5 w-5" />
+            Takeaway
+          </div>
+
+          {hasTable && (
+            <p className="mt-1 text-center text-[10px] font-bold uppercase tracking-widest text-red-100">
+              Pesanan berasal dari meja {tableName}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* BODY TIKET */}
       <div className="p-4 flex-1 flex flex-col gap-4">
@@ -150,6 +229,15 @@ export default function KitchenTicket({ order, onUpdateStatus }: Props) {
           );
         })}
       </div>
+
+      {/* {isTakeaway && (
+        <div className="mx-4 mb-3 flex items-center justify-center gap-2 rounded-xl border-2 border-red-200 bg-red-50 px-3 py-2.5 text-center">
+          <ShoppingBag className="h-4 w-4 shrink-0 text-red-600" />
+          <span className="text-[10px] font-black uppercase tracking-widest text-red-700">
+            Jangan disajikan di meja — bungkus pesanan
+          </span>
+        </div>
+      )} */}
 
       {/* 🔴 FOOTER: ADMIN NOTES SEJAJAR DENGAN TOMBOL STATUS */}
       <div className="p-4 pt-0 flex gap-3 items-stretch">

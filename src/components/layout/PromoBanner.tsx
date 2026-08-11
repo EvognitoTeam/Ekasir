@@ -1,4 +1,3 @@
-// File: src/components/promo/PromoBanner.tsx
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Tag, Copy, Check, Clock, Percent } from 'lucide-react';
@@ -50,12 +49,28 @@ function PromoCard({ promo, index, onNavigate }: { promo: CouponData; index: num
     discountLabel = 'Promo Spesial';
   }
 
-  let daysLeft = 0;
+  // 🔴 LOGIKA PENAMPILAN WAKTU DINAMIS
+  let timeLabel: string | null = null;
   if (promo.expired_date) {
     const end = new Date(promo.expired_date).getTime();
     const now = new Date().getTime();
     const diff = end - now;
-    daysLeft = Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+
+    if (diff > 0) {
+      const daysLeft = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hoursLeft = Math.floor(diff / (1000 * 60 * 60));
+      const minutesLeft = Math.floor(diff / (1000 * 60));
+
+      if (daysLeft > 0) {
+        if (daysLeft <= 7) timeLabel = `${daysLeft} Hari Lagi`;
+      } else if (hoursLeft > 0) {
+        timeLabel = `${hoursLeft} Jam Lagi`;
+      } else if (minutesLeft > 0) {
+        timeLabel = `${minutesLeft} Menit Lagi`;
+      } else {
+        timeLabel = 'Segera Berakhir';
+      }
+    }
   }
 
   const gradients = [
@@ -78,7 +93,7 @@ function PromoCard({ promo, index, onNavigate }: { promo: CouponData; index: num
       <div className="absolute top-0 right-0 w-28 h-28 rounded-full opacity-10 bg-white translate-x-[30%] -translate-y-[30%]" />
       <div className="absolute bottom-0 left-0 w-20 h-20 rounded-full opacity-[0.07] bg-white -translate-x-[30%] translate-y-[30%]" />
 
-      <div className="relative z-10 p-5 flex flex-col justify-between min-h-[160px]">
+      <div className="relative p-5 flex flex-col justify-between min-h-[160px]">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-white/20 backdrop-blur flex items-center justify-center">
@@ -93,10 +108,11 @@ function PromoCard({ promo, index, onNavigate }: { promo: CouponData; index: num
             </span>
           </div>
 
-          {daysLeft <= 7 && daysLeft > 0 && (
+          {/* 🔴 TAMPILKAN LABEL WAKTU JIKA ADA */}
+          {timeLabel && (
             <span className="flex items-center gap-1 text-[9px] font-bold text-white/80 bg-white/15 backdrop-blur rounded-full px-2.5 py-1">
               <Clock className="w-3 h-3" />
-              {daysLeft} Hari Lagi
+              {timeLabel}
             </span>
           )}
         </div>
@@ -123,14 +139,14 @@ function PromoCard({ promo, index, onNavigate }: { promo: CouponData; index: num
             ) : (
               <>
                 <Copy className="w-3 h-3" />
-                {promo.coupon_code}
+                Click to Copy
               </>
             )}
           </button>
 
           {promo.max_use > 0 && (
             <span className="text-[9px] text-white/60 font-sans font-semibold">
-              Sisa: {promo.max_use - promo.already_used}
+              Kuota Terbatas!!
             </span>
           )}
         </div>

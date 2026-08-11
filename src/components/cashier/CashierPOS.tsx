@@ -3,14 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useMenuStore } from '@/store/menu.store';
 import { CartItem, Order } from '@/types/menu';
 import { formatPrice } from '@/utils/formatters';
-import { ArrowLeft, Plus, Minus, Search, X, CheckCircle2, Loader2, CheckSquare, Square, ChevronDown, QrCode, Coffee } from 'lucide-react';
+import { ArrowLeft, Plus, Minus, Search, X, CheckCircle2, Loader2, CheckSquare, Square, ChevronDown, QrCode, Coffee, Ticket } from 'lucide-react';
 import { useParams } from 'next/navigation'; 
 
 interface CashierPOSProps {
   onClose: () => void;
-  onSubmitOrder: (order: Order) => void;
+  onSubmitOrder: (
+    order: Order,
+  ) => void | Promise<void>;
 }
-
 
 export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) {
   const { items, categories } = useMenuStore();
@@ -24,7 +25,6 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
   const [isSubmitting, setIsSubmitting] = useState(false); 
   const [tables, setTables] = useState<any[]>([]);
   
-  
   // States Add-on
   const [selectedProductForAddon, setSelectedProductForAddon] = useState<any | null>(null);
   const [tempAddons, setTempAddons] = useState<number[]>([]);
@@ -33,27 +33,75 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
   // Checkout states
   const [orderType, setOrderType] = useState<'dine-in'|'takeaway'>('takeaway');
   const [customerName, setCustomerName] = useState('');
-  const [tableId, setTableId] = useState(''); // Ini yang akan dikirim ke API (ID atau String manual)
-  const [tableDisplay, setTableDisplay] = useState(''); // Ini yang tampil di input
+  const [tableId, setTableId] = useState(''); 
+  const [tableDisplay, setTableDisplay] = useState(''); 
   const [showTableOptions, setShowTableOptions] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash'|'qris'>('cash');
+  const [cashAmount, setCashAmount] = useState<string>('');
 
-  // 🔴 State QRIS Modal
+  // 🟢 States Dropdown Voucher
+  const [availableCoupons, setAvailableCoupons] = useState<any[]>([]);
+  const [selectedCouponCode, setSelectedCouponCode] = useState<string>('');
+
+  // Settings harga dibuat sama dengan self-checkout/server.
+  const [taxRate, setTaxRate] = useState(0);
+  const [serviceRate, setServiceRate] = useState(0);
+  const [isTaxIncluded, setIsTaxIncluded] = useState(false);
+
+  // State QRIS Modal
   const [qrisData, setQrisData] = useState<{ qrUrl: string, orderCode: string, optimisticOrder: Order } | null>(null);
 
+  // 🟢 Fetch Meja & Kupon saat POS dibuka
   useEffect(() => {
-    const fetchTables = async () => {
+    const fetchInitialData = async () => {
+      if (!slug) return;
       try {
-        const res = await fetch(`/api/pos/tables?slug=${slug}`);
-        const data = await res.json();
-        if (data.success) {
-          setTables(data.data);
+        // Fetch Tables
+        const resTables = await fetch(`/api/pos/tables?slug=${slug}`);
+        const dataTables = await resTables.json();
+        if (dataTables.success) setTables(dataTables.data);
+
+        // Fetch Coupons (Untuk dimasukkan ke Dropdown)
+        const resCoupons = await fetch(`/api/coupons?slug=${slug}`);
+        const dataCoupons = await resCoupons.json();
+        if (dataCoupons.success && Array.isArray(dataCoupons.data)) {
+          setAvailableCoupons(dataCoupons.data);
+        }
+
+        // Fetch settings pajak/service agar tampilan POS sama dengan server.
+        const resSettings = await fetch(`/api/settings?slug=${slug}`);
+        const dataSettings = await resSettings.json();
+
+        if (dataSettings.success && dataSettings.data) {
+          setTaxRate(
+            Number(
+              dataSettings.data.taxRate ??
+              dataSettings.data.tax_rate ??
+              0,
+            ) || 0,
+          );
+
+          setServiceRate(
+            Number(
+              dataSettings.data.serviceRate ??
+              dataSettings.data.service_rate ??
+              0,
+            ) || 0,
+          );
+
+          setIsTaxIncluded(
+            Number(
+              dataSettings.data.isTaxIncluded ??
+              dataSettings.data.is_tax_included ??
+              0,
+            ) === 1,
+          );
         }
       } catch (e) {
-        console.error("Gagal ambil data meja:", e);
+        console.error("Gagal ambil data awal:", e);
       }
     };
-    fetchTables();
+    fetchInitialData();
   }, [slug]);
 
   const filteredItems = useMemo(() => {
@@ -113,8 +161,137 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
     }, 0);
   }, [cart, items]);
 
-  const tax = subtotal * 0.00; 
-  const total = subtotal + tax;
+  // 🟢 Kalkulasi Diskon Otomatis (Real-time)
+  const { discountAmount, discountError } = useMemo(() => {
+    if (!selectedCouponCode) return { discountAmount: 0, discountError: '' };
+    
+    const coupon = availableCoupons.find(c => c.code === selectedCouponCode);
+    if (!coupon) return { discountAmount: 0, discountError: 'Kupon tidak valid.' };
+
+    const minOrder = Number(coupon.min_purchase || coupon.min_order || 0);
+    if (subtotal < minOrder) {
+      return { discountAmount: 0, discountError: `Min. belanja ${formatPrice(minOrder)}` };
+    }
+
+    const type = coupon.type || coupon.discount_type;
+    const value = Number(coupon.value || coupon.discount_value || coupon.amount);
+    
+    let calc = 0;
+    if (type === 'percent') {
+      calc = subtotal * (value / 100);
+      const maxDiscount = Number(coupon.max_discount || 0);
+      if (maxDiscount > 0 && calc > maxDiscount) {
+        calc = maxDiscount;
+      }
+    } else {
+      calc = value;
+    }
+
+    return { discountAmount: calc, discountError: '' };
+  }, [subtotal, selectedCouponCode, availableCoupons]);
+
+  const pricing = useMemo(() => {
+    const normalizedDiscount =
+      Math.max(
+        0,
+        Math.floor(
+          Number(discountAmount) || 0,
+        ),
+      );
+
+    const subtotalAfterDiscount =
+      Math.max(
+        0,
+        Math.floor(subtotal) -
+          normalizedDiscount,
+      );
+
+    let calculatedTax = 0;
+    let calculatedService = 0;
+    let grandTotal = 0;
+
+    if (isTaxIncluded) {
+      const serviceDecimal =
+        Number(serviceRate || 0) / 100;
+
+      const taxDecimal =
+        Number(taxRate || 0) / 100;
+
+      const divisor =
+        (1 + serviceDecimal) *
+        (1 + taxDecimal);
+
+      const trueBase =
+        divisor > 0
+          ? Math.floor(
+              subtotalAfterDiscount /
+                divisor,
+            )
+          : subtotalAfterDiscount;
+
+      calculatedService =
+        Math.floor(
+          trueBase *
+            serviceDecimal,
+        );
+
+      calculatedTax =
+        subtotalAfterDiscount -
+        trueBase -
+        calculatedService;
+
+      grandTotal =
+        subtotalAfterDiscount;
+    } else {
+      calculatedService =
+        Math.floor(
+          subtotalAfterDiscount *
+            (
+              Number(serviceRate || 0) /
+              100
+            ),
+        );
+
+      calculatedTax =
+        Math.floor(
+          (
+            subtotalAfterDiscount +
+            calculatedService
+          ) *
+            (
+              Number(taxRate || 0) /
+              100
+            ),
+        );
+
+      grandTotal =
+        subtotalAfterDiscount +
+        calculatedService +
+        calculatedTax;
+    }
+
+    return {
+      discount:
+        normalizedDiscount,
+      subtotalAfterDiscount,
+      tax:
+        calculatedTax,
+      service:
+        calculatedService,
+      total:
+        grandTotal,
+    };
+  }, [
+    subtotal,
+    discountAmount,
+    taxRate,
+    serviceRate,
+    isTaxIncluded,
+  ]);
+
+  const tax = pricing.tax;
+  const serviceCharge = pricing.service;
+  const total = pricing.total;
 
   const addToCart = (productId: string, selectedAddons: number[] = [], notes: string = "") => {
     setCart(prev => {
@@ -151,91 +328,396 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
   };
 
   const handleCheckout = async () => {
-    if (cart.length === 0) return;
-    if (orderType === 'dine-in' && !tableId) {
-      alert("Masukkan nomor meja atau pager");
+    if (cart.length === 0) {
+      return;
+    }
+
+    if (
+      orderType === 'dine-in' &&
+      !tableId
+    ) {
+      alert(
+        'Masukkan nomor meja atau pager',
+      );
+      return;
+    }
+
+    if (
+      paymentMethod === 'cash' &&
+      cashAmount &&
+      Number(cashAmount) < total
+    ) {
+      alert(
+        'Nominal uang tunai masih kurang.',
+      );
       return;
     }
 
     setIsSubmitting(true);
 
-    try {
-      const orderPayload = {
-        name: customerName || 'Tamu Kasir',
-        table_number: orderType === 'takeaway' ? null : tableId, 
-        orderType: orderType,
-        paymentMethod: paymentMethod,
-        items: cart.map(c => {
-          const addonDetails = getAddonDetails(c.menuItemId, c.selectedAddOnsDetails || []);
-          const noteDetails = c.notes ? [{ name: `Note: ${c.notes}`, price: 0 }] : [];
-          // Gabung Addon + Note jadi satu array JSON
-          const finalNotes = JSON.stringify([...addonDetails, ...noteDetails]);
+    const paid =
+      paymentMethod === 'cash'
+        ? (
+            Number(cashAmount) ||
+            total
+          )
+        : total;
 
-          return {
-            menuItemId: c.menuItemId,
-            quantity: c.quantity,
-            price: calculateItemPrice(c.menuItemId, c.selectedAddOns || []), 
-            notes: finalNotes 
-          };
-        }),
-        subtotal: subtotal,
-        totalPrice: total,
+    const change =
+      paymentMethod === 'cash'
+        ? Math.max(
+            0,
+            paid - total,
+          )
+        : 0;
+
+    try {
+      const selectedCoupon =
+        availableCoupons.find(
+          (
+            coupon,
+          ) =>
+            String(
+              coupon.code ??
+              coupon.coupon_code ??
+              '',
+            ) ===
+            selectedCouponCode,
+        );
+
+      const cartItems =
+        cart.map(
+          (
+            cartItem,
+          ) => {
+            const addonDetails =
+              getAddonDetails(
+                cartItem.menuItemId,
+                cartItem.selectedAddOnsDetails ||
+                  [],
+              );
+
+            const customerNote =
+              String(
+                cartItem.notes ||
+                '',
+              ).trim();
+
+            const noteDetails =
+              customerNote
+                ? [
+                    {
+                      name:
+                        `Note: ${customerNote}`,
+                      price:
+                        0,
+                      customer_note:
+                        customerNote,
+                      cust_notes:
+                        customerNote,
+                    },
+                  ]
+                : [];
+
+            const selectedAddOnsDetails =
+              [
+                ...addonDetails,
+                ...noteDetails,
+              ];
+
+            return {
+              menuItemId:
+                cartItem.menuItemId,
+
+              product_id:
+                cartItem.menuItemId,
+
+              quantity:
+                cartItem.quantity,
+
+              /*
+               * priceAtOrder sudah termasuk add-on, sama seperti
+               * validasi self-checkout dan penyimpanan order_items.
+               */
+              priceAtOrder:
+                calculateItemPrice(
+                  cartItem.menuItemId,
+                  cartItem.selectedAddOnsDetails ||
+                    [],
+                ),
+
+              selectedAddOnsDetails,
+
+              /*
+               * Simpan salinan JSON agar endpoint/history lama yang
+               * masih membaca kolom notes tetap dapat memulihkan add-on.
+               */
+              notes:
+                JSON.stringify(
+                  selectedAddOnsDetails,
+                ),
+
+              customerNote:
+                customerNote ||
+                null,
+
+              name:
+                items.find(
+                  (
+                    item,
+                  ) =>
+                    String(item.id) ===
+                    String(
+                      cartItem.menuItemId,
+                    ),
+                )?.name ??
+                'Produk',
+            };
+          },
+        );
+
+      const orderPayload = {
+        total:
+          Math.floor(subtotal),
+
+        discount:
+          pricing.discount,
+
+        totalAfterDiscount:
+          total,
+
+        customer: {
+          name:
+            customerName ||
+            'Tamu Kasir',
+
+          tableNumber:
+            orderType ===
+              'takeaway'
+              ? null
+              : tableId,
+
+          manualTableInfo:
+            orderType ===
+              'takeaway'
+              ? 'Takeaway'
+              : (
+                  tableDisplay ||
+                  tableId ||
+                  null
+                ),
+
+          serviceType:
+            orderType ===
+              'takeaway'
+              ? 'takeaway'
+              : 'dine-in',
+
+          method:
+            paymentMethod,
+        },
+
+        cartItems,
+
+        discountId:
+          pricing.discount > 0
+            ? (
+                selectedCoupon?.id ??
+                null
+              )
+            : null,
+
+        voucher_code:
+          pricing.discount > 0
+            ? selectedCouponCode
+            : null,
+
+        getPayment:
+          paid,
+
+        cashChange:
+          change,
+
+        idempotencyKey:
+          `POS-${slug}-${Date.now()}-${crypto.randomUUID()}`,
       };
 
-      const res = await fetch(`/api/pos/orders?slug=${slug}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderPayload)
-      });
+      const response =
+        await fetch(
+          `/api/pos/orders?slug=${slug}`,
+          {
+            method:
+              'POST',
 
-      const result = await res.json();
+            headers: {
+              'Content-Type':
+                'application/json',
+            },
 
-      if (result.success) {
-        const optimisticOrder: Order = {
-          id: result.data?.id || Math.random().toString(36).substring(2, 6).toUpperCase(),
-          order_code: result.data?.order_code || `POS-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
-          table_number: orderType === 'takeaway' ? 'WALK-IN' : tableId,
-          getPayment: null,
-          cashChange: null,
-          items: cart,
-          subtotal,
-          tax,
-          serviceCharge: 0,
-          totalPrice: total,
-          status: 'confirmed', 
-          createdAt: new Date().toISOString(),
-          orderType,
-          customerName: customerName || 'Tamu Kasir',
-          paymentMethod,
-          paymentStatus: result.data?.payment_status === '1' ? 'pending' : 'paid', 
-          adminNotes: 'Order Kasir (POS)'
-        };
+            body:
+              JSON.stringify(
+                orderPayload,
+              ),
+          },
+        );
 
-        // 🔴 Kalau QRIS, munculin Popup. Kalau tunai langsung tutup.
-        if (paymentMethod === 'qris' && result.data?.qr_url) {
-          setQrisData({
-            qrUrl: result.data.qr_url,
-            orderCode: result.data.order_code,
-            optimisticOrder
-          });
-        } else {
-          onSubmitOrder(optimisticOrder);
-        }
-      } else {
-        alert(result.message || "Gagal membuat pesanan");
+      const result =
+        await response.json();
+
+      if (
+        !response.ok ||
+        !result.success
+      ) {
+        throw new Error(
+          result.message ||
+          'Gagal membuat pesanan',
+        );
       }
-    } catch (e) {
-      console.error(e);
-      alert("Terjadi kesalahan jaringan.");
+
+      /*
+       * Pakai object hasil server. Jangan membangun ulang harga,
+       * tax, service, meja, dan pembayaran dari state frontend.
+       */
+      const serverOrder =
+        (
+          result.printOrder ??
+          result.data
+        ) as Order;
+
+      const serverItems =
+        Array.isArray(
+          (serverOrder as any)?.items,
+        )
+          ? (
+              serverOrder as any
+            ).items
+          : [];
+
+      const mergedItems =
+        cartItems.map(
+          (
+            localItem,
+            index,
+          ) => {
+            const matchingServerItem =
+              serverItems.find(
+                (serverItem: any) =>
+                  String(
+                    serverItem.menuItemId ??
+                    serverItem.menu_item_id ??
+                    serverItem.product_id ??
+                    serverItem.productId ??
+                    '',
+                  ) ===
+                  String(
+                    localItem.menuItemId,
+                  ),
+              ) ??
+              serverItems[index] ??
+              {};
+
+            return {
+              ...localItem,
+              ...matchingServerItem,
+              menuItemId:
+                String(
+                  matchingServerItem.menuItemId ??
+                  matchingServerItem.menu_item_id ??
+                  matchingServerItem.product_id ??
+                  localItem.menuItemId,
+                ),
+              product_id:
+                matchingServerItem.product_id ??
+                matchingServerItem.productId ??
+                localItem.product_id,
+              selectedAddOnsDetails:
+                localItem.selectedAddOnsDetails,
+              notes:
+                typeof matchingServerItem.notes ===
+                  'string' &&
+                matchingServerItem.notes.trim() !==
+                  ''
+                  ? matchingServerItem.notes
+                  : localItem.notes,
+            };
+          },
+        );
+
+      const createdOrder =
+        serverOrder
+          ? ({
+              ...serverOrder,
+              items:
+                mergedItems,
+            } as Order)
+          : null;
+
+      if (
+        !createdOrder
+      ) {
+        throw new Error(
+          'Server tidak mengembalikan data order untuk dicetak.',
+        );
+      }
+
+      /*
+       * onSubmitOrder di halaman kasir akan menambahkan order
+       * sekaligus mencetak struk customer.
+       */
+      await onSubmitOrder(
+        createdOrder,
+      );
+
+      if (
+        result.paymentMethod ===
+          'qris' &&
+        result.qrUrl
+      ) {
+        setQrisData({
+          qrUrl:
+            result.qrUrl,
+
+          orderCode:
+            result.orderCode,
+
+          optimisticOrder:
+            createdOrder,
+        });
+
+        setIsCartOpen(
+          false,
+        );
+      } else {
+        setCart([]);
+        setCashAmount('');
+        setSelectedCouponCode('');
+      }
+    } catch (error) {
+      console.error(
+        '[POS_CHECKOUT_ERROR]',
+        error,
+      );
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'Terjadi kesalahan jaringan.',
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const closeQrisModal = () => {
-    if (qrisData) {
-      onSubmitOrder(qrisData.optimisticOrder);
-    }
+    /*
+     * Order sudah dikirim ke onSubmitOrder tepat setelah API sukses,
+     * sehingga tidak boleh dikirim ulang saat modal QRIS ditutup.
+     */
+    setQrisData(null);
+    setCart([]);
+    setCashAmount('');
+    setSelectedCouponCode('');
+    onClose();
   };
 
   return (
@@ -500,6 +982,47 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
                 })}
 
                 <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  
+                  {/* 🟢 AREA DROPDOWN KUPON / VOUCHER */}
+                  <div style={{ padding: '16px', background: '#f6f3ee', borderRadius: '12px', border: '1px dashed #d6c2bd' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                      <Ticket size={16} color="#0E5C37" />
+                      <p style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: '#1c1c19' }}>Pilih Kupon Promo</p>
+                    </div>
+                    
+                    <div style={{ position: 'relative' }}>
+                      <select
+                        value={selectedCouponCode}
+                        onChange={(e) => setSelectedCouponCode(e.target.value)}
+                        style={{
+                          width: '100%', padding: '12px', borderRadius: '8px', border: '1.5px solid #e5e2dd',
+                          outline: 'none', fontSize: '13px', background: '#fff', appearance: 'none', cursor: 'pointer',
+                          fontWeight: 600, color: '#1c1c19'
+                        }}
+                      >
+                        <option value="">-- Tanpa Kupon --</option>
+                        {availableCoupons.map((coupon) => (
+                          <option key={coupon.id || coupon.code} value={coupon.code}>
+                            {coupon.code} - {coupon.name || (coupon.type === 'percent' ? `Diskon ${coupon.value}%` : `Potongan ${formatPrice(coupon.value)}`)}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown size={16} color="#9CA3AF" style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                    </div>
+
+                    {/* Validasi Otomatis (Real-time) */}
+                    {selectedCouponCode && discountError && (
+                       <p style={{ margin: '8px 0 0', fontSize: '11px', fontWeight: 700, color: '#DC2626' }}>
+                         ! {discountError}
+                       </p>
+                    )}
+                    {selectedCouponCode && !discountError && discountAmount > 0 && (
+                      <p style={{ margin: '8px 0 0', fontSize: '12px', fontWeight: 700, color: '#0E5C37' }}>
+                        ✓ Kupon aktif! Diskon: {formatPrice(discountAmount)}
+                      </p>
+                    )}
+                  </div>
+
                   <div style={{ display: 'flex', background: '#f0ede9', padding: '4px', borderRadius: '12px' }}>
                     {(['takeaway', 'dine-in'] as const).map(type => (
                       <button key={type} onClick={() => setOrderType(type)} style={{
@@ -521,7 +1044,7 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
                         value={tableDisplay} 
                         onChange={e => {
                           setTableDisplay(e.target.value);
-                          setTableId(e.target.value); // Kalau ketik manual, tableId = inputan
+                          setTableId(e.target.value); 
                         }} 
                         onFocus={() => setShowTableOptions(true)}
                         onBlur={() => setTimeout(() => setShowTableOptions(false), 200)}
@@ -544,8 +1067,8 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
                             <div
                               key={t.id}
                               onClick={() => { 
-                                setTableId(String(t.id));      // 🔴 Simpan ID-nya
-                                setTableDisplay(t.table_name); // 🔴 Tampilkan Namanya
+                                setTableId(String(t.id));       
+                                setTableDisplay(t.table_name); 
                                 setShowTableOptions(false); 
                               }}
                               style={{ padding: '12px 14px', borderBottom: '1px solid #f0ede9', fontSize: '13px', fontWeight: 600, color: '#5a4b44', cursor: 'pointer' }}
@@ -554,7 +1077,6 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
                             </div>
                           ))}
                           
-                          {/* Opsi input manual jika tidak ditemukan di database */}
                           {tableDisplay && !tables.find(t => t.table_name === tableDisplay) && (
                             <div 
                               onClick={() => setShowTableOptions(false)}
@@ -573,25 +1095,84 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
                     style={{ padding: '14px', borderRadius: '12px', border: '1.5px solid #e5e2dd', fontSize: '14px', outline: 'none', fontFamily: 'inherit' }} />
 
                   <div>
-                    <p style={{ fontSize: '12px', fontWeight: 700, color: '#9CA3AF', marginBottom: '8px' }}>Metode Pembayaran</p>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      {(['cash', 'qris'] as const).map(method => (
-                        <button key={method} onClick={() => setPaymentMethod(method)} style={{
-                          flex: 1, padding: '14px', borderRadius: '12px', fontSize: '14px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer',
-                          border: `1.5px solid ${paymentMethod === method ? '#0E5C37' : '#e5e2dd'}`,
-                          background: paymentMethod === method ? '#ECFDF5' : '#fff',
-                          color: paymentMethod === method ? '#0E5C37' : '#5a4b44',
-                        }}>
-                          {method === 'cash' ? 'Tunai' : 'QRIS'}
-                          {paymentMethod === method && <CheckCircle2 size={16} />}
-                        </button>
-                      ))}
-                    </div>
+                  <p style={{ fontSize: '12px', fontWeight: 700, color: '#9CA3AF', marginBottom: '8px' }}>Metode Pembayaran</p>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    {(['cash', 'qris'] as const).map(method => (
+                      <button key={method} onClick={() => setPaymentMethod(method)} style={{
+                        flex: 1, padding: '14px', borderRadius: '12px', fontSize: '14px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer',
+                        border: `1.5px solid ${paymentMethod === method ? '#0E5C37' : '#e5e2dd'}`,
+                        background: paymentMethod === method ? '#ECFDF5' : '#fff',
+                        color: paymentMethod === method ? '#0E5C37' : '#5a4b44',
+                      }}>
+                        {method === 'cash' ? 'Tunai' : 'QRIS'}
+                        {paymentMethod === method && <CheckCircle2 size={16} />}
+                      </button>
+                    ))}
                   </div>
+                  
+                  {paymentMethod === 'cash' && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} style={{ marginTop: '16px' }}>
+                      <p style={{ fontSize: '12px', fontWeight: 700, color: '#0E5C37', marginBottom: '8px' }}>Masukkan Nominal Uang Tunai</p>
+                      <input 
+                        type="number"
+                        placeholder="Contoh: 50000"
+                        value={cashAmount}
+                        onChange={(e) => setCashAmount(e.target.value)}
+                        style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1.5px solid #0E5C37', fontSize: '16px', fontWeight: 700, outline: 'none' }}
+                      />
+                      
+                      {Number(cashAmount) >= total && (
+                        <div style={{ marginTop: '12px', padding: '12px', background: '#ECFDF5', borderRadius: '10px', display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 700, color: '#065F46' }}>Kembalian:</span>
+                          <span style={{ fontSize: '14px', fontWeight: 800, color: '#065F46' }}>
+                            {formatPrice(Number(cashAmount) - total)}
+                          </span>
+                        </div>
+                      )}
+                      {Number(cashAmount) > 0 && Number(cashAmount) < total && (
+                        <p style={{ fontSize: '11px', color: '#DC2626', marginTop: '8px', fontWeight: 700 }}>
+                          Uang kurang {formatPrice(total - Number(cashAmount))}
+                        </p>
+                      )}
+                    </motion.div>
+                  )}
+                </div>
                 </div>
               </div>
 
               <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #f0ede9', flexShrink: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', color: '#5a4b44' }}>
+                  <span>Subtotal</span>
+                  <span>{formatPrice(subtotal)}</span>
+                </div>
+
+                {pricing.discount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', color: '#DC2626' }}>
+                    <span>Diskon</span>
+                    <span>-{formatPrice(pricing.discount)}</span>
+                  </div>
+                )}
+
+                {!isTaxIncluded && serviceCharge > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', color: '#5a4b44' }}>
+                    <span>Service</span>
+                    <span>{formatPrice(serviceCharge)}</span>
+                  </div>
+                )}
+
+                {!isTaxIncluded && tax > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', color: '#5a4b44' }}>
+                    <span>Pajak</span>
+                    <span>{formatPrice(tax)}</span>
+                  </div>
+                )}
+
+                {isTaxIncluded && (tax > 0 || serviceCharge > 0) && (
+                  <p style={{ margin: '0 0 8px', fontSize: '10px', color: '#9CA3AF', textAlign: 'right' }}>
+                    Harga sudah termasuk pajak dan service
+                  </p>
+                )}
+
                 <button 
                   onClick={handleCheckout} 
                   disabled={isSubmitting}
@@ -609,7 +1190,7 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
         )}
       </AnimatePresence>
 
-      {/* 🔴 QRIS MODAL - FIXED & RESPONSIVE */}
+      {/* QRIS MODAL */}
       <AnimatePresence>
         {qrisData && (
           <>
@@ -623,7 +1204,7 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
             >
               <motion.div
                 initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-                onClick={(e) => e.stopPropagation()} // Biar gak ketutup pas klik modalnya
+                onClick={(e) => e.stopPropagation()} 
                 style={{ 
                   background: '#fff', borderRadius: '24px', padding: '24px', 
                   width: '100%', maxWidth: '360px', display: 'flex', flexDirection: 'column', 

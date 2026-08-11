@@ -9,10 +9,11 @@ import {
   Waves
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Category } from '../../types/menu';
+import { Category, MenuItem } from '@/types/menu'; // 🔴 Pastikan MenuItem di-import
 
 interface CategoryBarProps {
   categories: Category[];
+  items: MenuItem[]; // 🔴 Tambahkan items ke dalam props
   selectedCategoryId: string | null;
   onSelectCategory: (id: string | null) => void;
 }
@@ -29,7 +30,7 @@ const categoryIcons: { [key: string]: any } = {
   'specialties': Sparkles,
 };
 
-export default function CategoryBar({ categories, selectedCategoryId, onSelectCategory }: CategoryBarProps) {
+export default function CategoryBar({ categories, items, selectedCategoryId, onSelectCategory }: CategoryBarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Allow horizontal wheel scroll on desktop
@@ -44,6 +45,14 @@ export default function CategoryBar({ categories, selectedCategoryId, onSelectCa
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
+
+  // 🔴 LOGIKA FILTER: Hanya ambil kategori yang memiliki minimal 1 produk di cabang ini
+  const activeCategories = categories.filter(category => 
+    items.some(item => item.categoryId === category.id)
+  );
+
+  // Jika tidak ada kategori yang aktif sama sekali, sembunyikan bar-nya (opsional)
+  if (activeCategories.length === 0) return null;
 
   return (
     <nav className="sticky top-[65px] md:top-[77px] z-40 bg-[var(--color-surface)] border-b border-stone-200 shadow-sm overflow-hidden">
@@ -68,7 +77,8 @@ export default function CategoryBar({ categories, selectedCategoryId, onSelectCa
               </div>
             </button>
 
-            {categories.map((category) => {
+            {/* 🔴 Gunakan activeCategories di sini, bukan categories bawaan */}
+            {activeCategories.map((category) => {
               const Icon = categoryIcons[category.name] || Coffee;
               const isActive = selectedCategoryId === category.id;
 
