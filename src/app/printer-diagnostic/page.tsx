@@ -1513,7 +1513,7 @@ export default function PrinterDiagnosticPage() {
           EventListener =
             event => {
               const target =
-                event.target as
+                event.target as unknown as
                   BluetoothRemoteGattCharacteristicLike;
 
               const value =
@@ -2017,6 +2017,7 @@ export default function PrinterDiagnosticPage() {
                 Belum ada hasil pemeriksaan.
               </div>
             ) : (
+              // eslint-disable-next-line react-hooks/refs
               services.map(service => (
                 <article
                   key={service.uuid}
