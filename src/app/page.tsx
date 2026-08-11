@@ -353,33 +353,7 @@ export default function EvokasirLandingPage() {
               <button type="button" onClick={() => openDemoModal('Add-on Paket Absensi')} className="ambient-shadow mt-7 flex w-full items-center justify-center gap-3 rounded-2xl bg-[var(--color-primary)] px-6 py-4 font-black text-white transition-all hover:scale-[1.02]">Jadwalkan Demo Absensi <CalendarDays size={18} /></button>
             </div>
           </div>
-          <br />
-          <div className="absolute right-0 top-0 h-80 w-80 bg-[var(--color-primary)] opacity-10 blur-[110px]" />
-          <div className="relative z-10 grid grid-cols-1 items-center gap-10 lg:grid-cols-[1fr_0.8fr]">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)]/10 px-4 py-2 text-xs font-black uppercase tracking-wider text-[var(--color-primary)]">Add-on Opsional</div>
-              <h2 className="mt-6 text-3xl font-black leading-tight md:text-4xl">{gateParkingAddon.name}</h2>
-              <p className="mt-4 max-w-2xl leading-relaxed text-[var(--color-on-surface-variant)]">{gateParkingAddon.description}</p>
-              <div className="mt-7 flex flex-wrap items-end gap-2">
-                <span className="text-4xl font-black text-[var(--color-primary)] md:text-5xl">COMING SOON</span>
-                {/* <span className="text-4xl font-black text-[var(--color-primary)] md:text-5xl">{gateParkingAddon.price}</span>
-                <span className="pb-1 text-[var(--color-on-surface-variant)]">{gateParkingAddon.period}</span> */}
-              </div>
-              <p className="mt-3 text-sm text-[var(--color-on-surface-variant)]">Paket Gate Parking tidak wajib dan dapat ditambahkan sesuai kebutuhan operasional mitra.</p>
-            </div>
-            <div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {gateParkingAddon.features.map((feature) => (
-                  <div key={feature} className="flex items-start gap-3 rounded-2xl border border-[var(--color-outline-variant)]/20 bg-[var(--color-surface)]/60 p-4">
-                    <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]"><Check size={13} strokeWidth={3} /></div>
-                    <span className="text-sm font-medium">{feature}</span>
-                  </div>
-                ))}
-              </div>
-              {/* <button type="button" onClick={() => openDemoModal('Add-on Paket Gate Parking')} className="ambient-shadow mt-7 flex w-full items-center justify-center gap-3 rounded-2xl bg-[var(--color-primary)] px-6 py-4 font-black text-white transition-all hover:scale-[1.02]">Jadwalkan Demo Gate Parking <CalendarDays size={18} /></button> */}
-              <button type="button" disabled className="ambient-shadow mt-7 flex w-full items-center justify-center gap-3 rounded-2xl bg-[var(--color-primary)] px-6 py-4 font-black text-white transition-all hover:scale-[1.02] cursor-not-allowed">COMING SOON <CalendarDays size={18} /></button>
-            </div>
-          </div>
+          
         </div>
       </section>
 
