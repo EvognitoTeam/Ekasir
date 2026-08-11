@@ -417,14 +417,14 @@ export default function PrinterSettingsModal({ open, onClose, slug, storeName }:
                   </SettingGroup>
 
                   <SettingGroup title="Jumlah salinan" description="Jumlah struk yang dicetak setiap transaksi.">
-                    <NumberStepper value={printerSettings.copies} min={1} max={5} onChange={(value) => updatePrinterSetting("copies", value)} />
+                    <NumberStepper value={printerSettings.copies} min={1} max={5} onChange={(value: number) => updatePrinterSetting("copies", value)} />
                   </SettingGroup>
                 </div>
               )}
 
               {printerSettingsTab === "receipt" && (
                 <div className="space-y-5">
-                  <SettingToggle icon={ImageIcon} title="Tampilkan logo" description="Cetak logo usaha di bagian paling atas struk." checked={printerSettings.showLogo} onChange={(checked) => updatePrinterSetting("showLogo", checked)} />
+                  <SettingToggle icon={ImageIcon} title="Tampilkan logo" description="Cetak logo usaha di bagian paling atas struk." checked={printerSettings.showLogo} onChange={(checked: boolean) => updatePrinterSetting("showLogo", checked)} />
                   {printerSettings.showLogo && (
                     <>
                       <SettingGroup title="File logo" description="Format PNG, JPG, JPEG, atau WEBP. Maksimal 2 MB.">
@@ -472,17 +472,17 @@ export default function PrinterSettingsModal({ open, onClose, slug, storeName }:
                     ["showSubtotal", "Subtotal"], ["showDiscount", "Diskon"], ["showTax", "Pajak"], ["showServiceCharge", "Biaya layanan"],
                     ["showPaymentMethod", "Metode pembayaran"], ["showCashReceived", "Uang diterima"], ["showChange", "Kembalian"],
                   ].map(([key, label]) => (
-                    <CompactToggle key={key} label={label} checked={Boolean(printerSettings[key as keyof CashierPrinterSettings])} onChange={(checked) => updatePrinterSetting(key as keyof CashierPrinterSettings, checked as never)} />
+                    <CompactToggle key={key} label={label} checked={Boolean(printerSettings[key as keyof CashierPrinterSettings])} onChange={(checked: any) => updatePrinterSetting(key as keyof CashierPrinterSettings, checked as never)} />
                   ))}
                 </div>
               )}
 
               {printerSettingsTab === "automation" && (
                 <div className="space-y-4">
-                  <SettingToggle icon={Printer} title="Cetak otomatis" description="Cetak struk otomatis setelah transaksi berhasil." checked={printerSettings.autoPrint} onChange={(checked) => updatePrinterSetting("autoPrint", checked)} />
-                  <SettingToggle icon={Scissors} title="Auto-cutter" description="Kirim perintah potong kertas setelah cetak. Printer harus mendukung ESC/POS cutter." checked={printerSettings.autoCut} onChange={(checked) => updatePrinterSetting("autoCut", checked)} />
+                  <SettingToggle icon={Printer} title="Cetak otomatis" description="Cetak struk otomatis setelah transaksi berhasil." checked={printerSettings.autoPrint} onChange={(checked: boolean) => updatePrinterSetting("autoPrint", checked)} />
+                  <SettingToggle icon={Scissors} title="Auto-cutter" description="Kirim perintah potong kertas setelah cetak. Printer harus mendukung ESC/POS cutter." checked={printerSettings.autoCut} onChange={(checked: boolean) => updatePrinterSetting("autoCut", checked)} />
                   <SettingGroup title="Baris kosong setelah cetak" description="Memberi jarak sebelum kertas dipotong.">
-                    <NumberStepper value={printerSettings.feedLines} min={0} max={10} onChange={(value) => updatePrinterSetting("feedLines", value)} />
+                    <NumberStepper value={printerSettings.feedLines} min={0} max={10} onChange={(value: number) => updatePrinterSetting("feedLines", value)} />
                   </SettingGroup>
                 </div>
               )}
