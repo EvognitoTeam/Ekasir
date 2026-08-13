@@ -1374,7 +1374,7 @@ export default function CashierApp() {
                               }
                               
                               const stockValue = item.stock ?? null;
-                              const priceValue = item.basePrice ?? item.price ?? 0;
+                              const priceValue = item.basePrice ?? 0;
                               const imageUrl = item.image ? String(item.image).startsWith("http") ? item.image : `/${String(item.image).replace(/^\/+/, "")}` : null;
 
                               return (
