@@ -25,7 +25,12 @@ interface Table {
   status: number;
 }
 
-export default function CustomerReservationPage() {
+interface ReservationViewProps {
+  onBack: () => void;
+  cafeName?: string;
+}
+
+export default function CustomerReservationPage({ onBack, cafeName = "Memuat Restoran..." }: ReservationViewProps) {
   const params = useParams();
   const router = useRouter();
   const slug = (params.mitraSlug as string) || (params.slug as string) || "";
@@ -35,7 +40,7 @@ export default function CustomerReservationPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [tables, setTables] = useState<Table[]>([]);
-  const [cafeName, setCafeName] = useState("Memuat Restoran...");
+  // const [cafeName, setCafeName] = useState("Memuat Restoran...");
 
   // State Form
   const [form, setForm] = useState({
