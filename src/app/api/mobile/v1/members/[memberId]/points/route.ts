@@ -50,7 +50,7 @@ export async function GET(request: Request, context: RouteContext) {
         .select({
           id: loyaltyPoints.id,
           points: loyaltyPoints.points,
-          loyaltyId: loyaltyPoints.loyalty_id,
+          loyaltyId: loyaltyPoints.member_id,
           branchId: loyaltyPoints.branch_id,
           createdAt: loyaltyPoints.createdAt,
         })
