@@ -30,7 +30,7 @@ interface ReservationViewProps {
   cafeName?: string;
 }
 
-export default function CustomerReservationPage({ onBack, cafeName = "Memuat Restoran..." }: ReservationViewProps) {
+export default function CustomerReservationPage({ onBack, cafeName = "Kaloo POS" }: ReservationViewProps) {
   const params = useParams();
   const router = useRouter();
   const slug = (params.mitraSlug as string) || (params.slug as string) || "";
@@ -40,7 +40,7 @@ export default function CustomerReservationPage({ onBack, cafeName = "Memuat Res
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [tables, setTables] = useState<Table[]>([]);
-  // const [cafeName, setCafeName] = useState("Memuat Restoran...");
+  const [setCafeName] = useState("Memuat Restoran...");
 
   // State Form
   const [form, setForm] = useState({
