@@ -264,13 +264,11 @@ export const tableList = mysqlTable("table_list", {
 export const reservations = mysqlTable("reservations", {
   id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
   user_id: bigint("user_id", { mode: "number", unsigned: true }),
-  customer_name: varchar("guest_name", { length: 120 }),
-  customer_phone: varchar("guest_name", { length: 120 }),
+  customer_name: varchar("customer_name", { length: 120 }),
+  customer_phone: varchar("customer_phone", { length: 120 }),
   table_id: bigint("table_id", { mode: "number", unsigned: true }),
   mitra_id: bigint("mitra_id", { mode: "number", unsigned: true }),
   branch_id: bigint("branch_id", { mode: "number", unsigned: true }), // Branch ID
-  guest_name: varchar("guest_name", { length: 120 }),
-  guest_phone: varchar("guest_phone", { length: 30 }),
   reserved_start: datetime("reserved_start").notNull(),
   reserved_end: datetime("reserved_end").notNull(),
   guest_count: int("guest_count").notNull(),
@@ -314,14 +312,70 @@ export const coupon = mysqlTable("coupon", {
 });
 
 export const loyaltyPoints = mysqlTable("loyalty_points", {
-  id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
-  user_id: bigint("user_id", { mode: "number", unsigned: true }).notNull(),
-  mitra_id: bigint("mitra_id", { mode: "number", unsigned: true }).notNull(),
-  branch_id: bigint("branch_id", { mode: "number", unsigned: true }), // Branch ID
-  points: int("points").default(0).notNull(),
-  loyalty_id: varchar("loyalty_id", { length: 25 }).notNull(),
+  id: bigint("id", {
+    mode: "number",
+    unsigned: true,
+  })
+    .primaryKey()
+    .autoincrement(),
+
+  user_id: bigint("user_id", {
+    mode: "number",
+    unsigned: true,
+  }).notNull(),
+
+  mitra_id: bigint("mitra_id", {
+    mode: "number",
+    unsigned: true,
+  }).notNull(),
+
+  branch_id: bigint("branch_id", {
+    mode: "number",
+    unsigned: true,
+  }),
+
+  // Saldo poin saat ini
+  points: int("points")
+    .default(0)
+    .notNull(),
+
+  // ID member loyalty
+  member_id: varchar("member_id", {
+    length: 25,
+  }).notNull(),
+
+  // Total poin yang pernah didapat
+  lifetime_points_earned: bigint("lifetime_points_earned", {
+    mode: "number",
+  })
+    .default(0)
+    .notNull(),
+
+  // Total poin yang pernah ditukarkan
+  lifetime_points_redeemed: bigint("lifetime_points_redeemed", {
+    mode: "number",
+  })
+    .default(0)
+    .notNull(),
+
+  // Total nominal transaksi/member spending
+  lifetime_spending: decimal("lifetime_spending", {
+    precision: 14,
+    scale: 0,
+  })
+    .default("0")
+    .notNull(),
+
+  // Waktu terakhir mendapatkan poin
+  last_earned_at: timestamp("last_earned_at"),
+
+  // Waktu terakhir menukarkan poin
+  last_redeemed_at: timestamp("last_redeemed_at"),
+
   createdAt: timestamp("created_at"),
+
   updatedAt: timestamp("updated_at"),
+
   deletedAt: timestamp("deleted_at"),
 });
 

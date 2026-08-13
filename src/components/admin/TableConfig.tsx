@@ -21,6 +21,8 @@ import {
   Users,
   X,
   XCircle,
+  Phone,
+  UserX,
 } from 'lucide-react';
 import { useParams, usePathname } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
@@ -51,9 +53,10 @@ interface Table {
 
 interface Reservation {
   id: number;
-  guest_name: string | null;
-  guest_phone: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
   table_id: number | null;
+  table_ids?: number[] | string[]; // 🟢 Support multi-tables
   table_name: string | null;
   branch_id: number | null;
   branch_name: string | null;
@@ -75,7 +78,7 @@ const RESERVATION_STATUS: Record<ReservationStatus, { label: string; className: 
   pending: { label: 'Menunggu', className: 'bg-amber-50 text-amber-700' },
   confirmed: { label: 'Dikonfirmasi', className: 'bg-emerald-50 text-emerald-700' },
   canceled: { label: 'Dibatalkan', className: 'bg-rose-50 text-rose-700' },
-  completed: { label: 'Selesai', className: 'bg-stone-100 text-stone-600' },
+  completed: { label: 'Selesai / Hadir', className: 'bg-stone-100 text-stone-600' },
   no_show: { label: 'Tidak Hadir', className: 'bg-violet-50 text-violet-700' },
 };
 
@@ -129,10 +132,12 @@ export default function TableConfig() {
   });
 
   const now = useMemo(() => new Date(), []);
+  
+  // 🟢 Form Reservasi Diperbarui (Menggunakan tableIds Array)
   const [reservationForm, setReservationForm] = useState({
-    guest_name: '',
-    guest_phone: '',
-    table_id: '' as number | '',
+    customer_name: '',
+    customer_phone: '',
+    tableIds: [] as string[],
     branch_id: '' as number | '',
     guest_count: 2,
     reserved_start: toLocalInputValue(new Date(now.getTime() + 60 * 60 * 1000)),
@@ -181,8 +186,6 @@ export default function TableConfig() {
   }, [activeBranchSlug, branchQuery, slug]);
 
   useEffect(() => {
-    // Data eksternal disinkronkan ketika slug atau filter cabang berubah.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchData();
   }, [fetchData]);
 
@@ -204,11 +207,12 @@ export default function TableConfig() {
     reserved: tables.filter((table) => table.status === 3).length,
   }), [tables]);
 
+  // 🟢 Filter Meja untuk Modal Reservasi
   const availableReservationTables = useMemo(() => {
     const selectedBranch = reservationForm.branch_id;
     return tables.filter((table) => {
       const branchMatch = !selectedBranch || Number(table.branch_id) === Number(selectedBranch);
-      return branchMatch && table.status !== 0;
+      return branchMatch && table.status !== 0; // Tampilkan semua kecuali Nonaktif
     });
   }, [reservationForm.branch_id, tables]);
 
@@ -307,36 +311,54 @@ export default function TableConfig() {
   };
 
   const openReservation = () => {
-    setReservationForm((current) => ({
-      ...current,
-      guest_name: '',
-      guest_phone: '',
-      table_id: '',
+    const freshNow = new Date();
+    setReservationForm({
+      customer_name: '',
+      customer_phone: '',
+      tableIds: [], // Reset tables
       branch_id: typeof branchFilter === 'number' ? branchFilter : '',
       guest_count: 2,
+      reserved_start: toLocalInputValue(new Date(freshNow.getTime() + 60 * 60 * 1000)),
+      reserved_end: toLocalInputValue(new Date(freshNow.getTime() + 2 * 60 * 60 * 1000)),
       notes: '',
-    }));
+    });
     setReservationModal(true);
   };
 
+  // 🟢 FUNGSI SUBMIT RESERVASI DENGAN MULTI-MEJA
   const submitReservation = async () => {
-    if (!reservationForm.guest_name.trim() || !reservationForm.table_id) {
-      Toast.fire({ icon: 'warning', title: 'Nama tamu dan meja wajib dipilih' });
+    if (!reservationForm.customer_name.trim()) {
+      Toast.fire({ icon: 'warning', title: 'Nama pemesan wajib diisi' });
       return;
     }
     if (new Date(reservationForm.reserved_end) <= new Date(reservationForm.reserved_start)) {
       Toast.fire({ icon: 'warning', title: 'Waktu selesai harus setelah waktu mulai' });
       return;
     }
+
     setIsSubmitting(true);
     try {
+      const payload = {
+        customer_name: reservationForm.customer_name,
+        customer_phone: reservationForm.customer_phone,
+        guest_count: reservationForm.guest_count,
+        reserved_start: new Date(reservationForm.reserved_start).toISOString(),
+        reserved_end: new Date(reservationForm.reserved_end).toISOString(),
+        table_ids: reservationForm.tableIds, // Mengirimkan Array ID
+        notes: reservationForm.notes,
+        status: 'confirmed', // Otomatis confirmed jika dibuat Admin
+        branch_id: reservationForm.branch_id || null
+      };
+
       const response = await fetch(`/api/pos/reservations?slug=${encodeURIComponent(slug)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(reservationForm),
+        body: JSON.stringify(payload),
       });
+
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.message || 'Gagal membuat reservasi');
+      
       Toast.fire({ icon: 'success', title: 'Reservasi berhasil ditambahkan' });
       setReservationModal(false);
       setActiveSection('reservations');
@@ -349,17 +371,38 @@ export default function TableConfig() {
   };
 
   const updateReservationStatus = async (reservation: Reservation, status: ReservationStatus) => {
-    const response = await fetch(`/api/pos/reservations?slug=${encodeURIComponent(slug)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: reservation.id, status }),
+    const isCancel = status === 'canceled' || status === 'no_show';
+    const actionText = status === 'confirmed' ? 'mengonfirmasi' : status === 'completed' ? 'menandai HADIR' : status === 'canceled' ? 'Membatalkan' : 'menandai TIDAK HADIR';
+
+    const confirm = await Swal.fire({
+      title: 'Apakah Anda Yakin?',
+      text: `Anda akan ${actionText} reservasi ini.`,
+      icon: isCancel ? 'warning' : 'question',
+      showCancelButton: true,
+      confirmButtonColor: isCancel ? '#DC2626' : '#0E5C37',
+      cancelButtonColor: '#9CA3AF',
+      confirmButtonText: 'Ya, Lanjutkan',
+      cancelButtonText: 'Batal',
+      reverseButtons: true,
     });
-    const result = await response.json();
-    if (result.success) {
-      Toast.fire({ icon: 'success', title: 'Status reservasi diperbarui' });
-      fetchData();
-    } else {
-      Toast.fire({ icon: 'error', title: result.message || 'Gagal memperbarui reservasi' });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      const response = await fetch(`/api/pos/reservations?slug=${encodeURIComponent(slug)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: reservation.id, status }),
+      });
+      const result = await response.json();
+      if (result.success) {
+        Toast.fire({ icon: 'success', title: 'Status reservasi diperbarui' });
+        fetchData();
+      } else {
+        Toast.fire({ icon: 'error', title: result.message || 'Gagal memperbarui reservasi' });
+      }
+    } catch (e) {
+      Toast.fire({ icon: 'error', title: 'Terjadi kesalahan sistem' });
     }
   };
 
@@ -473,8 +516,6 @@ export default function TableConfig() {
           </div>
         </div>
 
-
-
         {branches.length > 0 && !activeBranchSlug && (
           <div className="border-b border-stone-100 px-5 py-4">
             <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar" role="tablist" aria-label="Filter cabang">
@@ -532,7 +573,7 @@ export default function TableConfig() {
                     <select value={table.status} onChange={async (event) => {
                       await fetch(`/api/pos/tables?slug=${encodeURIComponent(slug)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: table.id, status: Number(event.target.value) }) });
                       fetchData();
-                    }} className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-[10px] font-bold text-stone-600 outline-none">
+                    }} className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-[10px] font-bold text-stone-600 outline-none cursor-pointer">
                       {Object.entries(TABLE_STATUS).map(([value, item]) => <option key={value} value={value}>{item.label}</option>)}
                     </select>
                     <div className="flex gap-1">
@@ -549,24 +590,38 @@ export default function TableConfig() {
           <div className="divide-y divide-stone-100">
             {reservations.map((reservation) => {
               const status = RESERVATION_STATUS[reservation.status];
+              // 🟢 Resolve Multiple Tables String
+              const tableNames = reservation.table_ids && reservation.table_ids.length > 0 
+                ? reservation.table_ids.map(id => tables.find(t => String(t.id) === String(id))?.table_name || `Meja ${id}`).join(', ')
+                : (reservation.table_name || '-');
+
               return (
                 <div key={reservation.id} className="grid gap-4 p-5 transition hover:bg-stone-50/70 lg:grid-cols-[1.3fr_1fr_auto] lg:items-center">
                   <div className="flex items-start gap-3">
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-[var(--color-primary)]"><CalendarCheck2 className="h-5 w-5" /></div>
                     <div>
-                      <div className="flex flex-wrap items-center gap-2"><h3 className="font-display text-base font-bold text-stone-900">{reservation.guest_name || 'Tamu'}</h3><span className={`rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${status.className}`}>{status.label}</span></div>
-                      <p className="mt-1 text-xs text-stone-500">{reservation.guest_phone || 'Tanpa nomor telepon'} · {reservation.guest_count} tamu</p>
+                      <div className="flex flex-wrap items-center gap-2"><h3 className="font-display text-base font-bold text-stone-900">{reservation.customer_name || 'Tamu'}</h3><span className={`rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${status.className}`}>{status.label}</span></div>
+                      <p className="mt-1 text-xs text-stone-500 flex items-center gap-1"><Phone className="w-3 h-3"/> {reservation.customer_phone || 'Tanpa nomor telepon'} · <Users className="w-3 h-3 ml-1"/> {reservation.guest_count} tamu</p>
                       {reservation.notes && <p className="mt-2 text-xs italic text-stone-400">“{reservation.notes}”</p>}
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div><p className="text-[9px] font-bold uppercase tracking-wider text-stone-400">Meja</p><p className="mt-1 font-bold text-stone-700">{reservation.table_name || '-'} · {reservation.branch_name || 'Outlet utama'}</p></div>
-                    <div><p className="text-[9px] font-bold uppercase tracking-wider text-stone-400">Jadwal</p><p className="mt-1 font-bold text-stone-700">{formatDateTime(reservation.reserved_start)}</p></div>
+                    <div><p className="text-[9px] font-bold uppercase tracking-wider text-stone-400">Meja</p><p className="mt-1 font-bold text-stone-700 leading-tight pr-2">{tableNames} <br/><span className="font-medium text-stone-400">({reservation.branch_name || 'Outlet utama'})</span></p></div>
+                    <div><p className="text-[9px] font-bold uppercase tracking-wider text-stone-400">Jadwal</p><p className="mt-1 font-bold text-stone-700 leading-tight">{formatDateTime(reservation.reserved_start)}</p></div>
                   </div>
                   <div className="flex flex-wrap gap-2 lg:justify-end">
-                    {reservation.status === 'pending' && <button onClick={() => updateReservationStatus(reservation, 'confirmed')} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-[10px] font-bold text-white"><Check className="h-3.5 w-3.5" /> Konfirmasi</button>}
-                    {(reservation.status === 'pending' || reservation.status === 'confirmed') && <button onClick={() => updateReservationStatus(reservation, 'canceled')} className="inline-flex items-center gap-1.5 rounded-xl bg-rose-50 px-3 py-2 text-[10px] font-bold text-rose-600"><XCircle className="h-3.5 w-3.5" /> Batalkan</button>}
-                    {reservation.status === 'confirmed' && <button onClick={() => updateReservationStatus(reservation, 'completed')} className="inline-flex items-center gap-1.5 rounded-xl bg-stone-900 px-3 py-2 text-[10px] font-bold text-white"><CheckCircle2 className="h-3.5 w-3.5" /> Selesai</button>}
+                    {reservation.status === 'pending' && (
+                      <>
+                        <button onClick={() => updateReservationStatus(reservation, 'confirmed')} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-[10px] font-bold text-white"><Check className="h-3.5 w-3.5" /> Konfirmasi</button>
+                        <button onClick={() => updateReservationStatus(reservation, 'canceled')} className="inline-flex items-center gap-1.5 rounded-xl bg-rose-50 px-3 py-2 text-[10px] font-bold text-rose-600"><XCircle className="h-3.5 w-3.5" /> Tolak</button>
+                      </>
+                    )}
+                    {reservation.status === 'confirmed' && (
+                       <>
+                         <button onClick={() => updateReservationStatus(reservation, 'completed')} className="inline-flex items-center gap-1.5 rounded-xl bg-stone-900 px-3 py-2 text-[10px] font-bold text-white"><CheckCircle2 className="h-3.5 w-3.5" /> Hadir</button>
+                         <button onClick={() => updateReservationStatus(reservation, 'no_show')} className="inline-flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-[10px] font-bold text-stone-500"><UserX className="h-3.5 w-3.5" /> Tidak Hadir</button>
+                       </>
+                    )}
                   </div>
                 </div>
               );
@@ -636,13 +691,61 @@ export default function TableConfig() {
             <motion.div initial={{ opacity: 0, y: 24, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 24, scale: 0.97 }} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-[30px] bg-white shadow-2xl">
               <div className="sticky top-0 z-10 flex items-center justify-between border-b border-stone-100 bg-white/95 px-6 py-5 backdrop-blur"><div><p className="text-[9px] font-bold uppercase tracking-[0.22em] text-stone-400">Guest booking</p><h3 className="font-display text-2xl font-bold text-stone-900">Tambah Reservasi</h3></div><button onClick={() => setReservationModal(false)} className="rounded-full bg-stone-100 p-2 text-stone-500"><X className="h-5 w-5" /></button></div>
               <div className="grid gap-5 p-6 sm:grid-cols-2">
-                <label><span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-stone-500">Nama tamu</span><input value={reservationForm.guest_name} onChange={(event) => setReservationForm((form) => ({ ...form, guest_name: event.target.value }))} placeholder="Nama pemesan" className={fieldClass} /></label>
-                <label><span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-stone-500">Nomor telepon</span><input value={reservationForm.guest_phone} onChange={(event) => setReservationForm((form) => ({ ...form, guest_phone: event.target.value }))} placeholder="08xxxxxxxxxx" className={fieldClass} /></label>
-                {branches.length > 0 && !activeBranchSlug && <label><span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-stone-500">Cabang</span><select value={reservationForm.branch_id} onChange={(event) => setReservationForm((form) => ({ ...form, branch_id: event.target.value ? Number(event.target.value) : '', table_id: '' }))} className={fieldClass}><option value="">Outlet utama</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>}
-                <label><span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-stone-500">Pilih meja</span><select value={reservationForm.table_id} onChange={(event) => setReservationForm((form) => ({ ...form, table_id: Number(event.target.value) }))} className={fieldClass}><option value="">Pilih meja tersedia</option>{availableReservationTables.map((table) => <option key={table.id} value={table.id}>{table.table_name} · {table.capacity} orang</option>)}</select></label>
+                <label><span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-stone-500">Nama tamu</span><input value={reservationForm.customer_name} onChange={(event) => setReservationForm((form) => ({ ...form, customer_name: event.target.value }))} placeholder="Nama pemesan" className={fieldClass} /></label>
+                <label><span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-stone-500">Nomor telepon</span><input value={reservationForm.customer_phone} onChange={(event) => setReservationForm((form) => ({ ...form, customer_phone: event.target.value }))} placeholder="08xxxxxxxxxx" className={fieldClass} /></label>
+                
+                {branches.length > 0 && !activeBranchSlug && <label className="sm:col-span-2"><span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-stone-500">Cabang</span><select value={reservationForm.branch_id} onChange={(event) => setReservationForm((form) => ({ ...form, branch_id: event.target.value ? Number(event.target.value) : '', tableIds: [] }))} className={fieldClass}><option value="">Outlet utama</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>}
+                
                 <label><span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-stone-500">Mulai</span><input type="datetime-local" value={reservationForm.reserved_start} onChange={(event) => setReservationForm((form) => ({ ...form, reserved_start: event.target.value }))} className={fieldClass} /></label>
                 <label><span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-stone-500">Selesai</span><input type="datetime-local" value={reservationForm.reserved_end} onChange={(event) => setReservationForm((form) => ({ ...form, reserved_end: event.target.value }))} className={fieldClass} /></label>
-                <label><span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-stone-500">Jumlah tamu</span><input type="number" min="1" value={reservationForm.guest_count} onChange={(event) => setReservationForm((form) => ({ ...form, guest_count: Number(event.target.value) }))} className={fieldClass} /></label>
+                <label className="sm:col-span-2"><span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-stone-500">Jumlah tamu</span><input type="number" min="1" value={reservationForm.guest_count} onChange={(event) => setReservationForm((form) => ({ ...form, guest_count: Number(event.target.value) }))} className={fieldClass} /></label>
+
+                {/* 🟢 TAMPILAN PEMILIHAN MULTI-MEJA DENGAN KAPASITAS PAX */}
+                <div className="sm:col-span-2">
+                  <label className="mb-3 block text-[10px] font-bold uppercase tracking-[0.14em] text-stone-500">
+                    Pilih Meja Tersedia (Bisa Lebih Dari Satu)
+                  </label>
+                  {availableReservationTables.length === 0 ? (
+                    <div className="p-4 bg-stone-50 rounded-xl border border-dashed border-stone-200 text-center text-sm font-medium text-stone-400">
+                      Belum ada data meja di cabang ini.
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-1 custom-scrollbar">
+                      {availableReservationTables.map(t => {
+                        const isSelected = reservationForm.tableIds.includes(String(t.id));
+                        const paxCount = t.capacity || 4; 
+                        
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => {
+                              setReservationForm(prev => ({
+                                ...prev,
+                                tableIds: isSelected 
+                                  ? prev.tableIds.filter(id => id !== String(t.id))
+                                  : [...prev.tableIds, String(t.id)]
+                              }))
+                            }}
+                            className={`flex flex-col items-start p-3 rounded-xl border-2 transition-all text-left w-36 ${
+                              isSelected 
+                                ? 'bg-emerald-50 border-[var(--color-primary)] shadow-sm' 
+                                : 'bg-white border-stone-200 hover:border-emerald-200'
+                            }`}
+                          >
+                            <span className={`font-black text-sm leading-none truncate w-full ${isSelected ? 'text-[var(--color-primary)]' : 'text-stone-700'}`}>
+                              {t.table_name}
+                            </span>
+                            <span className={`text-[10px] font-bold uppercase tracking-widest mt-1.5 flex items-center gap-1 ${isSelected ? 'text-emerald-600' : 'text-stone-400'}`}>
+                              <Armchair className="w-3 h-3" /> {paxCount} Pax
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 <label className="sm:col-span-2"><span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-stone-500">Catatan</span><textarea value={reservationForm.notes} onChange={(event) => setReservationForm((form) => ({ ...form, notes: event.target.value }))} rows={3} placeholder="Permintaan khusus, acara ulang tahun, dan sebagainya" className={fieldClass} /></label>
                 <button onClick={submitReservation} disabled={isSubmitting} className="flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-primary)] py-4 text-sm font-bold text-white disabled:opacity-50 sm:col-span-2">{isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <CalendarCheck2 className="h-5 w-5" />} Simpan Reservasi</button>
               </div>
@@ -656,7 +759,7 @@ export default function TableConfig() {
           <div className="fixed inset-0 z-[110] flex items-center justify-center bg-stone-950/70 p-4 backdrop-blur-sm">
             <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} className="w-full max-w-sm rounded-[30px] bg-white p-6 shadow-2xl">
               <div className="mb-5 flex items-center justify-between"><div><p className="text-[9px] font-bold uppercase tracking-[0.18em] text-stone-400">QR ordering</p><h3 className="font-display text-xl font-bold">{qrModal.table_name}</h3></div><button onClick={() => setQrModal(null)} className="rounded-full bg-stone-100 p-2"><X className="h-5 w-5" /></button></div>
-              <div ref={qrRef} className="flex flex-col items-center rounded-3xl border-4 border-[var(--color-primary)] bg-white p-7 text-center"><img src="/logo.png" alt="EKASIR" className="mb-2 w-20" crossOrigin="anonymous" /><h2 className="font-display text-2xl font-bold">{qrModal.table_name}</h2><p className="mb-4 mt-1 text-[9px] font-bold uppercase tracking-wider text-stone-400">Scan untuk pesan & bayar</p><div className="rounded-2xl bg-stone-100 p-3"><QRCodeSVG value={qrUrl(qrModal)} size={170} /></div><p className="mt-4 text-[10px] font-bold text-stone-400">{qrModal.branch_name || 'Outlet utama'} · {qrModal.table_code}</p></div>
+              <div ref={qrRef} className="flex flex-col items-center rounded-3xl border-4 border-[var(--color-primary)] bg-white p-7 text-center"><img src="/logo.png" alt="Mitra Logo" className="mb-2 w-20" crossOrigin="anonymous" /><h2 className="font-display text-2xl font-bold">{qrModal.table_name}</h2><p className="mb-4 mt-1 text-[9px] font-bold uppercase tracking-wider text-stone-400">Scan untuk pesan & bayar</p><div className="rounded-2xl bg-stone-100 p-3"><QRCodeSVG value={qrUrl(qrModal)} size={170} /></div><p className="mt-4 text-[10px] font-bold text-stone-400">{qrModal.branch_name || 'Outlet utama'} · {qrModal.table_code}</p></div>
               <button onClick={downloadQR} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--color-primary)] py-3.5 text-sm font-bold text-white"><Download className="h-4 w-4" /> Unduh QR</button>
             </motion.div>
           </div>

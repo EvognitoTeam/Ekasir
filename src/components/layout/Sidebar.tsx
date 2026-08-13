@@ -6,6 +6,7 @@ import {
   Circle,
   ClipboardList,
   HelpCircle,
+  CalendarClock,
   History,
   Radio,
   ShoppingBag,
@@ -17,7 +18,7 @@ import { useCartStore } from '@/store/cart.store';
 import { useTableStore } from '@/store/table.store';
 
 interface Props {
-  onViewChange: (view: 'menu' | 'tracking' | 'history' | 'profile' | 'help') => void;
+  onViewChange: (view: 'menu' | 'tracking' | 'history' | 'profile' | 'reservation' | 'help') => void;
   activeView: string;
   onOpenCart: () => void;
   mitraName?: string;
@@ -49,6 +50,7 @@ export default function Sidebar({
     },
     { id: 'history' as const, label: 'Riwayat', icon: History, visible: true },
     { id: 'help' as const, label: 'Bantuan', icon: HelpCircle, visible: true },
+    { id: 'reservation' as const, label: 'Reservasi', icon: CalendarClock, visible: true },
     { id: 'profile' as const, label: 'Profil', icon: User, visible: true },
   ].filter((item) => item.visible);
 

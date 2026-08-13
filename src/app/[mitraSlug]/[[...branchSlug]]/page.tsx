@@ -26,6 +26,7 @@ import OrderHistoryView from '@/components/views/OrderHistoryView';
 import ProfileView from '@/components/views/ProfileView';
 import RoastGalleryView from '@/components/views/RoastGalleryView';
 import SupportView from '@/components/views/SupportView';
+import ReservationView from '@/components/views/ReservationView'; // 🟢 Import Reservation View
 import { useMenuFilter } from '@/hooks/useMenuFilter';
 import { useCartStore } from '@/store/cart.store';
 import { useMenuStore } from '@/store/menu.store';
@@ -41,9 +42,10 @@ type ViewState =
   | 'help'
   | 'profile'
   | 'checkout'
+  | 'reservation'
   | 'tracking'
   | 'coupons';
-
+  
 const CUSTOMER_VIEWS: readonly ViewState[] = [
   'menu',
   'roasts',
@@ -51,6 +53,7 @@ const CUSTOMER_VIEWS: readonly ViewState[] = [
   'help',
   'profile',
   'checkout',
+  'reservation',
   'tracking',
   'coupons',
 ];
@@ -74,41 +77,23 @@ type ResolvedAppRoute =
 function resolveAppRoute(
   segments: string[] | undefined,
 ): ResolvedAppRoute {
-  const routeSegments =
-    segments ?? [];
+  const routeSegments = segments ?? [];
 
-  /*
-   * /{mitraSlug}/kiosk
-   */
-  if (
-    routeSegments.length === 1 &&
-    routeSegments[0] === 'kiosk'
-  ) {
+  if (routeSegments.length === 1 && routeSegments[0] === 'kiosk') {
     return {
       mode: 'kiosk',
       branchSlug: null,
     };
   }
 
-  /*
-   * /{mitraSlug}/{branchSlug}/kiosk
-   */
-  if (
-    routeSegments.length === 2 &&
-    routeSegments[1] === 'kiosk'
-  ) {
+  if (routeSegments.length === 2 && routeSegments[1] === 'kiosk') {
     return {
       mode: 'kiosk',
-      branchSlug:
-        routeSegments[0] ||
-        null,
+      branchSlug: routeSegments[0] || null,
     };
   }
 
-  const customerRoute =
-    resolveCustomerRoute(
-      routeSegments,
-    );
+  const customerRoute = resolveCustomerRoute(routeSegments);
 
   return {
     mode: 'customer',
@@ -141,33 +126,18 @@ export default function CustomerPage() {
   const params = useParams<{ mitraSlug: string; branchSlug?: string[] }>();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const slug =
-    params.mitraSlug;
+  const slug = params.mitraSlug;
 
-  const resolvedRoute =
-    resolveAppRoute(
-      params.branchSlug,
-    );
+  const resolvedRoute = resolveAppRoute(params.branchSlug);
 
-  const isKiosk =
-    resolvedRoute.mode ===
-    'kiosk';
+  const isKiosk = resolvedRoute.mode === 'kiosk';
+  const branchSlug = resolvedRoute.branchSlug;
 
-  const branchSlug =
-    resolvedRoute.branchSlug;
-
-  const currentView:
-    ViewState =
-    resolvedRoute.mode ===
-    'customer'
-      ? resolvedRoute.currentView
-      : 'menu';
+  const currentView: ViewState =
+    resolvedRoute.mode === 'customer' ? resolvedRoute.currentView : 'menu';
 
   const hasExplicitView =
-    resolvedRoute.mode ===
-    'customer'
-      ? resolvedRoute.hasExplicitView
-      : false;
+    resolvedRoute.mode === 'customer' ? resolvedRoute.hasExplicitView : false;
 
   const { setMenu, setLoading, items, categories, isLoading } = useMenuStore();
   const addItem = useCartStore((state) => state.addItem);
@@ -198,7 +168,6 @@ export default function CustomerPage() {
       currentOrder.status !== 'cancelled',
   );
 
-
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return [];
@@ -217,10 +186,7 @@ export default function CustomerPage() {
     [items],
   );
 
-
-  const customerBasePath = branchSlug
-    ? `/${slug}/${branchSlug}`
-    : `/${slug}`;
+  const customerBasePath = branchSlug ? `/${slug}/${branchSlug}` : `/${slug}`;
 
   const preservedQueryString = useMemo(() => {
     const query = new URLSearchParams(searchParams.toString());
@@ -237,34 +203,12 @@ export default function CustomerPage() {
   );
 
   useEffect(() => {
-    if (
-      !slug ||
-      isKiosk ||
-      hasExplicitView
-    ) {
-      return;
-    }
-
-    router.replace(
-      buildCustomerUrl(
-        'menu',
-      ),
-    );
-  }, [
-    buildCustomerUrl,
-    hasExplicitView,
-    isKiosk,
-    router,
-    slug,
-  ]);
+    if (!slug || isKiosk || hasExplicitView) return;
+    router.replace(buildCustomerUrl('menu'));
+  }, [buildCustomerUrl, hasExplicitView, isKiosk, router, slug]);
 
   useEffect(() => {
-    if (
-      !slug ||
-      isKiosk
-    ) {
-      return;
-    }
+    if (!slug || isKiosk) return;
 
     const controller = new AbortController();
     const tableCode = searchParams.get('tableCode');
@@ -285,12 +229,8 @@ export default function CustomerPage() {
         if (tableCode) productQuery.set('tableCode', tableCode);
 
         const [productResponse, couponResponse] = await Promise.all([
-          fetch(`/api/products?${productQuery.toString()}`, {
-            signal: controller.signal,
-          }),
-          fetch(`/api/coupons?${couponQuery.toString()}`, {
-            signal: controller.signal,
-          }),
+          fetch(`/api/products?${productQuery.toString()}`, { signal: controller.signal }),
+          fetch(`/api/coupons?${couponQuery.toString()}`, { signal: controller.signal }),
         ]);
 
         const productResult = await productResponse.json();
@@ -311,7 +251,6 @@ export default function CustomerPage() {
 
         if (couponResponse.ok) {
           const couponResult = await couponResponse.json();
-
           if (couponResult.success) {
             setPromos(
               couponResult.data.filter(
@@ -323,29 +262,15 @@ export default function CustomerPage() {
         }
       } catch (loadError) {
         if (loadError instanceof DOMException && loadError.name === 'AbortError') return;
-
         console.error('Gagal memuat halaman customer:', loadError);
         setLoading(false);
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : 'Gagal terhubung ke server',
-        );
+        setError(loadError instanceof Error ? loadError.message : 'Gagal terhubung ke server');
       }
     }
 
     void loadCustomerData();
-
     return () => controller.abort();
-  }, [
-    branchSlug,
-    isKiosk,
-    searchParams,
-    setLoading,
-    setMenu,
-    setTable,
-    slug,
-  ]);
+  }, [branchSlug, isKiosk, searchParams, setLoading, setMenu, setTable, slug]);
 
   const handleOpenDetail = (product: MenuItem) => {
     setSelectedProduct(product);
@@ -368,20 +293,11 @@ export default function CustomerPage() {
     if (view === 'menu') {
       setSelectedCategoryId(null);
     }
-
     router.push(buildCustomerUrl(view));
   };
 
   if (isKiosk) {
-    return (
-      <KioskApp
-        mitraSlug={slug}
-        branchSlug={
-          branchSlug ??
-          undefined
-        }
-      />
-    );
+    return <KioskApp mitraSlug={slug} branchSlug={branchSlug ?? undefined} />;
   }
 
   if (error) {
@@ -394,15 +310,9 @@ export default function CustomerPage() {
           <h1 className="mb-2 font-display text-3xl font-bold text-[var(--color-on-surface)]">
             Toko tidak dapat dibuka
           </h1>
-          <p className="max-w-sm text-sm text-[var(--color-on-surface-variant)]">
-            {error}
-          </p>
+          <p className="max-w-sm text-sm text-[var(--color-on-surface-variant)]">{error}</p>
         </div>
-        <button
-          type="button"
-          onClick={() => router.push('/')}
-          className="flex items-center gap-2 rounded-full bg-stone-900 px-6 py-3 text-sm font-bold text-white"
-        >
+        <button type="button" onClick={() => router.push('/')} className="flex items-center gap-2 rounded-full bg-stone-900 px-6 py-3 text-sm font-bold text-white">
           <ChevronLeft size={18} /> Kembali
         </button>
       </div>
@@ -414,17 +324,14 @@ export default function CustomerPage() {
       <div className="flex min-h-[100dvh] items-center justify-center bg-[var(--color-surface)]">
         <div className="text-center">
           <div className="mx-auto mb-4 h-11 w-11 animate-spin rounded-full border-4 border-stone-200 border-t-[var(--color-primary)]" />
-          <p className="font-display text-sm text-[var(--color-primary)]">
-            Menyiapkan menu...
-          </p>
+          <p className="font-display text-sm text-[var(--color-primary)]">Menyiapkan menu...</p>
         </div>
       </div>
     );
   }
 
-  const isMainShellView = ['menu', 'roasts', 'history', 'help', 'profile', 'coupons'].includes(
-    currentView,
-  );
+  // 🟢 Hilangkan 'reservation' dari shell view agar dirender terpisah secara penuh
+  const isMainShellView = ['menu', 'roasts', 'history', 'help', 'profile', 'coupons'].includes(currentView);
   const isCategoryDetail = currentView === 'menu' && selectedCategoryId !== null;
   const showBottomNav = isMainShellView && currentView !== 'coupons';
 
@@ -449,17 +356,11 @@ export default function CustomerPage() {
                 className={`relative h-full overscroll-contain no-scrollbar ${
                   isCategoryDetail ? 'bg-[#F4F4F5]' : 'bg-[var(--color-surface)]'
                 } ${
-                  showBottomNav
-                    ? 'overflow-y-auto pb-20 md:pb-0'
-                    : 'overflow-y-auto pb-0'
+                  showBottomNav ? 'overflow-y-auto pb-20 md:pb-0' : 'overflow-y-auto pb-0'
                 }`}
               >
                 {currentView !== 'coupons' && (
-                  <Header
-                    mitraName={mitraName}
-                    branchName={branchName}
-                    onSearch={() => setIsSearchOpen(true)}
-                  />
+                  <Header mitraName={mitraName} branchName={branchName} onSearch={() => setIsSearchOpen(true)} />
                 )}
 
                 {currentView === 'menu' && (
@@ -492,136 +393,62 @@ export default function CustomerPage() {
 
                     {!isCategoryDetail ? (
                       <>
-                        {featuredItem && (
-                          <FeaturedHero item={featuredItem} onExplore={handleOpenDetail} />
-                        )}
-                        <PromoBanner
-                          activePromos={promos}
-                          onNavigate={() => changeView('coupons')}
-                        />
-                        <RecommendedHighlights
-                          items={items}
-                          onSelectItem={handleOpenDetail}
-                        />
-                        <CategoryList
-                          categories={categories}
-                          allItems={items}
-                          onSelectCategory={setSelectedCategoryId}
-                        />
-                        <Footer
-                          mitraName={mitraName}
-                          mitraAddress={mitraAddress}
-                          mitraWelcome={mitraWelcome}
-                        />
+                        {featuredItem && <FeaturedHero item={featuredItem} onExplore={handleOpenDetail} />}
+                        <PromoBanner activePromos={promos} onNavigate={() => changeView('coupons')} />
+                        <RecommendedHighlights items={items} onSelectItem={handleOpenDetail} />
+                        <CategoryList categories={categories} allItems={items} onSelectCategory={setSelectedCategoryId} />
+                        <Footer mitraName={mitraName} mitraAddress={mitraAddress} mitraWelcome={mitraWelcome} />
                       </>
                     ) : (
                       <>
-                        <CategoryBar
-                          categories={categories}
-                          items={items}
-                          selectedCategoryId={selectedCategoryId}
-                          onSelectCategory={setSelectedCategoryId}
-                        />
-                        <MenuGrid
-                          items={filteredItems}
-                          categories={categories}
-                          selectedCategoryId={selectedCategoryId}
-                          isLoading={false}
-                          onSelectItem={handleOpenDetail}
-                          onSelectCategory={setSelectedCategoryId}
-                        />
+                        <CategoryBar categories={categories} items={items} selectedCategoryId={selectedCategoryId} onSelectCategory={setSelectedCategoryId} />
+                        <MenuGrid items={filteredItems} categories={categories} selectedCategoryId={selectedCategoryId} isLoading={false} onSelectItem={handleOpenDetail} onSelectCategory={setSelectedCategoryId} />
                       </>
                     )}
                   </>
                 )}
 
-                {currentView === 'roasts' && (
-                  <RoastGalleryView items={items} onSelectItem={handleOpenDetail} />
-                )}
-
-                {currentView === 'history' && (
-                  <OrderHistoryView
-                    onBackToMenu={() => changeView('menu')}
-                    onTrackOrder={() => changeView('tracking')}
-                  />
-                )}
-
+                {currentView === 'roasts' && <RoastGalleryView items={items} onSelectItem={handleOpenDetail} />}
+                {currentView === 'history' && <OrderHistoryView onBackToMenu={() => changeView('menu')} onTrackOrder={() => changeView('tracking')} />}
                 {currentView === 'help' && <SupportView />}
-
-                {currentView === 'profile' && (
-                  <ProfileView
-                    onViewHistory={() => changeView('history')}
-                    onViewCoupons={() => changeView('coupons')}
-                  />
-                )}
-
-                {currentView === 'coupons' && (
-                  <CouponView onBack={() => changeView('profile')} />
-                )}
+                {currentView === 'profile' && <ProfileView onViewHistory={() => changeView('history')} onViewCoupons={() => changeView('coupons')} />}
+                {currentView === 'coupons' && <CouponView onBack={() => changeView('profile')} />}
               </main>
+            </div>
+          )}
+
+          {/* 🟢 Render Reservation View */}
+          {currentView === 'reservation' && (
+            <div className="h-full overflow-y-auto no-scrollbar bg-stone-50">
+              <ReservationView onBack={() => changeView('menu')} cafeName={mitraName} />
             </div>
           )}
 
           {currentView === 'checkout' && (
             <div className="h-full overflow-y-auto no-scrollbar">
-              <CheckoutView
-                onBack={() => changeView('menu')}
-                onSuccess={() => changeView('tracking')}
-              />
+              <CheckoutView onBack={() => changeView('menu')} onSuccess={() => changeView('tracking')} />
             </div>
           )}
 
           {currentView === 'tracking' && (
             <div className="h-full overflow-y-auto no-scrollbar">
-              <OrderTrackingView
-                onBackToMenu={() => changeView('menu')}
-                onViewRoasts={() => changeView('roasts')}
-              />
+              <OrderTrackingView onBackToMenu={() => changeView('menu')} onViewRoasts={() => changeView('roasts')} />
             </div>
           )}
 
-          {showBottomNav && (
-            <BottomNav activeView={currentView} onViewChange={changeView} />
-          )}
+          {showBottomNav && <BottomNav activeView={currentView} onViewChange={changeView} />}
 
           {isMainShellView && (
-            <FloatingCart
-              showBottomNav={showBottomNav}
-              onOpenCart={() => setIsCartOpen(true)}
-              onCheckout={() => changeView('checkout')}
-            />
+            <FloatingCart showBottomNav={showBottomNav} onOpenCart={() => setIsCartOpen(true)} onCheckout={() => changeView('checkout')} />
           )}
 
-          <CartSheet
-            isOpen={isCartOpen}
-            onClose={() => setIsCartOpen(false)}
-            onCheckout={() => {
-              setIsCartOpen(false);
-              changeView('checkout');
-            }}
-          />
+          <CartSheet isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} onCheckout={() => { setIsCartOpen(false); changeView('checkout'); }} />
 
-          <SearchOverlay
-            isOpen={isSearchOpen}
-            onClose={() => { setIsSearchOpen(false); setSearchQuery(''); }}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            results={searchResults}
-            onSelectResult={(product) => {
-              setIsSearchOpen(false);
-              setSearchQuery('');
-              handleOpenDetail(product);
-            }}
-          />
+          <SearchOverlay isOpen={isSearchOpen} onClose={() => { setIsSearchOpen(false); setSearchQuery(''); }} searchQuery={searchQuery} setSearchQuery={setSearchQuery} results={searchResults} onSelectResult={(product) => { setIsSearchOpen(false); setSearchQuery(''); handleOpenDetail(product); }} />
 
           <AnimatePresence>
             {isDetailOpen && selectedProduct && (
-              <ProductDetailView
-                key={selectedProduct.id}
-                item={selectedProduct}
-                onClose={() => setIsDetailOpen(false)}
-                onAddToCart={handleAddToCart}
-              />
+              <ProductDetailView key={selectedProduct.id} item={selectedProduct} onClose={() => setIsDetailOpen(false)} onAddToCart={handleAddToCart} />
             )}
           </AnimatePresence>
         </div>

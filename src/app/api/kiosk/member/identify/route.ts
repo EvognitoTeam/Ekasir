@@ -15,6 +15,7 @@ import {
 } from '@/db';
 
 import {
+  loyaltyPoints,
   mitra,
   users,
 } from '@/db/schema';
@@ -73,6 +74,10 @@ export async function POST(
       );
     }
 
+    // =========================================================
+    // 1. CARI MITRA BERDASARKAN SLUG
+    // =========================================================
+
     const [
       currentMitra,
     ] =
@@ -109,8 +114,16 @@ export async function POST(
       );
     }
 
+    // =========================================================
+    // 2. NORMALISASI IDENTIFIER
+    // =========================================================
+
     const normalizedIdentifier =
       identifier.toLowerCase();
+
+    // =========================================================
+    // 3. CARI MEMBER
+    // =========================================================
 
     const [
       member,
@@ -165,20 +178,140 @@ export async function POST(
       );
     }
 
+    // =========================================================
+    // 4. AMBIL TOTAL POINTS MEMBER
+    // =========================================================
+    //
+    // Karena loyalty_points dapat memiliki record berdasarkan
+    // branch_id, kita jumlahkan seluruh saldo poin member
+    // dalam mitra tersebut.
+    //
+    // Contoh:
+    // Branch A = 500
+    // Branch B = 300
+    // Branch C = 200
+    // ----------------
+    // Total     = 1000
+    //
+    // =========================================================
+
+    const [
+      loyalty,
+    ] =
+      await db
+        .select({
+          points:
+            sql<number>`
+              COALESCE(
+                SUM(${loyaltyPoints.points}),
+                0
+              )
+            `.as('points'),
+
+          lifetimePointsEarned:
+            sql<number>`
+              COALESCE(
+                SUM(${loyaltyPoints.lifetime_points_earned}),
+                0
+              )
+            `.as(
+              'lifetime_points_earned',
+            ),
+
+          lifetimePointsRedeemed:
+            sql<number>`
+              COALESCE(
+                SUM(${loyaltyPoints.lifetime_points_redeemed}),
+                0
+              )
+            `.as(
+              'lifetime_points_redeemed',
+            ),
+
+          lifetimeSpending:
+            sql<number>`
+              COALESCE(
+                SUM(${loyaltyPoints.lifetime_spending}),
+                0
+              )
+            `.as(
+              'lifetime_spending',
+            ),
+        })
+        .from(loyaltyPoints)
+        .where(
+          and(
+            eq(
+              loyaltyPoints.user_id,
+              member.id,
+            ),
+            eq(
+              loyaltyPoints.mitra_id,
+              currentMitra.id,
+            ),
+          ),
+        );
+
+    // =========================================================
+    // 5. NORMALISASI DATA POINTS
+    // =========================================================
+
+    const points =
+      Number(
+        loyalty?.points ?? 0,
+      );
+
+    const lifetimePointsEarned =
+      Number(
+        loyalty?.lifetimePointsEarned ??
+          0,
+      );
+
+    const lifetimePointsRedeemed =
+      Number(
+        loyalty?.lifetimePointsRedeemed ??
+          0,
+      );
+
+    const lifetimeSpending =
+      Number(
+        loyalty?.lifetimeSpending ??
+          0,
+      );
+
+    // =========================================================
+    // 6. RESPONSE
+    // =========================================================
+
     return NextResponse.json({
       success: true,
+
       data: {
         userId:
           member.id,
+
         memberId:
           member.memberId,
+
         name:
           member.name,
+
         email:
           member.email,
+
         phone:
           member.phone ??
           null,
+
+        // Saldo poin saat ini
+        points,
+
+        // Informasi tambahan loyalty
+        lifetimePointsEarned,
+
+        lifetimePointsRedeemed,
+
+        lifetimeSpending,
       },
     });
   } catch (error) {

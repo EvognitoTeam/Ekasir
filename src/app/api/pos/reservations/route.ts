@@ -1,139 +1,189 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
-import { branches, mitra, reservations, tableList } from '@/db/schema';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { mitra, reservations, reservationTableList } from '@/db/schema'; 
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 import { jwtVerify } from 'jose';
 
+export const dynamic = 'force-dynamic';
+
 const SECRET_KEY = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'rahasia-super-aman-evokasir-2026',
+  process.env.JWT_SECRET || 'rahasia-super-aman-evokasir-2026'
 );
 
 async function getAuthPayload() {
-  const token = (await cookies()).get('ekasir_session')?.value;
+  const cookieStore = await cookies();
+  const token = cookieStore.get('ekasir_session')?.value;
   if (!token) return null;
+
   try {
-    return (await jwtVerify(token, SECRET_KEY)).payload as { branchId?: number | string };
-  } catch {
+    const verified = await jwtVerify(token, SECRET_KEY);
+    return verified.payload as any;
+  } catch (err) {
     return null;
   }
 }
 
-async function resolveMitra(slug: string) {
-  return db.select().from(mitra).where(eq(mitra.mitra_slug, slug)).limit(1);
-}
-
+// ============================================================================
+// [GET] AMBIL DAFTAR RESERVASI (Dengan Relasi Multi-Meja)
+// ============================================================================
 export async function GET(request: Request) {
   try {
-    const payload = await getAuthPayload();
-    if (!payload) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-    const { searchParams } = new URL(request.url);
-    const slug = searchParams.get('slug');
-    const requestedBranchId = searchParams.get('branch_id');
-    if (!slug) return NextResponse.json({ success: false, message: 'Slug diperlukan' }, { status: 400 });
-
-    const foundMitra = await resolveMitra(slug);
-    if (!foundMitra.length) return NextResponse.json({ success: false, message: 'Mitra tidak ditemukan' }, { status: 404 });
-
-    const conditions = [eq(reservations.mitra_id, foundMitra[0].id), isNull(reservations.deletedAt)];
-    const finalBranchId = payload.branchId || requestedBranchId;
-    if (finalBranchId === 'main') {
-      conditions.push(isNull(reservations.branch_id));
-    } else if (finalBranchId) {
-      conditions.push(eq(reservations.branch_id, Number(finalBranchId)));
+    const authPayload = await getAuthPayload();
+    if (!authPayload) {
+      return NextResponse.json({ success: false, message: 'Unauthorized.' }, { status: 401 });
     }
 
-    /* filter branch applied above */
+    const { searchParams } = new URL(request.url);
+    const slug = searchParams.get('slug');
+    const reqBranchId = searchParams.get('branch_id'); 
 
-    const data = await db
-      .select({
-        id: reservations.id,
-        guest_name: reservations.guest_name,
-        guest_phone: reservations.guest_phone,
-        table_id: reservations.table_id,
-        table_name: tableList.table_name,
-        branch_id: reservations.branch_id,
-        branch_name: branches.name,
-        reserved_start: reservations.reserved_start,
-        reserved_end: reservations.reserved_end,
-        guest_count: reservations.guest_count,
-        status: reservations.status,
-        notes: reservations.notes,
-      })
+    if (!slug) return NextResponse.json({ success: false, message: 'Slug wajib disertakan' }, { status: 400 });
+
+    const foundMitra = await db.select().from(mitra).where(eq(mitra.mitra_slug, slug)).limit(1);
+    if (foundMitra.length === 0) return NextResponse.json({ success: false, message: 'Mitra tidak ditemukan' }, { status: 404 });
+
+    const currentMitra = foundMitra[0];
+    const finalBranchId = authPayload.branchId ? Number(authPayload.branchId) : (reqBranchId ? Number(reqBranchId) : null);
+
+    const conditions = [eq(reservations.mitra_id, currentMitra.id)];
+    if (finalBranchId) conditions.push(eq(reservations.branch_id, finalBranchId));
+
+    // 1. Ambil data reservasi utama
+    const data = await db.select()
       .from(reservations)
-      .leftJoin(tableList, eq(reservations.table_id, tableList.id))
-      .leftJoin(branches, eq(reservations.branch_id, branches.id))
       .where(and(...conditions))
-      .orderBy(asc(reservations.reserved_start));
+      .orderBy(desc(reservations.createdAt));
 
-    return NextResponse.json({ success: true, data });
+    // 2. Ambil relasi multi-meja jika ada
+    const resIds = data.map(r => r.id);
+    let tableMappings: any[] = [];
+    
+    if (resIds.length > 0) {
+      tableMappings = await db.select().from(reservationTableList).where(inArray(reservationTableList.reservation_id, resIds));
+    }
+
+    // 3. Sisipkan array table_ids ke dalam masing-masing reservasi
+    const formattedData = data.map(r => {
+      const tIds = tableMappings.filter(m => m.reservation_id === r.id).map(m => m.table_list_id);
+      return { ...r, table_ids: tIds };
+    });
+
+    return NextResponse.json({ success: true, data: formattedData });
   } catch (error) {
-    console.error('GET reservations error:', error);
-    return NextResponse.json({ success: false, message: 'Gagal mengambil reservasi' }, { status: 500 });
+    console.error("GET Reservations API Error:", error);
+    return NextResponse.json({ success: false, message: 'Terjadi kesalahan server' }, { status: 500 });
   }
 }
 
+// ============================================================================
+// [POST] BUAT RESERVASI (Support Multi-Meja)
+// ============================================================================
 export async function POST(request: Request) {
   try {
-    const payload = await getAuthPayload();
-    if (!payload) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    const authPayload = await getAuthPayload();
     const { searchParams } = new URL(request.url);
     const slug = searchParams.get('slug');
+    
+    if (!slug) return NextResponse.json({ success: false, message: 'Slug wajib disertakan' }, { status: 400 });
+
+    const foundMitra = await db.select().from(mitra).where(eq(mitra.mitra_slug, slug)).limit(1);
+    if (foundMitra.length === 0) return NextResponse.json({ success: false, message: 'Mitra tidak ditemukan' }, { status: 404 });
+
+    const currentMitra = foundMitra[0];
     const body = await request.json();
-    if (!slug || !body.guest_name || !body.table_id || !body.reserved_start || !body.reserved_end) {
-      return NextResponse.json({ success: false, message: 'Data reservasi belum lengkap' }, { status: 400 });
+
+    // 🟢 Disesuaikan dengan Skema Drizzle yang baru
+    const { 
+      customer_name, 
+      customer_phone, 
+      guest_count, 
+      reserved_start, 
+      reserved_end, 
+      table_ids, 
+      notes, 
+      status, 
+      branch_id 
+    } = body;
+
+    if (!customer_name || !guest_count || !reserved_start || !reserved_end) {
+      return NextResponse.json({ success: false, message: 'Data wajib belum lengkap' }, { status: 400 });
     }
 
-    const foundMitra = await resolveMitra(slug);
-    if (!foundMitra.length) return NextResponse.json({ success: false, message: 'Mitra tidak ditemukan' }, { status: 404 });
-    const finalBranchId = payload.branchId ? Number(payload.branchId) : body.branch_id ? Number(body.branch_id) : null;
+    const finalStatus = authPayload ? (status || 'confirmed') : 'pending';
+    const finalBranchId = authPayload?.branchId ? Number(authPayload.branchId) : (branch_id ? Number(branch_id) : null);
 
-    await db.insert(reservations).values({
-      mitra_id: foundMitra[0].id,
-      branch_id: finalBranchId,
-      table_id: Number(body.table_id),
-      guest_name: String(body.guest_name).trim().slice(0, 120),
-      guest_phone: body.guest_phone ? String(body.guest_phone).trim().slice(0, 30) : null,
-      reserved_start: new Date(body.reserved_start),
-      reserved_end: new Date(body.reserved_end),
-      guest_count: Math.max(Number(body.guest_count || 1), 1),
-      status: 'pending',
-      notes: body.notes ? String(body.notes) : null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+    // 🟢 Gunakan Transaction agar Insert Reservasi dan Pivot Table aman
+    await db.transaction(async (tx) => {
+      // 1. Simpan Reservasi Utama
+      const [insertRes] = await tx.insert(reservations).values({
+        mitra_id: currentMitra.id,
+        branch_id: finalBranchId,
+        customer_name,         // 🟢 Maps to customer_name property di schema
+        customer_phone,        // 🟢 Maps to customer_phone property di schema
+        guest_count: Number(guest_count),
+        reserved_start: new Date(reserved_start),
+        reserved_end: new Date(reserved_end),
+        table_id: table_ids && table_ids.length > 0 ? Number(table_ids[0]) : null, 
+        notes: notes || null,
+        status: finalStatus as any,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+
+      const reservationId = (insertRes as any).insertId;
+
+      // 2. Simpan Relasi Meja ke Pivot Table (reservationTableList)
+      if (reservationId && table_ids && Array.isArray(table_ids) && table_ids.length > 0) {
+        const mappings = table_ids.map((tId: any) => ({
+          reservation_id: reservationId,
+          table_list_id: Number(tId),
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }));
+        await tx.insert(reservationTableList).values(mappings);
+      }
     });
 
-    await db.update(tableList).set({ status: 3, updatedAt: new Date() }).where(eq(tableList.id, Number(body.table_id)));
-    return NextResponse.json({ success: true, message: 'Reservasi berhasil ditambahkan' });
+    return NextResponse.json({ 
+      success: true, 
+      message: authPayload ? 'Reservasi manual berhasil dibuat' : 'Reservasi diajukan, menunggu konfirmasi' 
+    });
+
   } catch (error) {
-    console.error('POST reservations error:', error);
+    console.error("POST Reservation API Error:", error);
     return NextResponse.json({ success: false, message: 'Gagal membuat reservasi' }, { status: 500 });
   }
 }
 
+// ============================================================================
+// [PUT] UPDATE STATUS RESERVASI
+// ============================================================================
 export async function PUT(request: Request) {
   try {
-    const payload = await getAuthPayload();
-    if (!payload) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    const authPayload = await getAuthPayload();
+    if (!authPayload) return NextResponse.json({ success: false, message: 'Unauthorized.' }, { status: 401 });
+
+    const { searchParams } = new URL(request.url);
+    const slug = searchParams.get('slug');
+
+    const foundMitra = await db.select().from(mitra).where(eq(mitra.mitra_slug, slug as string)).limit(1);
+    const currentMitra = foundMitra[0];
+    
     const body = await request.json();
-    if (!body.id || !['pending', 'confirmed', 'canceled', 'completed', 'no_show'].includes(body.status)) {
-      return NextResponse.json({ success: false, message: 'Status tidak valid' }, { status: 400 });
-    }
+    const { id, status } = body;
 
-    const current = await db.select().from(reservations).where(eq(reservations.id, Number(body.id))).limit(1);
-    if (!current.length) return NextResponse.json({ success: false, message: 'Reservasi tidak ditemukan' }, { status: 404 });
-    if (payload.branchId && Number(current[0].branch_id) !== Number(payload.branchId)) {
-      return NextResponse.json({ success: false, message: 'Akses ditolak' }, { status: 403 });
-    }
+    const conditions = [
+      eq(reservations.id, Number(id)),
+      eq(reservations.mitra_id, currentMitra.id)
+    ];
 
-    await db.update(reservations).set({ status: body.status, updatedAt: new Date() }).where(eq(reservations.id, Number(body.id)));
-    const tableStatus = body.status === 'confirmed' || body.status === 'pending' ? 3 : 1;
-    if (current[0].table_id) {
-      await db.update(tableList).set({ status: tableStatus, updatedAt: new Date() }).where(eq(tableList.id, current[0].table_id));
-    }
-    return NextResponse.json({ success: true, message: 'Status reservasi diperbarui' });
+    if (authPayload.branchId) conditions.push(eq(reservations.branch_id, Number(authPayload.branchId)));
+
+    await db.update(reservations).set({ status, updatedAt: new Date() }).where(and(...conditions));
+
+    return NextResponse.json({ success: true, message: 'Status diperbarui' });
   } catch (error) {
-    console.error('PUT reservations error:', error);
-    return NextResponse.json({ success: false, message: 'Gagal memperbarui reservasi' }, { status: 500 });
+    return NextResponse.json({ success: false, message: 'Gagal update status' }, { status: 500 });
   }
 }
