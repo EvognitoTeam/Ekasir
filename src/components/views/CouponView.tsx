@@ -215,13 +215,13 @@ export default function CouponView({ onBack }: Props) {
                           </span>
                         </div>
                         
-                        <button 
+                        {/* <button 
                           onClick={() => handleCopyCode(coupon.coupon_code)}
                           className="flex items-center gap-1.5 text-[#0E5C37] bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg transition-colors active:scale-95"
                         >
                           <span className="text-xs font-bold font-mono tracking-wider">{coupon.coupon_code}</span>
                           <Copy className="w-3.5 h-3.5" />
-                        </button>
+                        </button> */}
                       </div>
                     </div>
                   </motion.div>

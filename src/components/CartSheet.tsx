@@ -21,12 +21,12 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
   const params = useParams();
   const slug = (params.mitraSlug as string) || "";
 
-  // 🔴 1. Ambil getCartBySlug, dan update fungsi lainnya
-  const { getCartBySlug, updateQuantity, removeItem, calculateTotal } = useCartStore();
+  // 🟢 Ambil getAppliedCoupon untuk menampilkan nama promo
+  const { getCartBySlug, updateQuantity, removeItem, calculateTotal, getAppliedCoupon } = useCartStore();
   const { items: menuItems } = useMenuStore();
 
-  // 🔴 2. Panggil getCartBySlug untuk mendapatkan item keranjang spesifik toko ini
   const cartItems = getCartBySlug(slug);
+  const appliedCoupon = getAppliedCoupon(slug);
 
   const [settings, setSettings] = useState({ taxRate: 0, serviceRate: 0, isTaxIncluded: false });
 
@@ -73,21 +73,24 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
   };
 
   const getCartTotals = () => {
-    // 🔴 3. Sisipkan slug saat memanggil calculateTotal
-    const subtotal = calculateTotal(slug, menuItems);
+    // 🟢 Destructure hasil calculateTotal sesuai pembaruan store
+    const { subtotal, discountAmount, total: discountedSubtotal } = calculateTotal(slug, menuItems);
+    
     let tax = 0;
     let service = 0;
 
+    // Pajak dan Service dihitung dari harga SETELAH diskon
     if (!settings.isTaxIncluded) {
-      service = subtotal * (settings.serviceRate / 100);
-      tax = subtotal * (settings.taxRate / 100);
+      service = discountedSubtotal * (settings.serviceRate / 100);
+      tax = discountedSubtotal * (settings.taxRate / 100);
     }
 
-    const total = subtotal + tax + service;
-    return { subtotal, tax, service, total };
+    const grandTotal = discountedSubtotal + tax + service;
+    
+    return { subtotal, discountAmount, tax, service, grandTotal };
   };
 
-  const { subtotal, tax, service, total } = getCartTotals();
+  const { subtotal, discountAmount, tax, service, grandTotal } = getCartTotals();
 
   return (
     <>
@@ -203,7 +206,6 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
                             <h4 className="text-sm font-bold text-stone-900 truncate pr-2">{product.name}</h4>
                             <button
                               type="button"
-                              // 🔴 4. Sisipkan slug saat menghapus item
                               onPointerDown={(event) => event.stopPropagation()}
                               onClick={(event) => handleRemoveItem(event, item.id)}
                               className="text-stone-300 hover:text-red-500 transition-colors"
@@ -225,7 +227,6 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
                             <div className="flex items-center gap-3 bg-stone-50 rounded-full px-3 py-1 border border-stone-100">
                               <button
                                 type="button"
-                                // 🔴 5. Sisipkan slug saat update kuantitas (kurang)
                                 onClick={() => updateQuantity(slug, item.id, -1)} 
                                 className="hover:text-red-500 transition-colors"
                               >
@@ -234,7 +235,6 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
                               <span className="text-xs font-bold w-4 text-center">{item.quantity}</span>
                               <button
                                 type="button"
-                                // 🔴 6. Sisipkan slug saat update kuantitas (tambah)
                                 onClick={() => updateQuantity(slug, item.id, 1)} 
                                 className="hover:text-[#0E5C37] transition-colors"
                               >
@@ -253,10 +253,25 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
             {/* Total Settlement */}
             <div className="bg-stone-50 p-8 border-t border-stone-100">
               <div className="space-y-3 mb-8">
+                
                 <div className="flex justify-between text-xs text-stone-500">
                   <span>Subtotal</span>
                   <span className="font-bold text-stone-900">{formatIDR(subtotal)}</span>
                 </div>
+
+                {/* 🟢 TAMPILKAN DISKON JIKA ADA */}
+                {discountAmount > 0 && (
+                  <div className="flex justify-between text-xs text-emerald-600 font-bold">
+                    <span className="flex items-center gap-1">
+                      Diskon {appliedCoupon?.is_auto_apply ? '(Auto)' : ''} 
+                      <span className="px-1.5 py-0.5 bg-emerald-100 rounded text-[10px] uppercase">
+                        {appliedCoupon?.coupon_code || appliedCoupon?.code}
+                      </span>
+                    </span>
+                    <span>-{formatIDR(discountAmount)}</span>
+                  </div>
+                )}
+
                 <div className="flex justify-between text-xs text-stone-500">
                   <div className="flex items-center gap-1">
                     <span>Tax & Service</span>
@@ -266,10 +281,11 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
                     {settings.isTaxIncluded ? 'Included' : formatIDR(tax + service)}
                   </span>
                 </div>
+                
                 <div className="pt-4 border-t border-stone-200 flex justify-between items-end">
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Total Settlement</p>
-                    <p className="text-2xl font-bold text-[#0E5C37]">{formatIDR(total)}</p>
+                    <p className="text-2xl font-bold text-[#0E5C37]">{formatIDR(grandTotal)}</p>
                   </div>
                 </div>
               </div>
@@ -285,8 +301,8 @@ export default function CartSheet({ isOpen, onClose, onCheckout }: Props) {
               </button>
             </div>
           </motion.aside>
-)}
-</AnimatePresence>
-</>
+        )}
+      </AnimatePresence>
+    </>
   );
 }

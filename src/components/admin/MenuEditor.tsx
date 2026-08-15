@@ -655,54 +655,6 @@ export default function MenuEditor() {
                         />
                       </div>
                     </div>
-
-                    <div className="mt-6 pt-6 border-t border-stone-100">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500 mb-3 block">Resep Bahan Baku (BoM)</label>
-                      
-                      {/* Form Tambah Bahan */}
-                      <div className="flex gap-2 mb-4">
-                          <select 
-                              value={tempMat} 
-                              onChange={(e) => setTempMat(e.target.value)}
-                              className="flex-1 p-2.5 text-sm border rounded-xl bg-stone-50"
-                          >
-                              <option value="">Pilih Bahan</option>
-                              {dbMaterials.map(m => <option key={m.id} value={m.id}>{m.name} ({m.stock} {m.unit})</option>)}
-                          </select>
-                          
-                          <input 
-                              type="number" 
-                              placeholder="Jumlah" 
-                              value={tempAmt}
-                              onChange={(e) => setTempAmt(e.target.value)}
-                              className="w-24 p-2.5 text-sm border rounded-xl bg-stone-50" 
-                          />
-                          
-                          <button type="button" onClick={() => {
-                              addRecipe(tempMat, tempAmt);
-                              setTempMat(''); 
-                              setTempAmt(''); 
-                          }} className="bg-[#0E5C37] text-white p-2.5 rounded-xl">
-                              <Plus className="w-4 h-4" />
-                          </button>
-                      </div>
-
-                      {/* List Bahan Terpilih */}
-                      <div className="space-y-2">
-                          {formMenu.recipes.map((r, i) => (
-                              <div key={i} className="flex justify-between items-center p-3 bg-stone-50 rounded-xl border">
-                                  <span className="text-xs font-bold text-stone-700">{r.materialName}</span>
-                                  <div className="flex items-center gap-3">
-                                      <span className="text-xs font-black text-[#0E5C37]">{r.amount}</span>
-                                      <span className="text-xs font-black text-[#0E5C37]">{r.unit}</span>
-                                      <button type="button" onClick={() => removeRecipe(i)} className="text-rose-400 hover:text-rose-600">
-                                          <Trash2 className="w-4 h-4" />
-                                      </button>
-                                  </div>
-                              </div>
-                          ))}
-                      </div>
-                  </div>
                   </div>
                 )}
 

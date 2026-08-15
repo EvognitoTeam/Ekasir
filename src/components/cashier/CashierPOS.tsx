@@ -386,15 +386,20 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
       const createdOrder = serverOrder ? ({ ...serverOrder, items: mergedItems } as Order) : null;
       if (!createdOrder) throw new Error('Server tidak mengembalikan data order untuk dicetak.');
 
-      await onSubmitOrder(createdOrder);
+      // 🟢 Ambil data QRIS dengan aman dari respons API
+      const extractedQrUrl = result.qrUrl || result.data?.qrUrl || result.printOrder?.qrUrl || (serverOrder as any)?.qr_url;
+      const resolvedPaymentMethod = result.paymentMethod || result.data?.paymentMethod || result.printOrder?.paymentMethod || paymentMethod;
 
-      if (result.paymentMethod === 'qris' && result.qrUrl) {
+      // 🟢 Jika QRIS, tampilkan modal QRIS dahulu dan JANGAN panggil onSubmitOrder / tutup POS sekarang
+      if (resolvedPaymentMethod === 'qris' && extractedQrUrl) {
         setQrisData({
-          qrUrl: result.qrUrl,
-          orderCode: result.orderCode,
+          qrUrl: extractedQrUrl,
+          orderCode: result.orderCode || result.data?.orderCode || 'ORDER',
           optimisticOrder: createdOrder,
         });
       } else {
+        // Kalau Tunai (Cash), langsung selesaikan pesanan dan tutup POS
+        await onSubmitOrder(createdOrder);
         setCart([]);
         setCashAmount('');
         setSelectedCouponCode('');
@@ -411,7 +416,11 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
     }
   };
 
-  const closeQrisModal = () => {
+  // 🟢 Dipanggil saat kasir menutup popup QRIS (Selesai/Batal)
+  const closeQrisModal = async () => {
+    if (qrisData?.optimisticOrder) {
+      await onSubmitOrder(qrisData.optimisticOrder);
+    }
     setQrisData(null);
     setCart([]);
     setCashAmount('');
@@ -521,7 +530,7 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
         </div>
       </div>
 
-      {/* KANAN: AREA KERANJANG & CHECKOUT (Lebar 480px, Split Bottom Layout) */}
+      {/* KANAN: AREA KERANJANG & CHECKOUT */}
       <div className="w-[480px] bg-white border-l border-stone-200 flex flex-col shadow-[-4px_0_24px_rgba(0,0,0,0.03)] z-20">
         
         {/* Header Keranjang */}
@@ -595,13 +604,10 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
           )}
         </div>
 
-        {/* 🟢 AREA CHECKOUT DENGAN SPLIT LAYOUT KIRI-KANAN */}
+        {/* AREA CHECKOUT */}
         <div className="bg-white border-t border-stone-200 p-4 shadow-[0_-10px_24px_rgba(0,0,0,0.02)] z-10 flex gap-4 items-stretch">
           
-          {/* KIRI: Input Form (Pelanggan, Meja, Member, Kupon) */}
           <div className="flex-1 flex flex-col gap-2.5">
-            
-            {/* Baris 1: Pelanggan & Meja */}
             <div className="flex gap-2">
               <input 
                 type="text" 
@@ -637,7 +643,6 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
               )}
             </div>
 
-            {/* Baris 2: Data Member */}
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <UserCircle className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -669,7 +674,6 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
               </button>
             </div>
 
-            {/* Poin Member (Jika Valid) */}
             {verifiedMember && (
               <div className="px-2.5 py-1.5 bg-emerald-50 rounded-lg border border-emerald-100 flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
@@ -693,7 +697,6 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
               </div>
             )}
 
-            {/* Baris 3: Kupon & Tipe Pembayaran */}
             <div className="flex gap-2">
               <select
                 value={selectedCouponCode}
@@ -716,12 +719,10 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
               </div>
             </div>
 
-            {/* Alert Kupon Error */}
             {selectedCouponCode && discountError && (
               <p className="text-[10px] font-bold text-red-500 -mt-1 leading-tight">! {discountError}</p>
             )}
 
-            {/* Baris 4: Input Tunai (Cash) */}
             {paymentMethod === 'cash' && (
               <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="flex gap-2">
                  <input 
@@ -737,7 +738,6 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
             )}
           </div>
 
-          {/* KANAN: Ringkasan Total & Tombol Proses */}
           <div className="w-[180px] flex flex-col gap-2.5">
             <div className="bg-stone-50 px-3 py-2.5 rounded-xl border border-stone-200 flex-1 flex flex-col justify-center">
               <div className="flex justify-between text-[10px] text-stone-500 font-medium mb-1">
@@ -824,7 +824,7 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
       <AnimatePresence>
         {qrisData && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setQrisData(null)} className="absolute inset-0 bg-stone-900/80 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closeQrisModal} className="absolute inset-0 bg-stone-900/80 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.95, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 20 }} className="bg-white rounded-3xl p-8 w-full max-w-sm flex flex-col items-center shadow-2xl relative z-10 text-center">
               <div className="bg-emerald-50 text-emerald-700 px-4 py-2 rounded-full text-xs font-black uppercase tracking-widest flex items-center gap-2 mb-6">
                 <QrCode className="w-4 h-4" /> Scan QRIS

@@ -30,7 +30,9 @@ export default function FloatingCart({
   const { getTotalItems, calculateTotal } = useCartStore();
   const menuItems = useMenuStore((state) => state.items);
   const totalItems = getTotalItems(slug);
-  const cartTotal = calculateTotal(slug, menuItems);
+  
+  // 🟢 Destructure untuk mengambil nilai total dari objek hasil kalkulasi
+  const { total: cartTotal } = calculateTotal(slug, menuItems);
 
   return (
     <AnimatePresence>

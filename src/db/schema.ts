@@ -304,6 +304,15 @@ export const coupon = mysqlTable("coupon", {
   discount_rate: int("discount_rate"),
   max_use: int("max_use").default(0).notNull(),
   already_used: int("already_used").default(0).notNull(),
+  is_auto_apply: boolean("is_auto_apply").default(false),
+  applicable_items: json("applicable_items").$type<number[]>().default([]),
+  // Limit per pengguna (0 = tidak terbatas)
+  max_use_per_user: int("max_use_per_user").default(0), 
+  // Limit harian per pengguna (0 = tidak terbatas)
+  daily_user_limit: int("daily_user_limit").default(0),
+  // Limit bulanan per pengguna (0 = tidak terbatas)
+  monthly_user_limit: int("monthly_user_limit").default(0),
+  yearly_user_limit: int("yearly_user_limit").default(0),
   start_date: timestamp("start_date"),
   expired_date: timestamp("expired_date"),
   createdAt: datetime("created_at"),

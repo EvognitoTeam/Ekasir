@@ -19,6 +19,10 @@ export interface CouponData {
   createdAt: string | Date | null;
   updatedAt: string | Date | null;
   deletedAt: string | Date | null;
+  
+  // 🟢 Properti Baru Sesuai Schema
+  is_auto_apply?: boolean;
+  applicable_items?: number[];
 }
 
 interface PromoBannerProps {
@@ -47,6 +51,12 @@ function PromoCard({ promo, index, onNavigate }: { promo: CouponData; index: num
     discountLabel = `Potongan ${formatPrice(Number(promo.discount_price))}`;
   } else {
     discountLabel = 'Promo Spesial';
+  }
+
+  // 🟢 Penyesuaian Label Target Produk
+  let targetLabel = promo.is_member_only ? 'Member Only' : 'Semua Item';
+  if (promo.applicable_items && promo.applicable_items.length > 0) {
+    targetLabel = 'Item Tertentu';
   }
 
   // 🔴 LOGIKA PENAMPILAN WAKTU DINAMIS
@@ -104,7 +114,7 @@ function PromoCard({ promo, index, onNavigate }: { promo: CouponData; index: num
               )}
             </div>
             <span className="text-[9px] font-bold uppercase tracking-[0.15em] text-white/70">
-              {promo.is_member_only ? 'Member Only' : 'Semua Pelanggan'}
+              {targetLabel}
             </span>
           </div>
 
@@ -127,22 +137,13 @@ function PromoCard({ promo, index, onNavigate }: { promo: CouponData; index: num
         </div>
 
         <div className="flex items-center justify-between">
-          <button
-            onClick={handleCopyCode}
-            className="flex items-center gap-1.5 text-[10px] font-bold text-white bg-white/20 hover:bg-white/30 backdrop-blur rounded-full px-3 py-1.5 transition-all active:scale-95"
-          >
-            {copied ? (
-              <>
-                <Check className="w-3 h-3" />
-                Tersalin!
-              </>
-            ) : (
-              <>
-                <Copy className="w-3 h-3" />
-                Click to Copy
-              </>
-            )}
-          </button>
+          {/* 🟢 Tampilkan Badge Berbeda untuk Auto Apply vs Manual */}
+          {/* {promo.is_auto_apply ?? (
+            <span className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-50 bg-black/20 backdrop-blur border border-white/10 rounded-full px-3 py-1.5">
+              <Sparkles className="w-3 h-3 text-emerald-300" />
+              Otomatis Dipakai
+            </span>
+          )} */}
 
           {promo.max_use > 0 && (
             <span className="text-[9px] text-white/60 font-sans font-semibold">

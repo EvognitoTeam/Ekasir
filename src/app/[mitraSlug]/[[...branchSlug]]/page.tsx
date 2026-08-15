@@ -26,7 +26,7 @@ import OrderHistoryView from '@/components/views/OrderHistoryView';
 import ProfileView from '@/components/views/ProfileView';
 import RoastGalleryView from '@/components/views/RoastGalleryView';
 import SupportView from '@/components/views/SupportView';
-import ReservationView from '@/components/views/ReservationView'; // 🟢 Import Reservation View
+import ReservationView from '@/components/views/ReservationView';
 import { useMenuFilter } from '@/hooks/useMenuFilter';
 import { useCartStore } from '@/store/cart.store';
 import { useMenuStore } from '@/store/menu.store';
@@ -140,7 +140,13 @@ export default function CustomerPage() {
     resolvedRoute.mode === 'customer' ? resolvedRoute.hasExplicitView : false;
 
   const { setMenu, setLoading, items, categories, isLoading } = useMenuStore();
+  
+  // 🟢 TARIK STATE KERANJANG DAN FUNGSI AUTO-APPLY
   const addItem = useCartStore((state) => state.addItem);
+  const cartsBySlug = useCartStore((state) => state.cartsBySlug);
+  const autoApplyBestCoupon = useCartStore((state) => state.autoApplyBestCoupon);
+  const currentCart = typeof slug === 'string' ? cartsBySlug[slug] || [] : [];
+  
   const setTable = useTableStore((state) => state.setTable);
   const currentOrder = useOrderStore((state) => state.currentOrder);
 
@@ -207,6 +213,7 @@ export default function CustomerPage() {
     router.replace(buildCustomerUrl('menu'));
   }, [buildCustomerUrl, hasExplicitView, isKiosk, router, slug]);
 
+  // Fetch initial data
   useEffect(() => {
     if (!slug || isKiosk) return;
 
@@ -272,6 +279,15 @@ export default function CustomerPage() {
     return () => controller.abort();
   }, [branchSlug, isKiosk, searchParams, setLoading, setMenu, setTable, slug]);
 
+  // 🟢 EFFECT UNTUK MENTRIGGER AUTO-APPLY KUPON
+  useEffect(() => {
+    // Jalankan auto-apply setiap kali keranjang (currentCart) atau daftar promo berubah
+    if (slug && items.length > 0 && promos.length > 0) {
+      // @ts-ignore - mengabaikan validasi tipe sementara jika ada perbedaan strict type pada CouponData
+      autoApplyBestCoupon(slug as string, items, promos);
+    }
+  }, [currentCart, promos, items, slug, autoApplyBestCoupon]);
+
   const handleOpenDetail = (product: MenuItem) => {
     setSelectedProduct(product);
     setIsDetailOpen(true);
@@ -330,7 +346,6 @@ export default function CustomerPage() {
     );
   }
 
-  // 🟢 Hilangkan 'reservation' dari shell view agar dirender terpisah secara penuh
   const isMainShellView = ['menu', 'roasts', 'history', 'help', 'profile', 'coupons'].includes(currentView);
   const isCategoryDetail = currentView === 'menu' && selectedCategoryId !== null;
   const showBottomNav = isMainShellView && currentView !== 'coupons';
@@ -417,7 +432,6 @@ export default function CustomerPage() {
             </div>
           )}
 
-          {/* 🟢 Render Reservation View */}
           {currentView === 'reservation' && (
             <div className="h-full overflow-y-auto no-scrollbar bg-stone-50">
               <ReservationView onBack={() => changeView('menu')} cafeName={mitraName} />

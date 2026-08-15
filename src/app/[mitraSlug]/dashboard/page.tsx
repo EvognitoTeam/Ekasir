@@ -78,7 +78,7 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
     label: 'Operasional',
     items: [
       { id: 'menu', label: 'Katalog Menu', description: 'Produk dan kategori', icon: Coffee },
-      { id: 'inventory', label: 'Bahan Baku', description: 'Stok dan peringatan', icon: Package },
+      // { id: 'inventory', label: 'Bahan Baku', description: 'Stok dan peringatan', icon: Package },
       { id: 'table', label: 'Daftar Meja', description: 'Meja dan QR', icon: Sofa },
       { id: 'promos', label: 'Promo & Event', description: 'Diskon dan kampanye', icon: Tag },
     ],

@@ -51,6 +51,7 @@ export async function GET(request: Request) {
       cafeName: mitraData.mitra_name || '',
       mitraAddress: mitraData.mitra_address || '',
       mitraWelcome: mitraData.mitra_welcome || '',
+      banner: mitraData.banner || '',
       bankName: mitraData.bank_name || '', 
       bankNumber: mitraData.no_rek || '',
       bankOwner: mitraData.nama_rek || '',

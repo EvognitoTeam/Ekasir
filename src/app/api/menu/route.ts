@@ -7,7 +7,7 @@ import { jwtVerify } from 'jose';
 import { writeFile } from 'fs/promises';
 import path from 'path';
 import fs from 'fs';
-import sharp from 'sharp';
+import sharp from 'sharp'; // 🟢 Sharp sudah di-import
 
 export const dynamic = 'force-dynamic';
 
@@ -48,16 +48,14 @@ export async function GET(request: Request) {
     const currentMitra = foundMitra[0];
     const finalBranchId = payload.branchId ? Number(payload.branchId) : (reqBranchId ? Number(reqBranchId) : null);
 
-    // 🔴 1. Kondisi Khusus Produk (Terikat Cabang)
     const condsProd = [eq(products.mitra_id, currentMitra.id), isNull(products.deletedAt)];
     if (finalBranchId) condsProd.push(eq(products.branch_id, finalBranchId));
 
-    // 🔴 2. TARIK DATA (Kategori & Addon Tanpa Filter Branch)
     const [dbCategories, dbProducts, dbAddonCategories, dbAddons] = await Promise.all([
-      db.select().from(categories).where(and(eq(categories.mitra_id, currentMitra.id), isNull(categories.deletedAt))), // GLOBAL
-      db.select().from(products).where(and(...condsProd)), // CABANG
-      db.select().from(addonCategories).where(eq(addonCategories.mitra_id, currentMitra.id)), // GLOBAL
-      db.select().from(addons).where(and(eq(addons.mitra_id, currentMitra.id), isNull(addons.deletedAt))) // GLOBAL
+      db.select().from(categories).where(and(eq(categories.mitra_id, currentMitra.id), isNull(categories.deletedAt))), 
+      db.select().from(products).where(and(...condsProd)), 
+      db.select().from(addonCategories).where(eq(addonCategories.mitra_id, currentMitra.id)), 
+      db.select().from(addons).where(and(eq(addons.mitra_id, currentMitra.id), isNull(addons.deletedAt))) 
     ]);
 
     const mappedItems = dbProducts.map((p) => ({
@@ -137,23 +135,40 @@ export async function PUT(request: Request) {
           try { updateData.addon_id = JSON.parse(formData.get('addon_id') as string); } catch(e) {}
         }
         
+        // 🟢 IMPLEMENTASI KOMPRESI SHARP DI METHOD PUT
         if (formData.has('image')) {
           const file = formData.get('image') as File;
+          const allowedTypes = ['image/jpeg', 'image/png', 'image/webp']; // Validasi tipe
+          
           if (file && file.size > 0) {
+             if (!allowedTypes.includes(file.type)) {
+                return NextResponse.json({ success: false, message: 'Format gambar tidak didukung' }, { status: 400 });
+             }
+             if (file.size > 5 * 1024 * 1024) {
+                 return NextResponse.json({ success: false, message: 'Ukuran gambar maksimal 5MB' }, { status: 400 });
+             }
+
             const bytes = await file.arrayBuffer();
             const buffer = Buffer.from(bytes);
-            const filename = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
             const uploadDir = path.join(process.cwd(), 'public/uploads/menu');
             if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
             
-            await writeFile(path.join(uploadDir, filename), buffer);
+            const filename = `${Date.now()}_edited.webp`;
+            
+            // Konversi & Kompres
+            const compressedImage = await sharp(buffer)
+                .resize({ width: 800, height: 800, fit: 'inside', withoutEnlargement: true })
+                .webp({ quality: 75 })
+                .toBuffer();
+
+            await writeFile(path.join(uploadDir, filename), compressedImage);
             updateData.image = `uploads/menu/${filename}`; 
           }
         }
         
         await db.transaction(async (tx) => {
           const conds = [eq(products.id, Number(id)), eq(products.mitra_id, Number(payload.mitraId))];
-          if (payload.branchId) conds.push(eq(products.branch_id, Number(payload.branchId))); // Spesifik Cabang
+          if (payload.branchId) conds.push(eq(products.branch_id, Number(payload.branchId))); 
 
           await tx.update(products).set(updateData).where(and(...conds));
         
@@ -173,7 +188,7 @@ export async function PUT(request: Request) {
         });
       }
       
-      // 🔴 B. KATEGORI -> Edit Global (Abaikan Cabang)
+      // B. KATEGORI -> Edit Global (Abaikan Cabang)
       else if (entity === 'category') {
         const name = formData.get('name') as string;
         if (name) {
@@ -182,7 +197,7 @@ export async function PUT(request: Request) {
         }
       }
 
-      // 🔴 C. ADDON -> Edit Global (Abaikan Cabang)
+      // C. ADDON -> Edit Global (Abaikan Cabang)
       else if (entity === 'addon') {
         const type = formData.get('type') as string;
         if (type === 'group') {
@@ -226,28 +241,27 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const entity = formData.get('entity');
 
-    // Tentukan Branch ID (Hanya untuk Menu)
     const inputBranchId = formData.get('branch_id');
     const finalBranchId = payload.branchId ? Number(payload.branchId) : (inputBranchId ? Number(inputBranchId) : null);
 
-    // 🔴 ========================= CATEGORY (Global = NULL)
+    // ========================= CATEGORY
     if (entity === 'category') {
       await db.insert(categories).values({
         mitra_id: Number(payload.mitraId),
-        branch_id: null, // Paksa NULL agar global
+        branch_id: null, 
         name: formData.get('name') as string,
         createdAt: new Date()
       });
       return NextResponse.json({ success: true });
     }
 
-    // 🔴 ========================= ADDON (Global = NULL)
+    // ========================= ADDON
     if (entity === 'addon') {
       const type = formData.get('type');
       if (type === 'group') {
         await db.insert(addonCategories).values({
           mitra_id: Number(payload.mitraId),
-          branch_id: null, // Paksa NULL
+          branch_id: null, 
           name: formData.get('name') as string,
           isRequired: Number(formData.get('is_required')) || 0,
           maxSelected: Number(formData.get('max_selected')) || 1,
@@ -259,7 +273,7 @@ export async function POST(request: Request) {
       if (type === 'item') {
         await db.insert(addons).values({
           mitra_id: Number(payload.mitraId),
-          branch_id: null, // Paksa NULL
+          branch_id: null, 
           name: formData.get('name') as string,
           price: String(formData.get('price')),
           category_id: Number(formData.get('category_id')),
@@ -269,7 +283,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // ========================= MENU / PRODUCTS (Terikat Cabang)
+    // ========================= MENU / PRODUCTS
     let imagePath = null;
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
 
@@ -300,7 +314,7 @@ export async function POST(request: Request) {
         .insert(products)
         .values({
           mitra_id: Number(payload.mitraId),
-          branch_id: finalBranchId, // 🔴 Masuk ke spesifik cabang
+          branch_id: finalBranchId, 
           name: formData.get('name') as string,
           price: Number(formData.get('price')),
           stock: Number(formData.get('stock')),
