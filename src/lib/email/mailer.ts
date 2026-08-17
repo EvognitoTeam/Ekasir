@@ -45,6 +45,14 @@ export function createMailer() {
       'SMTP_PASSWORD',
     );
 
+  console.log('[SMTP CONFIG]', {
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT,
+    secure: process.env.SMTP_SECURE,
+    user: process.env.SMTP_USER,
+    hasPassword: Boolean(process.env.SMTP_PASSWORD),
+  });
+
   return nodemailer.createTransport({
     host,
     port,

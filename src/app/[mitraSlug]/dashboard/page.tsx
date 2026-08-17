@@ -322,7 +322,7 @@ export default function AdminDashboardPage() {
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--color-primary)] text-white shadow-sm"><Store className="h-4 w-4" /></div>
             <div>
-              <p className="font-display text-xs font-black uppercase tracking-[0.12em] text-stone-900">EKASIR Admin</p>
+              <p className="font-display text-xs font-black uppercase tracking-[0.12em] text-stone-900">KALOO POS</p>
               <p className="text-[10px] font-medium text-stone-400">Pusat kendali outlet</p>
             </div>
           </div>
