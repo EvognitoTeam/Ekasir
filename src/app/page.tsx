@@ -103,7 +103,7 @@ const gateParkingAddon = {
 };
 
 const whatsappNumber = '6285176773826';
-const emailAddress = 'support@kaloopos.evognito.my.id';
+const emailAddress = 'support@kaloopos.com';
 
 const formatIDR = (value: number) =>
   new Intl.NumberFormat('id-ID', {
