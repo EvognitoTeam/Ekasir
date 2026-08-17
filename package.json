@@ -1,6 +1,6 @@
 {
   "name": "kaloopos",
-  "version": "26.8.15",
+  "version": "26.8.17",
   "private": true,
   "scripts": {
     "dev": "next dev",
