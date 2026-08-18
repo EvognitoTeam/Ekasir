@@ -880,7 +880,7 @@ export default function CheckoutView({ onBack, onSuccess }: Props) {
           </motion.div>
         ) : (
           <motion.div key="qris" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.98 }} transition={{ duration: 0.2 }} className="h-full">
-            <QrisStep onBack={() => setStep('payment')} onFinish={handleFinishQris} qrUrl={qrisUrl} total={finalTotal} orderCode={currentOrderPayload?.orderCode} expiryTime={currentOrderPayload?.expiryTime} />
+            <QrisStep onBack={() => setStep('payment')} onFinish={handleFinishQris} qrUrl={qrisUrl} qrString={currentOrderPayload?.qrString} total={finalTotal} orderCode={currentOrderPayload?.orderCode} expiryTime={currentOrderPayload?.expiryTime} />
           </motion.div>
         )}
       </AnimatePresence>
