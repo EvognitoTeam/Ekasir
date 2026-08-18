@@ -172,23 +172,39 @@ export default function KitchenTicket({ order, onUpdateStatus }: Props) {
           const product = menuItems.find(m => Number(m.id) === Number(cartItem.menuItemId || cartItem.product_id));
           const itemName = product?.name || cartItem.name || cartItem.menuItemName || 'Item Menu';
 
-          const addOnsList: string[] = [];
-
-          // Ambil langsung dari array selectedAddOnsDetails sesuai struktur response API
-          const details = cartItem.selectedAddOnsDetails;
+          let addOnsList: string[] = [];
           
-          if (Array.isArray(details) && details.length > 0) {
-            details.forEach((addon: any) => {
-              if (addon && typeof addon === 'object') {
-                const addonName = addon.name || addon.title;
-                if (addonName) {
-                  addOnsList.push(addonName);
-                }
-              } else if (typeof addon === 'string') {
-                addOnsList.push(addon);
+          // PARSER TAHAN BANTING (Otomatis mendeteksi dan mengupas JSON string)
+          const parseAddonData = (data: any) => {
+            if (!data) return;
+            
+            if (typeof data === 'string') {
+              try {
+                // Coba kupas jika data ternyata adalah JSON string
+                const parsed = JSON.parse(data);
+                parseAddonData(parsed); // Lakukan rekursif setelah dikupas
+              } catch {
+                // Jika gagal diparse (artinya string biasa), filter teks JSON yang rusak
+                if (data.includes('{"name":') || data.includes('[{')) return;
+                addOnsList.push(data);
               }
-            });
-          }
+            } else if (Array.isArray(data)) {
+              // Jika data adalah array, ekstrak isi di dalamnya
+              data.forEach(item => parseAddonData(item));
+            } else if (typeof data === 'object') {
+              // Jika bentuknya sudah objek sempurna, ambil namanya
+              const name = data.name || data.title || data.choiceName;
+              if (name) {
+                addOnsList.push(String(name).trim());
+              }
+            }
+          };
+
+          // Proses data: Prioritaskan selectedAddOnsDetails, fallback ke notes
+          parseAddonData(cartItem.selectedAddOnsDetails || cartItem.notes);
+
+          // Hilangkan duplikat jika ada
+          addOnsList = Array.from(new Set(addOnsList));
 
           return (
             <div key={idx} className="flex gap-4 items-start relative pb-4 border-b border-stone-100 last:border-0 last:pb-0">
@@ -198,7 +214,7 @@ export default function KitchenTicket({ order, onUpdateStatus }: Props) {
               <div className="flex-1 min-w-0 pt-1">
                 <div className="text-sm font-black text-stone-800 leading-tight mb-1">{itemName}</div>
                 
-                {/* Render Add-ons / Varian (Contoh: + Small, + Pedas) */}
+                {/* Render Add-ons / Varian (Akan tampil bersih: + Ekstra keju) */}
                 {addOnsList.length > 0 && (
                   <div className="text-xs font-bold text-amber-600 leading-snug mb-1">
                     + {addOnsList.join(' · ')}
