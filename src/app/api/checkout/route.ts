@@ -8,7 +8,7 @@ import {
   settings,
   products,
   users,
-  discounts,
+  coupon,
 } from '@/db/schema';
 
 import {
@@ -82,6 +82,14 @@ function jsonError(
     },
     { status },
   );
+}
+
+function isValidPhoneNumber(phone: string): boolean {
+  // Hanya menerima angka, spasi, tanda +, tanda -, dan tanda kurung, 
+  // dengan panjang minimal 8 digit dan maksimal 15 digit angka bersih.
+  const cleaned = phone.replace(/\D/g, '');
+  const phoneRegex = /^[+]?[\d\s\-()]{8,20}$/;
+  return phoneRegex.test(phone) && cleaned.length >= 8 && cleaned.length <= 15;
 }
 
 function normalizeString(value: unknown): string {
@@ -258,6 +266,7 @@ export async function POST(request: Request): Promise<Response> {
       return jsonError(400, 'Nama pelanggan wajib diisi.', 'CUSTOMER_NAME_REQUIRED');
     }
 
+    // PROTEKSI: Validasi Format Email
     if (customerEmail) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(customerEmail)) {
@@ -267,6 +276,23 @@ export async function POST(request: Request): Promise<Response> {
           'INVALID_EMAIL_FORMAT',
         );
       }
+    }
+
+    // PROTEKSI: Validasi Format Nomor Telepon (Wajib diisi atau opsional sesuai kebutuhan, contoh di bawah jika wajib diisi)
+    if (!customerPhone) {
+      return jsonError(
+        400,
+        'Nomor telepon wajib diisi.',
+        'PHONE_REQUIRED',
+      );
+    }
+
+    if (!isValidPhoneNumber(customerPhone)) {
+      return jsonError(
+        400,
+        'Format nomor telepon tidak valid. Gunakan 8 hingga 15 digit angka.',
+        'INVALID_PHONE_FORMAT',
+      );
     }
 
     if (!paymentMethod) {
@@ -433,12 +459,12 @@ export async function POST(request: Request): Promise<Response> {
     if (submittedDiscountId !== null) {
       const [foundDiscount] = await db
         .select()
-        .from(discounts)
+        .from(coupon)
         .where(
           and(
-            eq(discounts.id, submittedDiscountId),
-            eq(discounts.mitra_id, mitraId),
-            isNull(discounts.deletedAt),
+            eq(coupon.id, submittedDiscountId),
+            eq(coupon.mitra_id, mitraId),
+            isNull(coupon.deletedAt),
           ),
         )
         .limit(1);
