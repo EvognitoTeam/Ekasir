@@ -172,32 +172,30 @@ export default function KitchenTicket({ order, onUpdateStatus }: Props) {
           const product = menuItems.find(m => Number(m.id) === Number(cartItem.menuItemId || cartItem.product_id));
           const itemName = product?.name || cartItem.name || cartItem.menuItemName || 'Item Menu';
 
-          const addons: string[] = [];
-          const customNotes: string[] = [];
+          // Gunakan const karena referensi variabel tidak pernah diubah (hanya di-push)
+          const addOnsList: string[] = [];
+          const notesList: string[] = [];
 
-          let detailsArray: any[] = [];
-          
-          if (Array.isArray(cartItem.selectedAddOnsDetails) && cartItem.selectedAddOnsDetails.length > 0) {
-            detailsArray = cartItem.selectedAddOnsDetails;
-          } else if (typeof cartItem.notes === 'string' && cartItem.notes.trim().startsWith('[')) {
-            try { detailsArray = JSON.parse(cartItem.notes); } catch (e) {}
+          // 1. Cek dari selectedAddOnsDetails (Format standar yang diparse oleh API)
+          const details = cartItem.selectedAddOnsDetails || cartItem.selected_addons_details;
+          if (Array.isArray(details) && details.length > 0) {
+            details.forEach((addon: any) => {
+              const addonName = addon.name || addon.title || addon.choiceName;
+              if (addonName) {
+                addOnsList.push(addonName);
+              }
+              if (addon.customer_note || addon.note) {
+                notesList.push(addon.customer_note || addon.note);
+              }
+            });
           }
 
-          if (detailsArray.length > 0) {
-            detailsArray.forEach((detail: any) => {
-              if (detail.name) addons.push(detail.name);
-              if (detail.customer_note) customNotes.push(detail.customer_note);
-            });
-          } else {
-            if (typeof cartItem.notes === 'string' && cartItem.notes.trim() !== '') {
-              customNotes.push(cartItem.notes);
+          // 2. Fallback: Jika notes berisi teks catatan biasa dari pelanggan
+          if (cartItem.notes && typeof cartItem.notes === 'string') {
+            const trimmedNotes = cartItem.notes.trim();
+            if (!trimmedNotes.startsWith('[') && trimmedNotes !== '') {
+              notesList.push(trimmedNotes);
             }
-          }
-
-          if (cartItem.selectedAddOns && detailsArray.length === 0) {
-            cartItem.selectedAddOns.forEach((sel: any) => {
-              sel.choiceIds?.forEach((cid: string) => addons.push(cid));
-            });
           }
 
           return (
@@ -208,16 +206,17 @@ export default function KitchenTicket({ order, onUpdateStatus }: Props) {
               <div className="flex-1 min-w-0 pt-1">
                 <div className="text-sm font-black text-stone-800 leading-tight mb-1">{itemName}</div>
                 
-                {addons.length > 0 && (
+                {/* Render Add-ons / Varian Tambahan */}
+                {addOnsList.length > 0 && (
                   <div className="text-xs font-bold text-amber-600 leading-snug mb-1">
-                    + {addons.join(' · ')}
+                    + {addOnsList.join(' · ')}
                   </div>
                 )}
                 
-                {/* Hanya tampil jika ada catatan dari customer */}
-                {customNotes.length > 0 && (
+                {/* Render Catatan Tambahan / Notes */}
+                {notesList.length > 0 && (
                   <div className="mt-1">
-                    {customNotes.map((note, nIdx) => (
+                    {notesList.map((note, nIdx) => (
                       <div key={nIdx} className="text-[11px] font-medium text-stone-500 italic bg-stone-50 p-2 rounded-md border border-stone-100 mt-1">
                         Catatan: &quot;{note}&quot;
                       </div>
