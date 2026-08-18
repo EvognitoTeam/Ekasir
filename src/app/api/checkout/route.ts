@@ -416,17 +416,40 @@ export async function POST(request: Request): Promise<Response> {
       databaseProducts.map((product) => [product.id, product]),
     );
 
+    // ==========================================
+    // PERBAIKAN: PERHITUNGAN HARGA ADD-ONS
+    // ==========================================
     const normalizedItems = normalizedItemsRaw.map((item) => {
       const dbProduct = productMap.get(item.productId);
       if (!dbProduct) {
         throw new Error(`Produk ID ${item.productId} tidak ditemukan pada mitra ini.`);
       }
 
-      const securePrice = toInteger(dbProduct.price);
+      let itemPrice = toInteger(dbProduct.price);
+      let resolvedAddOnsDetails: Array<any> = [];
+
+      try {
+        const rawDetails = typeof item.selectedAddOnsDetails === 'string'
+          ? JSON.parse(item.selectedAddOnsDetails)
+          : item.selectedAddOnsDetails;
+
+        if (Array.isArray(rawDetails)) {
+          resolvedAddOnsDetails = rawDetails;
+          rawDetails.forEach((addon: any) => {
+            const addOnPrice = Number(addon?.price || 0);
+            if (Number.isFinite(addOnPrice) && addOnPrice > 0) {
+              itemPrice += Math.floor(addOnPrice); // Tambahkan harga add-on ke harga item
+            }
+          });
+        }
+      } catch (err) {
+        console.error('Gagal memproses add-ons backend:', err);
+      }
 
       return {
         ...item,
-        price: securePrice,
+        price: itemPrice, // Harga akhir per item sudah akurat termasuk add-on
+        selectedAddOnsDetails: resolvedAddOnsDetails,
       };
     });
 
@@ -637,6 +660,7 @@ export async function POST(request: Request): Promise<Response> {
       checkoutStep = 'PREPARE_ORDER_ITEMS';
 
       const itemsToInsert = normalizedItems.map((item) => {
+        // Ambil data yang sudah diparsing
         const safeNotes = Array.isArray(item.selectedAddOnsDetails)
           ? item.selectedAddOnsDetails
           : [];
@@ -722,7 +746,7 @@ export async function POST(request: Request): Promise<Response> {
 
     const midtransItems: MidtransItem[] = normalizedItems.map((item) => ({
       id: String(item.productId).substring(0, 50),
-      price: item.price,
+      price: item.price, // Harga per item di sini sudah divalidasi ke atas dan ditambah addon
       quantity: item.quantity,
       name: String(
         productNameMap.get(String(item.productId)) ||
