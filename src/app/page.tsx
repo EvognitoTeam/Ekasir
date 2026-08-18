@@ -327,7 +327,7 @@ export default function EvokasirLandingPage() {
         </div>
       </section>
 
-      <section className="relative z-10 mx-auto max-w-6xl px-4 pb-24">
+      {/* <section className="relative z-10 mx-auto max-w-6xl px-4 pb-24">
         <div className="relative overflow-hidden rounded-[2.5rem] border border-[var(--color-outline-variant)]/20 bg-[var(--color-surface-container)]/40 p-8 backdrop-blur-2xl md:p-12">
           <div className="absolute right-0 top-0 h-80 w-80 bg-[var(--color-primary)] opacity-10 blur-[110px]" />
           <div className="relative z-10 grid grid-cols-1 items-center gap-10 lg:grid-cols-[1fr_0.8fr]">
@@ -355,7 +355,7 @@ export default function EvokasirLandingPage() {
           </div>
           
         </div>
-      </section>
+      </section> */}
 
       <section className="relative z-10 mx-auto max-w-6xl px-4 py-24">
         <div className="relative overflow-hidden rounded-[2.5rem] border border-[var(--color-outline-variant)]/20 bg-[var(--color-primary)] p-10 text-white md:p-14">
