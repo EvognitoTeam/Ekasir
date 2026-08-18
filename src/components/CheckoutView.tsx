@@ -551,17 +551,36 @@ function PaymentStep({ onBack, onPay, total, isProcessing, slug }: any) {
   );
 }
 
-function QrisStep({ onBack, onFinish, qrUrl, total, orderCode, expiryTime }: any) {
+function QrisStep({ onBack, onFinish, qrUrl, qrString, total, orderCode, expiryTime }: any) {
   const [timeLeft, setTimeLeft] = useState('');
   const [isChecking, setIsChecking] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
+  const [isExpired, setIsExpired] = useState(false);
+
+  // Logika penentuan sumber QR Code
+  // 1. Prioritas utama: qrUrl dari Midtrans
+  // 2. Fallback: Generate QR dari qrString menggunakan layanan publik (misal: api.qrserver.com)
+  const finalQrSrc = qrUrl 
+    ? qrUrl 
+    : qrString 
+      ? `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrString)}` 
+      : null;
 
   const checkPaymentStatus = async (isManual = false) => {
+    if (isExpired) return;
     if (isManual) setIsChecking(true);
+    
     try {
       const response = await fetch(`/api/checkout/status?orderCode=${orderCode}`);
       const data = await response.json();
-      if (data.success && data.paymentStatus == 2) {
+      
+      const pStatus = data.paymentStatus;
+      const status = data.status;
+      const isPaid = 
+        (data.success && (pStatus == 2 || pStatus === '2' || status === 'settlement' || status === 'capture')) ||
+        data.payment_status == '2';
+
+      if (isPaid) {
         onFinish();
       } else if (isManual) {
         setStatusMsg('Pembayaran belum terdeteksi. Silakan tunggu sebentar.');
@@ -575,48 +594,108 @@ function QrisStep({ onBack, onFinish, qrUrl, total, orderCode, expiryTime }: any
   };
 
   useEffect(() => {
-    if (!orderCode || timeLeft === 'EXPIRED') return;
-    const pollInterval = window.setInterval(() => { void checkPaymentStatus(false); }, 3000);
+    if (!orderCode || isExpired) return;
+    
+    const pollInterval = window.setInterval(() => {
+      void checkPaymentStatus(false);
+    }, 3000);
+
     return () => window.clearInterval(pollInterval);
-  }, [orderCode, timeLeft]);
+  }, [orderCode, isExpired]);
 
   useEffect(() => {
     if (!expiryTime) return;
     const targetDate = new Date(expiryTime).getTime();
+
     const interval = window.setInterval(() => {
       const currentTime = Date.now();
       const distance = targetDate - currentTime;
+
       if (distance < 0) {
         window.clearInterval(interval);
         setTimeLeft('EXPIRED');
+        setIsExpired(true);
         return;
       }
+
       const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
       const seconds = Math.floor((distance % (1000 * 60)) / 1000);
       setTimeLeft(`${minutes}:${seconds < 10 ? `0${seconds}` : seconds}`);
     }, 1000);
+
     return () => window.clearInterval(interval);
   }, [expiryTime]);
+
+  const handleMainButtonClick = () => {
+    if (isExpired) {
+      onBack();
+    } else {
+      void checkPaymentStatus(true);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-surface)]">
       <header className="flex items-center gap-4 bg-[var(--color-primary)] px-4 py-6 text-white">
-        <button type="button" onClick={onBack} className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-white/20"><ArrowLeft className="h-5 w-5" /></button>
+        <button type="button" onClick={onBack} className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-white/20">
+          <ArrowLeft className="h-5 w-5" />
+        </button>
         <h1 className="flex-1 pr-9 text-center text-base font-bold">Payment QRIS</h1>
       </header>
+
       <div className="flex flex-1 flex-col items-center space-y-6 bg-[var(--color-primary)] p-6">
         <div className="relative flex w-full max-w-sm flex-col items-center overflow-hidden rounded-3xl bg-white p-8 shadow-xl">
-          <div className="absolute left-4 top-4 flex items-center gap-2"><div className="h-2 w-2 animate-ping rounded-full bg-emerald-500" /><span className="text-[8px] font-bold uppercase tracking-tighter text-stone-400">Auto-checking...</span></div>
-          <div className="absolute right-0 top-0 flex items-center gap-2 rounded-bl-2xl bg-red-500 px-4 py-2 text-white"><Clock className="h-3.5 w-3.5" /><span className="font-mono text-xs font-bold">{timeLeft}</span></div>
-          <div className={`mb-6 rounded-xl border-4 bg-white p-2 ${timeLeft === 'EXPIRED' ? 'border-red-200 grayscale' : 'border-[var(--color-primary)]'}`}><img src={qrUrl || ''} alt="QR Code" className="h-72 w-64 object-contain" /></div>
+          <div className="absolute left-4 top-4 flex items-center gap-2">
+            <div className={`h-2 w-2 rounded-full ${isExpired ? 'bg-red-500' : 'animate-ping bg-emerald-500'}`} />
+            <span className="text-[8px] font-bold uppercase tracking-tighter text-stone-400">
+              {isExpired ? 'Expired' : 'Auto-checking...'}
+            </span>
+          </div>
+
+          <div className="absolute right-0 top-0 flex items-center gap-2 rounded-bl-2xl bg-red-500 px-4 py-2 text-white">
+            <Clock className="h-3.5 w-3.5" />
+            <span className="font-mono text-xs font-bold">{timeLeft || '0:00'}</span>
+          </div>
+
+          {/* Kondisi Tampilan QR / Error */}
+          <div className={`mb-6 rounded-xl border-4 bg-white p-2 flex items-center justify-center h-72 w-64 ${isExpired ? 'border-red-200 grayscale' : 'border-[var(--color-primary)]'}`}>
+            {finalQrSrc ? (
+              <img src={finalQrSrc} alt="QR Code" className="h-full w-full object-contain" />
+            ) : (
+              <div className="text-center p-4">
+                <p className="text-xs font-bold text-red-500">Gagal memuat QR Code.</p>
+                <p className="text-[10px] text-stone-400 mt-1">Data QRIS tidak tersedia dari server.</p>
+              </div>
+            )}
+          </div>
+
           <p className="mb-1 text-sm font-medium text-stone-500">Total Pembayaran</p>
           <p className="mb-4 text-2xl font-black text-[var(--color-primary)]">{formatIDR(total)}</p>
-          {statusMsg && <p className="animate-bounce rounded-full bg-amber-50 px-3 py-1 text-[10px] font-bold text-amber-600">{statusMsg}</p>}
+
+          {statusMsg && (
+            <p className="animate-bounce rounded-full bg-amber-50 px-3 py-1 text-[10px] font-bold text-amber-600">
+              {statusMsg}
+            </p>
+          )}
         </div>
       </div>
+
       <div className="z-20 bg-white p-4 pb-8 shadow-[0_-10px_20px_rgba(0,0,0,0.03)]">
-        <button type="button" onClick={() => void checkPaymentStatus(true)} disabled={timeLeft === 'EXPIRED' || isChecking} className={`flex w-full items-center justify-center gap-3 rounded-xl py-4 font-bold text-white transition-all ${timeLeft === 'EXPIRED' ? 'bg-stone-300' : 'bg-[var(--color-primary)] active:scale-95'}`}>
-          {isChecking ? <Loader2 className="h-5 w-5 animate-spin" /> : timeLeft === 'EXPIRED' ? 'Kembali ke Menu' : 'Saya Sudah Bayar'}
+        <button
+          type="button"
+          onClick={handleMainButtonClick}
+          disabled={isChecking}
+          className={`flex w-full items-center justify-center gap-3 rounded-xl py-4 font-bold text-white transition-all ${
+            isExpired ? 'bg-stone-400 hover:bg-stone-500' : 'bg-[var(--color-primary)] active:scale-95'
+          }`}
+        >
+          {isChecking ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : isExpired ? (
+            'Waktu Habis - Kembali'
+          ) : (
+            'Saya Sudah Bayar'
+          )}
         </button>
       </div>
     </div>

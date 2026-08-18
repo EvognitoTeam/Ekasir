@@ -833,7 +833,7 @@ export async function POST(request: Request): Promise<Response> {
         paymentMethod: 'qris',
         transactionId: midtransData.transaction_id ?? null,
         qrUrl: qrAction?.url ?? null,
-        // qrString: midtransData.qr_string ?? null,
+        qrString: midtransData.qr_string ?? null,
         // expiryTime: midtransData.expiry_time ?? null,
         totals: {
           // subtotal: basePrice,
