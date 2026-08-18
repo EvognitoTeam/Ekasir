@@ -450,16 +450,16 @@ export async function POST(request: Request): Promise<Response> {
     );
 
     // ==========================================
-    // PROTEKSI: SERVER-SIDE DISCOUNT CALCULATION
+    // PROTEKSI: SERVER-SIDE DISCOUNT CALCULATION (TABLE: coupon)
     // ==========================================
     const submittedDiscountId = toPositiveInteger(discountId);
     let discountValue = 0;
     let validDiscountId: number | null = null;
 
     if (submittedDiscountId !== null) {
-      const [foundDiscount] = await db
+      const [foundCoupon] = await db
         .select()
-        .from(coupon)
+        .from(coupon) // Menggunakan tabel coupon sesuai schema Anda
         .where(
           and(
             eq(coupon.id, submittedDiscountId),
@@ -469,7 +469,7 @@ export async function POST(request: Request): Promise<Response> {
         )
         .limit(1);
 
-      if (!foundDiscount) {
+      if (!foundCoupon) {
         return jsonError(
           400,
           'Voucher atau kupon diskon tidak ditemukan atau sudah kedaluwarsa.',
@@ -477,16 +477,18 @@ export async function POST(request: Request): Promise<Response> {
         );
       }
 
-      const discountType = String(foundDiscount.type || 'fixed').toLowerCase();
-      const rawDiscountValue = Number(foundDiscount.value || 0);
+      const discountRate = Number(foundCoupon.discount_rate || 0);
+      const discountPrice = Number(foundCoupon.discount_price || 0);
 
-      if (discountType === 'percentage') {
-        discountValue = Math.floor(basePrice * (rawDiscountValue / 100));
-      } else {
-        discountValue = toInteger(rawDiscountValue);
+      if (discountRate > 0) {
+        // Jika menggunakan persentase (discount_rate)
+        discountValue = Math.floor(basePrice * (discountRate / 100));
+      } else if (discountPrice > 0) {
+        // Jika menggunakan nominal tetap (discount_price)
+        discountValue = toInteger(discountPrice);
       }
 
-      validDiscountId = foundDiscount.id;
+      validDiscountId = foundCoupon.id;
     }
 
     // Pastikan diskon tidak negatif dan tidak melebihi subtotal
