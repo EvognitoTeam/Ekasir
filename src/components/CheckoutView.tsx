@@ -475,6 +475,47 @@ function PaymentStep({ onBack, onPay, total, isProcessing, slug }: any) {
 
   const visibleMethods = orderType === 'online' ? paymentMethods.filter((payment) => payment.id === 'qris') : paymentMethods.filter((payment) => payment.id === 'cash');
 
+  // 🔴 Validasi Client-Side sebelum melanjutkan pembayaran
+  const handleValidateAndPay = () => {
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim();
+    const trimmedPhone = phone.trim();
+
+    if (!trimmedName) {
+      Toast.fire({ icon: 'warning', title: 'Nama lengkap wajib diisi.' });
+      return;
+    }
+
+    if (trimmedEmail) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(trimmedEmail)) {
+        Toast.fire({ icon: 'warning', title: 'Format email tidak valid.' });
+        return;
+      }
+    }
+
+    if (trimmedPhone) {
+      const cleanedPhone = trimmedPhone.replace(/\D/g, '');
+      if (cleanedPhone.length < 8 || cleanedPhone.length > 15) {
+        Toast.fire({ icon: 'warning', title: 'Nomor telepon harus terdiri dari 8 hingga 15 digit.' });
+        return;
+      }
+    }
+
+    // Jika lolos validasi, teruskan ke fungsi onPay utama
+    onPay({
+      userId: sessionUserId,
+      name: trimmedName,
+      email: trimmedEmail,
+      phone: trimmedPhone,
+      tableNumber: tableCode || null,
+      serviceType,
+      manualTableInfo: serviceType === 'takeaway' ? 'Takeaway' : null,
+      method,
+      orderType,
+    });
+  };
+
   return (
     <div className="flex h-full flex-col bg-[var(--color-surface)]">
       <header className="sticky top-0 z-30 border-b border-stone-100 bg-white px-6 pb-6 pt-[calc(1.25rem+env(safe-area-inset-top))]">
@@ -491,9 +532,9 @@ function PaymentStep({ onBack, onPay, total, isProcessing, slug }: any) {
         <div className="rounded-3xl border border-stone-100 bg-white p-5 shadow-sm">
           <p className="mb-4 text-[10px] font-label font-bold uppercase tracking-[0.28em] text-stone-500">Informasi pelanggan</p>
           <div className="space-y-3">
-            <div className="flex items-center gap-3 rounded-2xl border border-stone-100 bg-stone-50 px-4 py-3.5 focus-within:border-[var(--color-primary)]"><User className="h-4 w-4 shrink-0 text-stone-400" /><input type="text" placeholder="Full Name" value={name} onChange={(event) => setName(event.target.value)} className="w-full bg-transparent text-sm font-medium text-stone-800 outline-none" required /></div>
-            <div className="flex items-center gap-3 rounded-2xl border border-stone-100 bg-stone-50 px-4 py-3.5 focus-within:border-[var(--color-primary)]"><Mail className="h-4 w-4 shrink-0 text-stone-400" /><input type="email" placeholder="Email Address" value={email} onChange={(event) => setEmail(event.target.value)} className="w-full bg-transparent text-sm font-medium text-stone-800 outline-none" required /></div>
-            <div className="flex items-center gap-3 rounded-2xl border border-stone-100 bg-stone-50 px-4 py-3.5 focus-within:border-[var(--color-primary)]"><Phone className="h-4 w-4 shrink-0 text-stone-400" /><input type="tel" placeholder="Phone Number (e.g., 0812...)" value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, ''))} className="w-full bg-transparent text-sm font-medium text-stone-800 outline-none" required /></div>
+            <div className="flex items-center gap-3 rounded-2xl border border-stone-100 bg-stone-50 px-4 py-3.5 focus-within:border-[var(--color-primary)]"><User className="h-4 w-4 shrink-0 text-stone-400" /><input type="text" placeholder="Full Name" value={name} onChange={(event) => setName(event.target.value)} className="w-full bg-transparent text-sm font-medium text-stone-800 outline-none" /></div>
+            <div className="flex items-center gap-3 rounded-2xl border border-stone-100 bg-stone-50 px-4 py-3.5 focus-within:border-[var(--color-primary)]"><Mail className="h-4 w-4 shrink-0 text-stone-400" /><input type="email" placeholder="Email Address (Opsional)" value={email} onChange={(event) => setEmail(event.target.value)} className="w-full bg-transparent text-sm font-medium text-stone-800 outline-none" /></div>
+            <div className="flex items-center gap-3 rounded-2xl border border-stone-100 bg-stone-50 px-4 py-3.5 focus-within:border-[var(--color-primary)]"><Phone className="h-4 w-4 shrink-0 text-stone-400" /><input type="tel" placeholder="Phone Number (e.g., 0812...)" value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, ''))} className="w-full bg-transparent text-sm font-medium text-stone-800 outline-none" /></div>
 
             <div className="space-y-3">
               <div className={`flex items-center gap-3 rounded-xl border px-3 py-3 ${serviceType === 'dine_in' ? 'border-[var(--color-primary)] bg-emerald-50' : 'border-stone-200 bg-stone-100 opacity-70'}`}>
@@ -543,7 +584,12 @@ function PaymentStep({ onBack, onPay, total, isProcessing, slug }: any) {
           <div><p className="text-[9px] font-label font-bold uppercase tracking-[0.25em] text-stone-400">Total pembayaran</p><p className="font-display text-xl font-bold text-stone-900">{formatIDR(total)}</p></div>
           <p className="text-[10px] text-stone-400">Aman & terenkripsi</p>
         </div>
-        <button type="button" onClick={() => onPay({ userId: sessionUserId, name, email, phone, tableNumber: tableCode || null, serviceType, manualTableInfo: serviceType === 'takeaway' ? 'Takeaway' : null, method, orderType })} disabled={isProcessing || !name} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--color-primary)] py-4 font-bold text-white shadow-lg shadow-black/10 disabled:opacity-50">
+        <button 
+          type="button" 
+          onClick={handleValidateAndPay} 
+          disabled={isProcessing} 
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--color-primary)] py-4 font-bold text-white shadow-lg shadow-black/10 disabled:opacity-50 transition active:scale-[0.99]"
+        >
           {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Pay Now'}
         </button>
       </div>
@@ -847,8 +893,8 @@ export default function CheckoutView({ onBack, onSuccess }: Props) {
         } else {
           createOrder(orderData as any); clearCart(slug); onSuccess();
         }
-      } else { window.alert(data.message || 'Gagal server.'); }
-    } catch { window.alert('Error jaringan.'); } finally { setIsProcessing(false); }
+      } else { Toast.fire({ icon: 'error', title: data.message || 'Gagal memproses pesanan.' }); }
+    } catch { Toast.fire({ icon: 'error', title: 'Terjadi kesalahan jaringan.' }); } finally { setIsProcessing(false); }
   };
 
   const handleFinishQris = () => { if (!currentOrderPayload) return; createOrder(currentOrderPayload); clearCart(slug); onSuccess(); };

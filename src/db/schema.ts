@@ -320,6 +320,16 @@ export const coupon = mysqlTable("coupon", {
   deletedAt: timestamp("deleted_at"),
 });
 
+export const couponUsages = mysqlTable("coupon_usages", {
+  id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
+  coupon_id: bigint("coupon_id", { mode: "number", unsigned: true }).notNull(),
+  order_id: bigint("order_id", { mode: "number", unsigned: true }).notNull(),
+  mitra_id: bigint("mitra_id", { mode: "number", unsigned: true }).notNull(),
+  user_id: bigint("user_id", { mode: "number", unsigned: true }), // Jika member yang pakai
+  discount_amount: decimal("discount_amount", { precision: 10, scale: 0 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const loyaltyPoints = mysqlTable("loyalty_points", {
   id: bigint("id", {
     mode: "number",

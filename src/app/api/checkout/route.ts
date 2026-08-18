@@ -9,6 +9,7 @@ import {
   products,
   users,
   coupon,
+  couponUsages,
 } from '@/db/schema';
 
 import {
@@ -84,14 +85,6 @@ function jsonError(
   );
 }
 
-function isValidPhoneNumber(phone: string): boolean {
-  // Hanya menerima angka, spasi, tanda +, tanda -, dan tanda kurung, 
-  // dengan panjang minimal 8 digit dan maksimal 15 digit angka bersih.
-  const cleaned = phone.replace(/\D/g, '');
-  const phoneRegex = /^[+]?[\d\s\-()]{8,20}$/;
-  return phoneRegex.test(phone) && cleaned.length >= 8 && cleaned.length <= 15;
-}
-
 function normalizeString(value: unknown): string {
   if (typeof value === 'string') {
     return value.trim();
@@ -142,6 +135,12 @@ function normalizeRate(value: unknown): number {
     return 0;
   }
   return parsed;
+}
+
+function isValidPhoneNumber(phone: string): boolean {
+  const cleaned = phone.replace(/\D/g, '');
+  const phoneRegex = /^[+]?[\d\s\-()]{8,20}$/;
+  return phoneRegex.test(phone) && cleaned.length >= 8 && cleaned.length <= 15;
 }
 
 function generateOrderCode(): string {
@@ -266,7 +265,7 @@ export async function POST(request: Request): Promise<Response> {
       return jsonError(400, 'Nama pelanggan wajib diisi.', 'CUSTOMER_NAME_REQUIRED');
     }
 
-    // PROTEKSI: Validasi Format Email
+    // Validasi Format Email
     if (customerEmail) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(customerEmail)) {
@@ -278,16 +277,8 @@ export async function POST(request: Request): Promise<Response> {
       }
     }
 
-    // PROTEKSI: Validasi Format Nomor Telepon (Wajib diisi atau opsional sesuai kebutuhan, contoh di bawah jika wajib diisi)
-    if (!customerPhone) {
-      return jsonError(
-        400,
-        'Nomor telepon wajib diisi.',
-        'PHONE_REQUIRED',
-      );
-    }
-
-    if (!isValidPhoneNumber(customerPhone)) {
+    // Validasi Format Telepon
+    if (customerPhone && !isValidPhoneNumber(customerPhone)) {
       return jsonError(
         400,
         'Format nomor telepon tidak valid. Gunakan 8 hingga 15 digit angka.',
@@ -349,15 +340,10 @@ export async function POST(request: Request): Promise<Response> {
         reused: true,
         idempotentReplay: true,
         message: 'Request checkout ini sudah pernah diproses.',
-        orderId: existingOrder.id,
         orderCode: existingOrder.orderCode,
         paymentMethod: existingOrder.paymentMethod,
-        paymentStatus: existingOrder.paymentStatus,
-        status: existingOrder.status,
-        qrUrl: existingOrder.qrUrl ?? null,
-        qrString: existingOrder.qrString ?? null,
-        expiryTime: existingOrder.expiryTime ?? null,
         transactionId: existingOrder.transactionId ?? null,
+        qrUrl: existingOrder.qrUrl ?? null,
       });
     }
 
@@ -450,7 +436,7 @@ export async function POST(request: Request): Promise<Response> {
     );
 
     // ==========================================
-    // PROTEKSI: SERVER-SIDE DISCOUNT CALCULATION (TABLE: coupon)
+    // PROTEKSI: SERVER-SIDE DISCOUNT CALCULATION
     // ==========================================
     const submittedDiscountId = toPositiveInteger(discountId);
     let discountValue = 0;
@@ -459,7 +445,7 @@ export async function POST(request: Request): Promise<Response> {
     if (submittedDiscountId !== null) {
       const [foundCoupon] = await db
         .select()
-        .from(coupon) // Menggunakan tabel coupon sesuai schema Anda
+        .from(coupon)
         .where(
           and(
             eq(coupon.id, submittedDiscountId),
@@ -481,17 +467,14 @@ export async function POST(request: Request): Promise<Response> {
       const discountPrice = Number(foundCoupon.discount_price || 0);
 
       if (discountRate > 0) {
-        // Jika menggunakan persentase (discount_rate)
         discountValue = Math.floor(basePrice * (discountRate / 100));
       } else if (discountPrice > 0) {
-        // Jika menggunakan nominal tetap (discount_price)
         discountValue = toInteger(discountPrice);
       }
 
       validDiscountId = foundCoupon.id;
     }
 
-    // Pastikan diskon tidak negatif dan tidak melebihi subtotal
     discountValue = Math.max(0, Math.min(discountValue, basePrice));
 
     if (basePrice <= 0) {
@@ -620,12 +603,12 @@ export async function POST(request: Request): Promise<Response> {
         table_number: finalTableId,
         manual_table_info: manualTableInfo,
         total_price: String(basePrice),
-        discount: String(discountValue),
         tax: String(tax),
         service: String(service),
+        discount: String(discountValue),
+        discountId: validDiscountId,
         totalAfterDiscount: String(finalGrandTotal),
         payment_method: paymentMethod,
-        discountId: validDiscountId,
         idempotencyKey: String(idempotencyKey),
         platformFee: String(platformFee),
         platformFeeRate: String(platformFeeRate),
@@ -677,6 +660,36 @@ export async function POST(request: Request): Promise<Response> {
 
       await tx.insert(orderItems).values(itemsToInsert);
 
+      // ==========================================
+      // PENCATATAN & INCREMENT RIWAYAT KUPON
+      // ==========================================
+      if (validDiscountId !== null && discountValue > 0) {
+        const [targetCoupon] = await tx
+          .select({ alreadyUsed: coupon.already_used })
+          .from(coupon)
+          .where(eq(coupon.id, validDiscountId))
+          .limit(1);
+
+        if (targetCoupon) {
+          await tx
+            .update(coupon)
+            .set({
+              already_used: (targetCoupon.alreadyUsed || 0) + 1,
+              updatedAt: new Date(),
+            })
+            .where(eq(coupon.id, validDiscountId));
+        }
+
+        await tx.insert(couponUsages).values({
+          coupon_id: validDiscountId,
+          order_id: newOrderId,
+          mitra_id: mitraId,
+          user_id: customerUserId,
+          discount_amount: String(discountValue),
+          createdAt: now,
+        });
+      }
+
       return {
         id: newOrderId,
         code: generatedCode,
@@ -689,26 +702,10 @@ export async function POST(request: Request): Promise<Response> {
         {
           success: true,
           message: 'Pesanan cash berhasil dibuat.',
-          orderId: transactionResult.id,
           orderCode: transactionResult.code,
-          cashier: {
-            id: activeCashier.id,
-            name: activeCashier.name,
-            role: activeCashier.role,
-            branchId: activeCashier.branchId,
-          },
           paymentMethod,
-          paymentStatus: '1',
-          status: 'pending',
-          idempotencyKey,
           totals: {
-            subtotal: basePrice,
-            discount: discountValue,
-            tax,
-            service,
             grandTotal: finalGrandTotal,
-            platformFeeRate,
-            platformFee,
           },
         },
         { status: 201 },
@@ -810,9 +807,7 @@ export async function POST(request: Request): Promise<Response> {
         midtransData.status_message ?? 'Midtrans gagal membuat transaksi QRIS.',
         'MIDTRANS_CHARGE_FAILED',
         {
-          orderId: transactionResult.id,
           orderCode: transactionResult.code,
-          providerResponse: process.env.NODE_ENV === 'development' ? midtransData : undefined,
         },
       );
     }
@@ -849,28 +844,12 @@ export async function POST(request: Request): Promise<Response> {
       {
         success: true,
         message: 'QRIS berhasil dibuat.',
-        orderId: transactionResult.id,
         orderCode: transactionResult.code,
-        // cashier: {
-        //   id: activeCashier.id,
-        //   name: activeCashier.name,
-        //   role: activeCashier.role,
-        //   branchId: activeCashier.branchId,
-        // },
-        // idempotencyKey,
         paymentMethod: 'qris',
         transactionId: midtransData.transaction_id ?? null,
         qrUrl: qrAction?.url ?? null,
-        qrString: midtransData.qr_string ?? null,
-        // expiryTime: midtransData.expiry_time ?? null,
         totals: {
-          // subtotal: basePrice,
-          // discount: discountValue,
-          // tax,
-          // service,
           grandTotal: finalGrandTotal,
-          // platformFeeRate,
-          // platformFee,
         },
       },
       { status: 201 },
