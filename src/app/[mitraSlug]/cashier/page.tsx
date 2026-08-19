@@ -178,7 +178,6 @@ export default function CashierApp() {
   const [showAddReservationModal, setShowAddReservationModal] = useState(false);
   const [isSubmittingReservation, setIsSubmittingReservation] = useState(false);
   
-  // 🟢 State form diperbarui dengan pemisahan startTime dan endTime
   const [newResForm, setNewResForm] = useState({
     name: '',
     phone: '',
@@ -695,7 +694,6 @@ export default function CashierApp() {
     }
   };
 
-  // 🟢 FUNGSI TAMBAH RESERVASI (DIPERBARUI UNTUK WAKTU SELESAI)
   const handleCreateReservation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newResForm.name || !newResForm.date || !newResForm.startTime || !newResForm.endTime) {
@@ -705,7 +703,6 @@ export default function CashierApp() {
 
     setIsSubmittingReservation(true);
     try {
-      // 🟢 Format: YYYY-MM-DDTHH:mm:00
       const startDateTime = `${newResForm.date}T${newResForm.startTime}:00`;
       const endDateTime = `${newResForm.date}T${newResForm.endTime}:00`;
 
@@ -861,6 +858,7 @@ export default function CashierApp() {
     orderId: string,
     newStatus: Order["status"],
     newPaymentStatus?: Order["paymentStatus"],
+    skipUndo: boolean = false
   ) => {
     const cur = orders.find((o) => String(o.id) === String(orderId));
     if (!cur) return;
@@ -873,13 +871,16 @@ export default function CashierApp() {
 
     if (undoAction?.timeoutId) clearTimeout(undoAction.timeoutId);
     executeUpdate(orderId, newStatus, newPaymentStatus);
-    const timeoutId = setTimeout(() => setUndoAction(null), 4000);
-    setUndoAction({
-      orderId,
-      oldStatus: cur.status,
-      oldPaymentStatus: cur.paymentStatus,
-      timeoutId,
-    });
+    
+    if (!skipUndo) {
+      const timeoutId = setTimeout(() => setUndoAction(null), 4000);
+      setUndoAction({
+        orderId,
+        oldStatus: cur.status,
+        oldPaymentStatus: cur.paymentStatus,
+        timeoutId,
+      });
+    }
   };
 
   const handleConfirmCashPayment = () => {
@@ -901,10 +902,7 @@ export default function CashierApp() {
 
     const change = received - totalBill;
 
-    executeUpdate(String(cashPaymentPopup.id), "confirmed", "1", {
-      getPayment: received,
-      cashChange: change,
-    });
+    updateOrderStatus(String(cashPaymentPopup.id), "confirmed", "1");
 
     Toast.fire({ icon: "success", title: `Lunas! Kembalian: ${formatPrice(change)}`, topLayer: true });
     setCashPaymentPopup(null);
@@ -1586,368 +1584,110 @@ export default function CashierApp() {
         ) : (
 
           <>
-
-            <header className="
-              h-20
-              px-8
-              border-b
-              border-stone-200
-              bg-white
-              flex
-              items-center
-              justify-between
-              flex-shrink-0
-              z-10
-            ">
-
+            <header className="h-20 px-8 border-b border-stone-200 bg-white flex items-center justify-between flex-shrink-0 z-10">
               <div>
-                <h2 className="
-                  text-2xl
-                  font-black
-                  text-stone-800
-                  font-display
-                ">
-                  {TABS.find(
-                    (tab) =>
-                      tab.id === activeTab
-                  )?.label}
+                <h2 className="text-2xl font-black text-stone-800 font-display">
+                  {TABS.find((tab) => tab.id === activeTab)?.label}
                 </h2>
-
-                <p className="
-                  text-xs
-                  text-stone-400
-                  font-medium
-                  mt-1
-                ">
-                  Kelola pesanan KALOO POS
-                </p>
+                <p className="text-xs text-stone-400 font-medium mt-1">Kelola pesanan KALOO POS</p>
               </div>
 
               <div className="flex items-center gap-4">
-
                 {role === "cashier" && (
                   <button
                     type="button"
-                    onClick={() =>
-                      setActiveTab("pos")
-                    }
-                    className="
-                      flex
-                      items-center
-                      gap-2
-                      px-6
-                      py-3
-                      bg-emerald-700
-                      hover:bg-emerald-800
-                      text-white
-                      rounded-xl
-                      font-bold
-                      shadow-lg
-                      shadow-emerald-900/20
-                      transition-all
-                      active:scale-95
-                    "
+                    onClick={() => setActiveTab("pos")}
+                    className="flex items-center gap-2 px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold shadow-lg shadow-emerald-900/20 transition-all active:scale-95"
                   >
-                    <Plus className="w-5 h-5" />
-
-                    Buat Pesanan
+                    <Plus className="w-5 h-5" /> Buat Pesanan
                   </button>
                 )}
-
               </div>
-
             </header>
 
-            <div className="
-              absolute
-              top-24
-              left-1/2
-              -translate-x-1/2
-              z-50
-              flex
-              flex-col
-              gap-2
-              w-full
-              max-w-lg
-              pointer-events-none
-            ">
-
+            <div className="absolute top-24 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 w-full max-w-lg pointer-events-none">
               <AnimatePresence>
-
                 {notification && (
                   <motion.div
-                    initial={{
-                      opacity: 0,
-                      y: -20,
-                      scale: 0.9,
-                    }}
-                    animate={{
-                      opacity: 1,
-                      y: 0,
-                      scale: 1,
-                    }}
-                    exit={{
-                      opacity: 0,
-                      y: -20,
-                      scale: 0.9,
-                    }}
-                    className="
-                      bg-emerald-700
-                      text-white
-                      px-5
-                      py-3
-                      rounded-2xl
-                      shadow-xl
-                      flex
-                      items-center
-                      gap-3
-                      font-bold
-                      pointer-events-auto
-                    "
+                    initial={{ opacity: 0, y: -20, scale: 0.9 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -20, scale: 0.9 }}
+                    className="bg-emerald-700 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 font-bold pointer-events-auto"
                   >
                     <BellRing className="w-5 h-5" />
-
-                    <span className="flex-1">
-                      {notification}
-                    </span>
-
+                    <span className="flex-1">{notification}</span>
                   </motion.div>
                 )}
 
                 {undoAction && (
                   <motion.div
-                    initial={{
-                      opacity: 0,
-                      y: -20,
-                      scale: 0.9,
-                    }}
-                    animate={{
-                      opacity: 1,
-                      y: 0,
-                      scale: 1,
-                    }}
-                    exit={{
-                      opacity: 0,
-                      y: -20,
-                      scale: 0.9,
-                    }}
-                    className="
-                      bg-stone-900
-                      text-white
-                      px-5
-                      py-3.5
-                      rounded-2xl
-                      shadow-2xl
-                      flex
-                      items-center
-                      justify-between
-                      pointer-events-auto
-                      border
-                      border-stone-700
-                    "
+                    initial={{ opacity: 0, y: -20, scale: 0.9 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -20, scale: 0.9 }}
+                    className="bg-stone-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl flex items-center justify-between pointer-events-auto border border-stone-700"
                   >
-
                     <div>
-                      <p className="
-                        text-sm
-                        font-bold
-                      ">
-                        Status Diperbarui
-                      </p>
-
-                      <p className="
-                        text-[11px]
-                        text-stone-400
-                      ">
-                        Order #{undoAction.orderId}
-                      </p>
+                      <p className="text-sm font-bold">Status Diperbarui</p>
+                      <p className="text-[11px] text-stone-400">Order #{undoAction.orderId}</p>
                     </div>
-
                     <button
                       type="button"
                       onClick={handleUndo}
-                      className="
-                        flex
-                        items-center
-                        gap-2
-                        px-4
-                        py-2
-                        bg-stone-800
-                        hover:bg-stone-700
-                        border
-                        border-stone-600
-                        rounded-xl
-                        text-xs
-                        font-bold
-                        transition
-                      "
+                      className="flex items-center gap-2 px-4 py-2 bg-stone-800 hover:bg-stone-700 border border-stone-600 rounded-xl text-xs font-bold transition"
                     >
-                      <RotateCcw className="w-4 h-4" />
-
-                      Batalkan
+                      <RotateCcw className="w-4 h-4" /> Batalkan
                     </button>
-
                   </motion.div>
                 )}
-
               </AnimatePresence>
-
             </div>
 
-            <div className="
-              flex-1
-              overflow-y-auto
-              p-8
-            ">
-
+            <div className="flex-1 overflow-y-auto p-8">
               {filteredOrders.length === 0 ? (
-
-                <div className="
-                  h-full
-                  flex
-                  flex-col
-                  items-center
-                  justify-center
-                  text-stone-400
-                ">
-
-                  <div className="
-                    w-24
-                    h-24
-                    bg-white
-                    border-2
-                    border-dashed
-                    border-stone-200
-                    rounded-3xl
-                    flex
-                    items-center
-                    justify-center
-                    mb-6
-                  ">
-                    <ShoppingBag className="
-                      w-10
-                      h-10
-                      text-stone-300
-                    " />
+                <div className="h-full flex flex-col items-center justify-center text-stone-400">
+                  <div className="w-24 h-24 bg-white border-2 border-dashed border-stone-200 rounded-3xl flex items-center justify-center mb-6">
+                    <ShoppingBag className="w-10 h-10 text-stone-300" />
                   </div>
-
-                  <h3 className="
-                    text-xl
-                    font-black
-                    text-stone-600
-                    mb-2
-                  ">
-                    Area Kosong
-                  </h3>
-
-                  <p className="
-                    text-sm
-                    font-medium
-                  ">
-                    Tidak ada pesanan di kategori ini.
-                  </p>
-
+                  <h3 className="text-xl font-black text-stone-600 mb-2">Area Kosong</h3>
+                  <p className="text-sm font-medium">Tidak ada pesanan di kategori ini.</p>
                   {role === "cashier" && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setActiveTab("pos")
-                      }
-                      className="
-                        mt-5
-                        px-5
-                        py-2.5
-                        rounded-xl
-                        bg-emerald-700
-                        hover:bg-emerald-800
-                        text-white
-                        text-sm
-                        font-bold
-                        transition
-                      "
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        <Plus className="w-4 h-4" />
-                        Buat Pesanan
-                      </span>
+                    <button type="button" onClick={() => setActiveTab("pos")} className="mt-5 px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-bold transition">
+                      <span className="inline-flex items-center gap-2"><Plus className="w-4 h-4" />Buat Pesanan</span>
                     </button>
                   )}
-
                 </div>
-
               ) : (
-
-                <div className="
-                  grid
-                  grid-cols-1
-                  md:grid-cols-2
-                  lg:grid-cols-3
-                  xl:grid-cols-4
-                  gap-6
-                  auto-rows-max
-                ">
-
+                // 🔴 CSS GRID 3 KOLOM DENGAN ITEMS-START (Mencegah Card Melar dan Urutan Tetap Benar)
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
                   <AnimatePresence mode="popLayout">
-
                     {filteredOrders.map((order) => (
-
                       <motion.div
                         layout
                         key={order.id}
-                        initial={{
-                          opacity: 0,
-                          scale: 0.95,
-                        }}
-                        animate={{
-                          opacity: 1,
-                          scale: 1,
-                        }}
-                        exit={{
-                          opacity: 0,
-                          scale: 0.95,
-                        }}
-                        transition={{
-                          duration: 0.2,
-                        }}
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        transition={{ duration: 0.2 }}
+                        className="w-full"
                       >
-
                         <OrderCard
                           order={order}
-                          onUpdateStatus={
-                            updateOrderStatus
-                          }
-                          onUpdateNote={
-                            updateOrderNote
-                          }
-                          onPrintOrder={
-                            handlePrintOrder
-                          }
-                          role={
-                            role === "kitchen"
-                              ? "kitchen"
-                              : "cashier"
-                          }
+                          onUpdateStatus={updateOrderStatus}
+                          onUpdateNote={updateOrderNote}
+                          onPrintOrder={handlePrintOrder}
+                          role={role === "kitchen" ? "kitchen" : "cashier"}
                         />
-
                       </motion.div>
-
                     ))}
-
                   </AnimatePresence>
-
                 </div>
-
               )}
-
             </div>
-
           </>
-
         )}
+      </main>
 
-</main>
-
-      {/* 3. RIGHT PANEL (Hanya tampil jika bukan di mode POS / Kelola Stok / Reservasi) */}
+      {/* RIGHT PANEL */}
       {role === "cashier" && activeTab !== "pos" && activeTab !== "stock" && activeTab !== "reservation" && (
         <aside className="w-80 bg-white border-l border-stone-200 flex flex-col z-20 flex-shrink-0 shadow-sm">
           <div className="h-20 flex items-center px-6 border-b border-stone-100">
@@ -1965,7 +1705,7 @@ export default function CashierApp() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4">
               <div className="bg-emerald-50 border border-emerald-100 rounded-3xl p-5">
                 <div className="flex items-center gap-2 text-emerald-700 mb-2">
                   <ReceiptText className="w-4 h-4" />
@@ -1973,13 +1713,13 @@ export default function CashierApp() {
                 </div>
                 <p className="text-2xl font-black text-emerald-900">{todayOrders.length} <span className="text-sm">nota</span></p>
               </div>
-              <div className="bg-amber-50 border border-amber-100 rounded-3xl p-5">
+              {/* <div className="bg-amber-50 border border-amber-100 rounded-3xl p-5">
                 <div className="flex items-center gap-2 text-amber-700 mb-2">
                   <Sparkles className="w-4 h-4" />
                   <span className="text-[10px] font-bold uppercase tracking-widest">Est. Laba</span>
                 </div>
                 <p className="text-lg font-black text-amber-900">{formatPrice(totalProfit)}</p>
-              </div>
+              </div> */}
             </div>
           </div>
         </aside>
@@ -1992,12 +1732,14 @@ export default function CashierApp() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            onClick={() => setCashPaymentPopup(null)}
             className="absolute inset-0 z-[100] bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-6"
           >
             <motion.div
               initial={{ y: 50, scale: 0.95 }}
               animate={{ y: 0, scale: 1 }}
               exit={{ y: 50, scale: 0.95 }}
+              onClick={(e) => e.stopPropagation()}
               className="bg-white w-full max-w-md rounded-[2rem] overflow-hidden flex flex-col shadow-2xl"
             >
               <div className="p-6 border-b border-stone-100 flex items-center justify-between bg-stone-50">
@@ -2059,19 +1801,20 @@ export default function CashierApp() {
         )}
       </AnimatePresence>
 
-      {/* 🟢 MODAL TAMBAH RESERVASI MANUAL DENGAN INPUT WAKTU SELESAI */}
       <AnimatePresence>
         {showAddReservationModal && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            onClick={() => setShowAddReservationModal(false)}
             className="fixed inset-0 z-[100] bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-6"
           >
             <motion.div
               initial={{ y: 50, scale: 0.95 }}
               animate={{ y: 0, scale: 1 }}
               exit={{ y: 50, scale: 0.95 }}
+              onClick={(e) => e.stopPropagation()}
               className="bg-white w-full max-w-xl rounded-[2rem] overflow-hidden flex flex-col shadow-2xl"
             >
               <div className="p-6 border-b border-stone-100 flex items-center justify-between bg-stone-50">
@@ -2121,7 +1864,6 @@ export default function CashierApp() {
                     />
                   </div>
 
-                  {/* 🟢 DUA KOLOM UNTUK WAKTU KEDATANGAN & WAKTU SELESAI */}
                   <div>
                     <label className="text-xs font-bold text-stone-500 uppercase tracking-wider mb-2 block">Waktu Kedatangan *</label>
                     <input 
@@ -2131,13 +1873,10 @@ export default function CashierApp() {
                       onChange={e => {
                          const newStart = e.target.value;
                          let newEnd = newResForm.endTime;
-                         
-                         // Otomatis +2 jam jika endTime masih kosong
                          if (newStart && !newEnd) {
                            const [h, m] = newStart.split(':');
                            newEnd = `${String((parseInt(h) + 2) % 24).padStart(2, '0')}:${m}`;
                          }
-                         
                          setNewResForm({...newResForm, startTime: newStart, endTime: newEnd});
                       }} 
                       className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-600 focus:bg-white" 
@@ -2241,10 +1980,12 @@ export default function CashierApp() {
         {showPrinterModal && (
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setShowPrinterModal(false)}
               className="fixed inset-0 z-[9999] flex items-end justify-center bg-stone-900/80 backdrop-blur-sm sm:items-center sm:p-4"
             >
               <motion.div
                 initial={{ opacity: 0, y: 40, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 40, scale: 0.97 }}
+                onClick={(e) => e.stopPropagation()}
                 className="flex max-h-[96dvh] w-full max-w-4xl flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl"
               >
                 <header className="flex items-center justify-between border-b border-stone-200 bg-emerald-700 px-6 py-5 text-white">
@@ -2400,7 +2141,7 @@ export default function CashierApp() {
                       {printerSettings.showLogo && (
                         <div className="grid grid-cols-2 gap-6 bg-white p-6 rounded-3xl border border-stone-200 shadow-sm">
                           <SettingGroup title="File logo" description="Format PNG, JPG, JPEG, WEBP. Max 2 MB.">
-                            <input ref={logoFileInputRef} type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" onChange={handleLogoUpload} className="hidden" />
+                            <input ref={logoFileInputRef} type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" className="hidden" onChange={handleLogoUpload} />
                             <div className="flex flex-col gap-4">
                               <button type="button" onClick={() => logoFileInputRef.current?.click()} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-emerald-300 bg-emerald-50 px-4 text-sm font-black text-emerald-700 transition hover:bg-emerald-100">
                                 <ImageIcon className="h-5 w-5" /> Pilih File Logo

@@ -60,10 +60,6 @@ const readOrderField = (
     }
   }
 
-  /*
-   * Fallback case-insensitive agar tetap terbaca ketika API
-   * mengubah kapitalisasi nama properti.
-   */
   const normalizedNames =
     new Set(
       fieldNames.map((name) =>
@@ -142,13 +138,6 @@ export default function OrderCard({
     ] ||
     STATUS_CONFIG.completed;
 
-  /*
-   * Jenis layanan dan meja asal wajib dibaca secara independen.
-   *
-   * table_number/tableId tidak menentukan apakah pesanan dine-in
-   * atau Takeaway. Pesanan Takeaway dari meja tetap mempunyai
-   * table_number.
-   */
   const manualTableInfo =
     readOrderField(
       order,
@@ -305,40 +294,38 @@ export default function OrderCard({
       }
     };
 
+  // LOGIKA STATUS PEMBAYARAN
+  const rawPaymentStatus = String(order.paymentStatus || (order as any).payment_status);
+  let paymentStatusUi = 'BLM BAYAR';
+  
+  if (rawPaymentStatus === '2' || rawPaymentStatus === 'paid') {
+    paymentStatusUi = 'LUNAS';
+  } else if (rawPaymentStatus === '3' || rawPaymentStatus === 'expired') {
+    paymentStatusUi = 'EXPIRED'; 
+  }
 
+  // 🔴 AUTO-CANCEL PESANAN JIKA QRIS EXPIRED
   useEffect(() => {
-    if (
-      process.env.NODE_ENV !==
-        'production' &&
-      !manualTableInfo &&
-      !serviceType
-    ) {
-      console.warn(
-        '[ORDER_CARD_SERVICE_TYPE_MISSING]',
-        {
-          orderId:
-            order.id,
-          status:
-            order.status,
-          table_number:
-            (order as any)
-              ?.table_number,
-          table_name:
-            (order as any)
-              ?.table_name,
-          message:
-            'API daftar order belum mengirim manual_table_info/service_type.',
-        },
-      );
+    if (order.status === 'pending' && order.paymentMethod === 'qris' && paymentStatusUi === 'EXPIRED') {
+      onUpdateStatus(String(order.id), 'cancelled');
     }
-  }, [
-    manualTableInfo,
-    serviceType,
-    order.id,
-    order.status,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order.status, order.paymentMethod, paymentStatusUi, order.id]);
 
-  const paymentStatusUi = order.paymentStatus === '2' || order.paymentStatus === 'paid' ? 'LUNAS' : 'BLM BAYAR';
+  let paymentBadgeBg = '#FEF2F2';
+  let paymentBadgeColor = '#991B1B';
+  let paymentBadgeBorder = '#FCA5A5';
+
+  if (paymentStatusUi === 'LUNAS') {
+    paymentBadgeBg = '#ECFDF5';
+    paymentBadgeColor = '#065F46';
+    paymentBadgeBorder = '#6EE7B7';
+  } else if (paymentStatusUi === 'EXPIRED') {
+    paymentBadgeBg = '#F3F4F6';
+    paymentBadgeColor = '#4B5563';
+    paymentBadgeBorder = '#D1D5DB';
+  }
+
   const paymentMethodUi = order.paymentMethod || 'TUNAI';
   const displayId = order.order_code ? order.order_code.substring(0, 8) : order.id;
 
@@ -612,7 +599,7 @@ export default function OrderCard({
             textTransform: 'uppercase',
             textAlign: 'center',
           }}>
-            Bungkus pesanan atas nama: {order.customerName}
+            Bungkus pesanan atas nama: {order.customerName || order.name}
           </span>
         </div>
       )}
@@ -639,7 +626,6 @@ export default function OrderCard({
           if (rawAddOnsDetails && Array.isArray(rawAddOnsDetails)) {
             rawAddOnsDetails.forEach((addonItem: any) => {
                 if (addonItem && typeof addonItem === 'object') {
-                  // 🟢 AMBIL CUST_NOTES: Jika ada di dalam baris objek JSON
                   if (addonItem.cust_notes) {
                       extractedCustNotes = addonItem.cust_notes;
                   }
@@ -685,7 +671,6 @@ export default function OrderCard({
                     {addons.join(' · ')}
                   </p>
                 )}
-                {/* 🟢 RENDER BARU: Catatan Kustom Pelanggan dari dalam JSON */}
                 {extractedCustNotes && (
                   <p style={{
                     fontSize: '11px', color: '#0369a1', background: '#f0f9ff',
@@ -759,11 +744,11 @@ export default function OrderCard({
             </span>
             <span style={{
               fontSize: '9px', fontWeight: 800, padding: '2px 7px', borderRadius: '5px', letterSpacing: '0.05em',
-              background: paymentStatusUi === 'LUNAS' ? '#ECFDF5' : '#FEF2F2',
-              color: paymentStatusUi === 'LUNAS' ? '#065F46' : '#991B1B',
-              border: `1px solid ${paymentStatusUi === 'LUNAS' ? '#6EE7B7' : '#FCA5A5'}`
+              background: paymentBadgeBg,
+              color: paymentBadgeColor,
+              border: `1px solid ${paymentBadgeBorder}`
             }}>
-              {paymentStatusUi}
+              {paymentStatusUi === 'EXPIRED' ? 'KEDALUWARSA' : paymentStatusUi}
             </span>
           </div>
         </div>
@@ -844,7 +829,6 @@ export default function OrderCard({
                       onClick={() => onUpdateStatus(String(order.id), 'confirmed', '2')} 
                       style={{
                         width: '100%', padding: '11px 16px', borderRadius: '10px',
-                        // 🔴 LOGIKA DISABLE: Ubah background jika disabled
                         background: 'linear-gradient(135deg, #D97706, #B45309)',
                         color: '#fff', fontSize: '12px', fontWeight: 800,
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
@@ -855,14 +839,11 @@ export default function OrderCard({
                       <Banknote size={15} /> Terima Tunai
                     </button>
                   ) : (
-                    // 🔴 TOMBOL QRIS / CASH LUNAS (Cek apakah sudah bayar)
                     <button
                       onClick={() => onUpdateStatus(String(order.id), 'confirmed')}
-                      // 🔴 Tambahkan disabled jika QRIS dan belum LUNAS
                       disabled={order.paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS'}
                       style={{
                         width: '100%', padding: '11px 16px', borderRadius: '10px',
-                        // 🔴 Style disabled
                         background: (order.paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS') 
                             ? '#e5e2dd' 
                             : 'linear-gradient(135deg, #0E5C37, #065F46)',
@@ -876,7 +857,9 @@ export default function OrderCard({
                         boxShadow: (order.paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS') ? 'none' : '0 4px 14px rgba(14,92,55,0.3)',
                       }}
                     >
-                      {order.paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS' ? (
+                      {order.paymentMethod === 'qris' && paymentStatusUi === 'EXPIRED' ? (
+                        <> <XCircle size={15} /> QRIS Kedaluwarsa </>
+                      ) : order.paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS' ? (
                         <> <Loader2 size={15} className="animate-spin" /> Menunggu Pembayaran...</>
                       ) : (
                         <> <CheckCircle2 size={15} /> Terima Pesanan </>

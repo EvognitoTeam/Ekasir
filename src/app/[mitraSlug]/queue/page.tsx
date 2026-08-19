@@ -25,8 +25,11 @@ export default function QueueDisplayPage() {
 
   const lastAnnouncedTime = useRef<Map<number, number>>(new Map());
   const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
+  
+  // 🟢 REF BARU: Untuk melacak indeks suara mana yang sedang giliran dipakai
+  const currentVoiceIndex = useRef(0);
 
-  // 🟢 1. PRE-LOAD DAFTAR SUARA BROWSER
+  // 1. PRE-LOAD DAFTAR SUARA BROWSER
   useEffect(() => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
 
@@ -47,38 +50,44 @@ export default function QueueDisplayPage() {
     };
   }, []);
 
-  // 1. Jam Digital Real-time
+  // 2. Jam Digital Real-time
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // 🟢 2. FUNGSI SUARA KHUSUS PEREMPUAN
+  // 🟢 3. FUNGSI SUARA (BERGANTIAN & LEBIH NATURAL)
   const speakOrder = useCallback((customerName: string | null, orderCode: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
 
     window.speechSynthesis.cancel();
 
-    const cleanName = customerName ? customerName.trim() : 'Pelanggan';
+    const cleanName = customerName ? customerName.trim() : '';
+    // Beri spasi ganda agar pengejaan lebih jelas dan tidak terburu-buru
     const spelledCode = orderCode.split('').join(' ');
-    const textToSpeech = `Panggilan atas nama ${cleanName}, dengan nomor ${spelledCode}, silakan mengambil pesanan Anda di kasir. Terima kasih.`;
+
+    // Teks diubah agar lebih natural layaknya pengumuman asli dengan koma untuk jeda
+    let textToSpeech = `Nomor pesanan, ${spelledCode}, `;
+    if (cleanName && cleanName.toLowerCase() !== 'pelanggan umum') {
+      textToSpeech += `atas nama, ${cleanName}, `;
+    }
+    textToSpeech += `pesanan Anda sudah siap. Silakan mengambil di meja kasir. Terima kasih.`;
 
     const utterance = new SpeechSynthesisUtterance(textToSpeech);
     utterance.lang = 'id-ID';
-    utterance.rate = 0.92; 
-    utterance.pitch = 1.3; // 🟢 Pitch dinaikkan ke 1.3 agar register vokal perempuan jelas
+    utterance.rate = 0.92; // Diperlambat sedikit (0.85) agar ejaan kode terdengar jelas
+    utterance.pitch = 1.2;
 
     const availableVoices = voicesRef.current.length > 0 
       ? voicesRef.current 
       : window.speechSynthesis.getVoices();
 
-    // Filter seluruh suara bahasa Indonesia
     const idVoices = availableVoices.filter(
       (v) => v.lang === 'id-ID' || v.lang === 'id_ID' || v.lang.startsWith('id') || v.lang.startsWith('in')
     );
 
-    // Prioritas 1: Suara perempuan resmi (Gadis di Windows/Edge, Damayanti di Mac/iOS, Female, Google)
-    let selectedVoice = idVoices.find((v) => {
+    // Kumpulkan SEMUA suara perempuan ke dalam array
+    let femaleVoices = idVoices.filter((v) => {
       const name = v.name.toLowerCase();
       return (
         name.includes('gadis') ||
@@ -90,27 +99,33 @@ export default function QueueDisplayPage() {
       );
     });
 
-    // Prioritas 2: Jika belum ketemu, pilih suara ID apa saja KECUALI suara laki-laki (Ardi / Male / David)
-    if (!selectedVoice) {
-      selectedVoice = idVoices.find((v) => {
+    // Fallback 1: Jika tidak ada label perempuan, ambil semua yang bukan laki-laki
+    if (femaleVoices.length === 0) {
+      femaleVoices = idVoices.filter((v) => {
         const name = v.name.toLowerCase();
         return !name.includes('ardi') && !name.includes('male') && !name.includes('pria') && !name.includes('david');
       });
     }
 
-    // Prioritas 3: Fallback ke suara ID pertama yang tersedia
-    if (!selectedVoice && idVoices.length > 0) {
-      selectedVoice = idVoices[0];
+    // Fallback 2: Gunakan semua suara ID yang ada
+    if (femaleVoices.length === 0) {
+      femaleVoices = idVoices;
     }
 
-    if (selectedVoice) {
+    // 🟢 LOGIKA PEMILIHAN SUARA BERGANTIAN (Round-Robin)
+    if (femaleVoices.length > 0) {
+      // Pilih suara berdasarkan sisa bagi (agar terus berputar dari awal jika sudah sampai akhir)
+      const selectedVoice = femaleVoices[currentVoiceIndex.current % femaleVoices.length];
       utterance.voice = selectedVoice;
+      
+      // Naikkan indeks untuk panggilan pesanan berikutnya
+      currentVoiceIndex.current += 1;
     }
 
     window.speechSynthesis.speak(utterance);
   }, []);
 
-  // 3. Fetch Data Antrean (Polling setiap 5 Detik)
+  // 4. Fetch Data Antrean (Polling setiap 5 Detik)
   useEffect(() => {
     if (!slug) return;
 
