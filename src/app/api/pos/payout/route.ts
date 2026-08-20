@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
+import { jwtVerify } from 'jose';
 import { db } from '@/db';
 import {
   orders,
@@ -16,6 +18,10 @@ import {
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+
+const SECRET_KEY = new TextEncoder().encode(
+  process.env.JWT_SECRET || 'rahasia-super-aman-evokasir-2026',
+);
 
 const MONTH_NAMES = [
   'Januari',
@@ -75,6 +81,35 @@ function jsonError(
   );
 }
 
+// 🔴 BERIKAN EKSPLISIT RETURN TYPE DI SINI
+async function verifyOwnerSession(request: Request, targetSlug: string): Promise<AuthCheckResult> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get('ekasir_session')?.value;
+
+  if (!token) {
+    return { ok: false, response: jsonError(401, 'Sesi tidak ditemukan. Silakan login kembali.', 'UNAUTHORIZED') };
+  }
+
+  try {
+    const { payload } = await jwtVerify(token, SECRET_KEY);
+    const role = String(payload.role ?? '').trim().toLowerCase();
+    const sessionSlug = String(payload.slug ?? '').trim();
+    const sessionMitraId = Number(payload.mitraId);
+
+    if (role !== 'owner') {
+      return { ok: false, response: jsonError(403, 'Akses ditolak. Hanya Owner yang dapat mengakses fitur pencairan.', 'FORBIDDEN_ROLE') };
+    }
+
+    if (sessionSlug && sessionSlug !== targetSlug) {
+      return { ok: false, response: jsonError(403, 'Akses ditolak. Sesi tidak sesuai dengan toko ini.', 'FORBIDDEN_SLUG') };
+    }
+
+    return { ok: true, mitraId: sessionMitraId };
+  } catch (err) {
+    return { ok: false, response: jsonError(401, 'Sesi tidak valid atau sudah kedaluwarsa.', 'INVALID_TOKEN') };
+  }
+}
+
 function normalizePaymentMethod(value: unknown): string {
   return String(value ?? '')
     .trim()
@@ -108,10 +143,6 @@ function getOrderTax(order: OrderRow): number {
 }
 
 function getOrderService(order: OrderRow): number {
-  /*
-   * Service charge restoran.
-   * Nilai ini dihitung untuk SEMUA metode pembayaran.
-   */
   return Math.max(
     0,
     toAmount(order.service),
@@ -119,10 +150,6 @@ function getOrderService(order: OrderRow): number {
 }
 
 function getOrderPlatformFee(order: OrderRow): number {
-  /*
-   * Fee platform sudah dibekukan pada masing-masing order.
-   * Jangan dihitung ulang dari pengaturan mitra terbaru.
-   */
   return Math.max(
     0,
     toAmount(order.platformFee),
@@ -238,29 +265,14 @@ function finalizeBucket(
   | 'qrisPlatformFee'
   | 'otherPlatformFee'
 > {
-  /*
-   * Cash adalah uang yang sudah diterima langsung oleh mitra.
-   */
   const cash = bucket.cashGross;
 
-  /*
-   * QRIS bersih dikurangi:
-   * - fee transaksi QRIS;
-   * - fee transaksi cash;
-   * - fee metode lain.
-   *
-   * Alasannya, fee non-QRIS harus tetap ditagihkan dari saldo
-   * digital yang tersedia untuk payout.
-   */
   const qris =
     bucket.qrisGross -
     bucket.qrisPlatformFee -
     bucket.cashPlatformFee -
     bucket.otherPlatformFee;
 
-  /*
-   * Metode lain ditampilkan sebagai gross dikurangi fee-nya sendiri.
-   */
   const other =
     bucket.otherGross -
     bucket.otherPlatformFee;
@@ -304,6 +316,12 @@ export async function GET(
   }
 
   try {
+    // 🔴 1. VERIFIKASI KEAMANAN SESI & ROLE OWNER
+    const authCheck = await verifyOwnerSession(request, slug);
+    if (!authCheck.ok) {
+      return authCheck.response;
+    }
+
     const [foundMitra] = await db
       .select()
       .from(mitra)
@@ -325,9 +343,11 @@ export async function GET(
 
     const mitraId = foundMitra.id;
 
-    /*
-     * Semua order sukses untuk histori seluruh waktu.
-     */
+    // Pastikan ID dari token JWT sesuai dengan ID mitra di database (mencegah manipulasi ID)
+    if (authCheck.mitraId !== mitraId) {
+      return jsonError(403, 'Akses tidak sah ke data mitra ini.', 'MITRA_ID_MISMATCH');
+    }
+
     const allOrders = await db
       .select()
       .from(orders)
@@ -402,9 +422,6 @@ export async function GET(
           order.payment_method,
         );
 
-      /*
-       * Semua komponen berikut dihitung untuk SEMUA payment method.
-       */
       bucket.totalOrders += 1;
       bucket.gross += gross;
       bucket.tax += tax;
@@ -439,9 +456,6 @@ export async function GET(
           ),
         );
 
-    /*
-     * Order selesai yang belum dicairkan.
-     */
     const pendingOrders = await db
       .select()
       .from(orders)
@@ -476,9 +490,6 @@ export async function GET(
     let totalQrisGross = 0;
     let totalOtherGross = 0;
 
-    /*
-     * Tax, service, dan platform fee dihitung dari SEMUA metode.
-     */
     let totalTax = 0;
     let totalService = 0;
     let totalPlatformFee = 0;
@@ -508,10 +519,6 @@ export async function GET(
       const orderDate =
         new Date(order.createdAt);
 
-      /*
-       * Riwayat unpaid pada layar hanya menampilkan bulan berjalan
-       * dan bulan sebelumnya.
-       */
       if (
         !isCurrentOrLastMonth(
           orderDate,
@@ -559,9 +566,6 @@ export async function GET(
           order.payment_method,
         );
 
-      /*
-       * Semua komponen dihitung tanpa memandang payment method.
-       */
       bucket.totalOrders += 1;
       bucket.gross += gross;
       bucket.tax += tax;
@@ -616,10 +620,6 @@ export async function GET(
       }
     }
 
-    /*
-     * Dana QRIS bersih:
-     * QRIS gross dikurangi fee QRIS dan fee seluruh metode non-QRIS.
-     */
     const eligibleQrisNet =
       eligibleQrisGross -
       eligibleQrisFee;
@@ -745,9 +745,6 @@ export async function GET(
             totalLockedQris,
           ),
 
-        /*
-         * Gross berdasarkan metode pembayaran.
-         */
         totalCash:
           totalCashGross,
 
@@ -757,9 +754,6 @@ export async function GET(
         totalOther:
           totalOtherGross,
 
-        /*
-         * Dihitung dari semua metode pembayaran.
-         */
         totalTax,
         totalService,
         totalPlatformFee,
@@ -768,9 +762,6 @@ export async function GET(
         totalQrisPlatformFee,
         totalOtherPlatformFee,
 
-        /*
-         * Alias sementara agar frontend lama tetap berjalan.
-         */
         totalCashService:
           totalCashPlatformFee,
 
@@ -841,6 +832,12 @@ export async function POST(
       );
     }
 
+    // 🔴 2. VERIFIKASI KEAMANAN SESI & ROLE OWNER UNTUK AKSI PENARIKAN (POST)
+    const authCheck = await verifyOwnerSession(request, slug);
+    if (!authCheck.ok) {
+      return authCheck.response;
+    }
+
     const [foundMitra] = await db
       .select()
       .from(mitra)
@@ -862,6 +859,11 @@ export async function POST(
 
     const mitraId =
       foundMitra.id;
+
+    // Validasi kecocokan ID Mitra dari token dan database
+    if (authCheck.mitraId !== mitraId) {
+      return jsonError(403, 'Akses tidak sah untuk mencairkan dana mitra ini.', 'MITRA_ID_MISMATCH');
+    }
 
     const pendingOrders = await db
       .select()
@@ -895,10 +897,6 @@ export async function POST(
 
     let eligibleQrisGross = 0;
     let eligibleQrisFee = 0;
-
-    /*
-     * Semua fee non-QRIS ikut dipotong dari saldo QRIS payout.
-     */
     let eligibleNonQrisFee = 0;
 
     const eligibleOrderIds: number[] = [];
@@ -937,9 +935,6 @@ export async function POST(
         eligibleQrisGross += gross;
         eligibleQrisFee += platformFee;
       } else {
-        /*
-         * Cash, transfer, debit, credit card, e-wallet lain, dll.
-         */
         eligibleNonQrisFee += platformFee;
       }
     }

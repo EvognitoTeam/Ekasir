@@ -10,9 +10,9 @@ import {
   branches,
   coupon,
   couponBranches,
+  couponUsages, // 🔴 Pastikan ini di-import dari schema
   mitra,
   users,
-  orders,
 } from '@/db/schema';
 
 export const dynamic = 'force-dynamic';
@@ -101,7 +101,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // 🟢 4. CEK KEBERADAAN KUPON (TANPA FILTER WAKTU DULU)
+    // 4. CEK KEBERADAAN KUPON
     const [couponExists] = await db
       .select()
       .from(coupon)
@@ -121,7 +121,7 @@ export async function GET(request: Request) {
       );
     }
 
-    // 🟢 5. VALIDASI WAKTU DAN KUOTA (Pesan Error Spesifik)
+    // 5. VALIDASI WAKTU DAN KUOTA
     const now = new Date();
     
     // Cek apakah promo belum dimulai
@@ -140,10 +140,32 @@ export async function GET(request: Request) {
       );
     }
 
+    // ==========================================
+    // PROTEKSI VOUCHER KLAIM (TARGETED)
+    // ==========================================
+    if (couponExists.is_claimable) {
+      // Jika belum diklaim siapapun, tolak
+      if (couponExists.claimed_by_user_id === null) {
+         return NextResponse.json(
+          { success: false, message: 'Voucher ini harus diklaim terlebih dahulu di menu Profil Anda.' },
+          { status: 403 },
+        );
+      }
+
+      // Jika yang memakai bukan pemiliknya, tolak
+      if (couponExists.claimed_by_user_id !== authenticatedUserId) {
+         return NextResponse.json(
+          { success: false, message: 'Kupon tidak valid atau ini adalah milik akun pengguna lain.' },
+          { status: 403 },
+        );
+      }
+    }
+    // ==========================================
+
     // Cek limit kuota global
     if (couponExists.max_use > 0 && couponExists.already_used >= couponExists.max_use) {
       return NextResponse.json(
-        { success: false, message: 'Kuota promo ini sudah habis dipakai orang.' },
+        { success: false, message: 'Kuota promo ini sudah habis.' },
         { status: 400 },
       );
     }
@@ -175,9 +197,11 @@ export async function GET(request: Request) {
       );
     }
 
-    // 7. Validasi Limitasi Penggunaan Per User
+    // 7. VALIDASI LIMITASI PENGGUNAAN PER USER (DIPERBAIKI)
     const couponData = validCoupon as any; 
-    const maxUsePerUser = Number(couponData.max_use_per_user || 0);
+    
+    // 🔴 KUNCI PERBAIKAN: Paksa limit = 1 jika ini adalah voucher klaim unik
+    const maxUsePerUser = validCoupon.is_claimable ? 1 : Number(couponData.max_use_per_user || 0);
     const dailyLimit = Number(couponData.daily_user_limit || 0);
     const monthlyLimit = Number(couponData.monthly_user_limit || 0);
     const yearlyLimit = Number(couponData.yearly_user_limit || 0);
@@ -192,26 +216,33 @@ export async function GET(request: Request) {
         );
       }
 
+      // 🔴 BACA DARI TABEL coupon_usages BUKAN orders
       const userUsages = await db
-        .select({ createdAt: orders.createdAt })
-        .from(orders)
+        .select({ createdAt: couponUsages.createdAt })
+        .from(couponUsages)
         .where(
           and(
-            eq(orders.user_id, authenticatedUserId),
-            eq(orders.discountId, validCoupon.id),
-            eq(orders.status, 'completed')
+            eq(couponUsages.user_id, authenticatedUserId),
+            eq(couponUsages.coupon_id, validCoupon.id)
           )
         );
 
       const totalUsage = userUsages.length;
 
+      // Tolak jika sudah dipakai (Melewati limit)
       if (maxUsePerUser > 0 && totalUsage >= maxUsePerUser) {
         return NextResponse.json(
-          { success: false, message: 'Anda sudah mencapai batas maksimal penggunaan promo ini.' },
+          { 
+            success: false, 
+            message: validCoupon.is_claimable 
+              ? 'Voucher spesial Anda sudah pernah digunakan.' 
+              : 'Anda sudah mencapai batas maksimal penggunaan promo ini.' 
+          },
           { status: 400 },
         );
       }
 
+      // Limit Harian
       if (dailyLimit > 0) {
         const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const dailyUsage = userUsages.filter((o) => new Date(o.createdAt!) >= startOfDay).length;
@@ -223,6 +254,7 @@ export async function GET(request: Request) {
         }
       }
 
+      // Limit Bulanan
       if (monthlyLimit > 0) {
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const monthlyUsage = userUsages.filter((o) => new Date(o.createdAt!) >= startOfMonth).length;
@@ -234,6 +266,7 @@ export async function GET(request: Request) {
         }
       }
 
+      // Limit Tahunan
       if (yearlyLimit > 0) {
         const startOfYear = new Date(now.getFullYear(), 0, 1);
         const yearlyUsage = userUsages.filter((o) => new Date(o.createdAt!) >= startOfYear).length;

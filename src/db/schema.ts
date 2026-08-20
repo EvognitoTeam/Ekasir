@@ -313,6 +313,17 @@ export const coupon = mysqlTable("coupon", {
   // Limit bulanan per pengguna (0 = tidak terbatas)
   monthly_user_limit: int("monthly_user_limit").default(0),
   yearly_user_limit: int("yearly_user_limit").default(0),
+  // 1. Penanda bahwa ini voucher khusus klaim (bukan promo publik)
+  is_claimable: boolean("is_claimable").default(false).notNull(), 
+  
+  // 2. Umur voucher (dalam hari) SETELAH berhasil diklaim
+  valid_days_after_claim: int("valid_days_after_claim").default(0), 
+  
+  // 3. ID User yang berhasil mengklaim (mengunci voucher ke akun ini)
+  claimed_by_user_id: bigint("claimed_by_user_id", { mode: "number", unsigned: true }), 
+  
+  // 4. (Opsional) ID Induk Campaign agar rapi saat admin melihat daftar promo
+  campaign_group_id: varchar("campaign_group_id", { length: 100 }),
   start_date: timestamp("start_date"),
   expired_date: timestamp("expired_date"),
   createdAt: datetime("created_at"),

@@ -407,8 +407,8 @@ function OrderReview({
                           <div className="absolute top-0 left-0 w-4 h-4 bg-white border-b border-r border-stone-200 rounded-br-full -translate-y-1/2 -translate-x-px pointer-events-none" />
                           <div className="absolute top-0 right-0 w-4 h-4 bg-white border-b border-l border-stone-200 rounded-bl-full -translate-y-1/2 translate-x-px pointer-events-none" />
                           <div>
-                            <p className="text-[9px] font-label font-bold uppercase tracking-widest text-stone-400">Kode Kupon</p>
-                            <p className="font-mono text-sm font-black text-stone-800 mt-0.5">{code}</p>
+                            {/* <p className="text-[9px] font-label font-bold uppercase tracking-widest text-stone-400">Kode Kupon</p>
+                            <p className="font-mono text-sm font-black text-stone-800 mt-0.5">{code}</p> */}
                           </div>
                           <button onClick={() => handleApplyFromSheet(code)} className="bg-[var(--color-primary)] text-white text-xs font-bold px-6 py-3 rounded-xl shadow-md shadow-emerald-900/20 active:scale-95 transition-all hover:brightness-110">
                             Gunakan

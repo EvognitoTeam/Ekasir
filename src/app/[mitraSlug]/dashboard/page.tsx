@@ -132,6 +132,11 @@ export default function AdminDashboardPage() {
   const pathname = usePathname();
   const router = useRouter();
   const slug = params.mitraSlug;
+
+  // State untuk Proteksi Keamanan
+  const [isAuthorized, setIsAuthorized] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [overviewDate, setOverviewDate] = useState<'today' | 'yesterday'>('today');
   const [currentTime, setCurrentTime] = useState('');
@@ -167,6 +172,48 @@ export default function AdminDashboardPage() {
     return { activeTab, basePath, customerBase, branchSlug };
   }, [pathname, slug]);
 
+  // ==========================================
+  // PROTEKSI HALAMAN (HANYA OWNER)
+  // ==========================================
+  useEffect(() => {
+    if (!slug) return;
+
+    const verifyAdminAccess = async () => {
+      try {
+        const query = new URLSearchParams({ slug: slug as string });
+        if (routeInfo.branchSlug) {
+          query.set('branch_slug', routeInfo.branchSlug);
+        }
+
+        const response = await fetch(`/api/auth/me?${query.toString()}`, {
+          cache: 'no-store'
+        });
+        const data = await response.json();
+
+        if (response.ok && data.success && data.user) {
+          const userRole = String(data.user.role).toLowerCase();
+          
+          if (userRole === 'owner') {
+            setIsAuthorized(true);
+          } else {
+            // Tolak akses jika bukan owner
+            router.replace(`${routeInfo.customerBase}/profile`);
+          }
+        } else {
+          // Tolak akses jika belum login
+          router.replace(`${routeInfo.customerBase}/profile`);
+        }
+      } catch (error) {
+        console.error('Gagal memverifikasi otorisasi:', error);
+        router.replace(`${routeInfo.customerBase}/profile`);
+      } finally {
+        setIsCheckingAuth(false);
+      }
+    };
+
+    verifyAdminAccess();
+  }, [slug, routeInfo.branchSlug, routeInfo.customerBase, router]);
+
   useEffect(() => {
     const updateClock = () => {
       setCurrentTime(
@@ -184,7 +231,7 @@ export default function AdminDashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (routeInfo.activeTab !== 'dashboard') return;
+    if (routeInfo.activeTab !== 'dashboard' || !isAuthorized) return;
     const controller = new AbortController();
 
     fetch(`/api/pos/dashboard?slug=${encodeURIComponent(slug)}&date=${overviewDate}`, {
@@ -207,7 +254,7 @@ export default function AdminDashboardPage() {
       });
 
     return () => controller.abort();
-  }, [slug, overviewDate, routeInfo.activeTab]);
+  }, [slug, overviewDate, routeInfo.activeTab, isAuthorized]);
 
   const navigateTo = (tab: AdminTab) => {
     setSidebarOpen(false);
@@ -304,6 +351,23 @@ export default function AdminDashboardPage() {
     }
   };
 
+  // Tampilkan loading screen saat memvalidasi sesi
+  if (isCheckingAuth) {
+    return (
+      <div className="flex h-[100dvh] w-full flex-col items-center justify-center bg-[#f7f6f3]">
+        <Loader2 className="mb-4 h-10 w-10 animate-spin text-[var(--color-primary)]" />
+        <p className="font-label text-xs font-black uppercase tracking-widest text-stone-500">
+          Verifikasi Keamanan...
+        </p>
+      </div>
+    );
+  }
+
+  // Jika tidak diizinkan, render kosong untuk mencegah UI berkedip sebelum diredirect
+  if (!isAuthorized) {
+    return null;
+  }
+
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-[#f7f6f3] font-body text-stone-900">
       <AnimatePresence>
@@ -358,7 +422,7 @@ export default function AdminDashboardPage() {
         </nav>
 
         <div className="space-y-2 border-t border-stone-100 p-3">
-          <button onClick={() => router.push(`${routeInfo.customerBase}/menu`)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100"><PanelLeftClose className="h-4 w-4" />Lihat menu customer</button>
+          <button onClick={() => router.push(`${routeInfo.customerBase}/profile`)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100"><PanelLeftClose className="h-4 w-4" />Lihat menu customer</button>
           <button onClick={handleLogout} className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2.5 text-xs font-bold text-red-600 hover:bg-red-100"><LogOut className="h-4 w-4" />Keluar</button>
         </div>
       </aside>

@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
@@ -21,6 +21,9 @@ import {
   Trash2,
   Users,
   X,
+  Zap,
+  Ticket,
+  Layers
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import 'react-quill-new/dist/quill.snow.css';
@@ -54,6 +57,16 @@ export interface CouponData {
   discount_rate: number | null;
   max_use: number;
   already_used: number;
+  is_auto_apply: boolean;
+  applicable_items: number[];
+  max_use_per_user: number;
+  daily_user_limit: number;
+  monthly_user_limit: number;
+  yearly_user_limit: number;
+  is_claimable: boolean;
+  valid_days_after_claim: number;
+  claimed_by_user_id: number | null;
+  campaign_group_id: string | null;
   start_date: string | Date | null;
   expired_date: string | Date | null;
   createdAt: string | Date | null;
@@ -65,11 +78,20 @@ type PromoPayload = {
   branch_ids: number[];
   title: string;
   description: string;
-  coupon_code: string;
+  coupon_code: string; // Akan jadi "Prefix" jika bulk_count > 1
   is_member_only: boolean;
   discount_rate: number | null;
   discount_price: string | null;
   max_use: number;
+  is_auto_apply: boolean;
+  applicable_items: number[];
+  max_use_per_user: number;
+  daily_user_limit: number;
+  monthly_user_limit: number;
+  yearly_user_limit: number;
+  is_claimable: boolean;
+  valid_days_after_claim: number;
+  bulk_count: number; // Jumlah voucher yang akan dicetak
   start_date: Date | null;
   expired_date: Date | null;
 };
@@ -87,6 +109,14 @@ const getLocalDatetime = (value: string | Date | null) => {
 
 function PromoBadge({ promo }: { promo: CouponData }) {
   const now = new Date();
+  
+  if (promo.is_claimable) {
+    if (promo.claimed_by_user_id) {
+       return <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-emerald-700">Telah Diklaim</span>;
+    }
+    return <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-amber-700">Belum Diklaim</span>;
+  }
+
   if (promo.start_date && now < new Date(promo.start_date)) {
     return <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-sky-600">Terjadwal</span>;
   }
@@ -94,7 +124,7 @@ function PromoBadge({ promo }: { promo: CouponData }) {
     return <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-stone-500">Berakhir</span>;
   }
   if (promo.max_use > 0 && promo.already_used >= promo.max_use) {
-    return <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-amber-600">Kuota habis</span>;
+    return <span className="rounded-full bg-red-50 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-red-600">Kuota habis</span>;
   }
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-emerald-700">
@@ -129,10 +159,19 @@ function PromoForm({ initial, branches, onSave, onCancel, isSubmitting }: PromoF
     description: initial?.description || '',
     coupon_code: initial?.coupon_code || '',
     is_member_only: initial?.is_member_only || false,
+    is_auto_apply: initial?.is_auto_apply || false,
     discountType: initial?.discount_rate && initial.discount_rate > 0 ? 'percentage' : 'fixed',
     discount_rate: initial?.discount_rate ? String(initial.discount_rate) : '',
     discount_price: initial?.discount_price || '',
     max_use: initial?.max_use || 0,
+    max_use_per_user: initial?.max_use_per_user || 0,
+    daily_user_limit: initial?.daily_user_limit || 0,
+    monthly_user_limit: initial?.monthly_user_limit || 0,
+    yearly_user_limit: initial?.yearly_user_limit || 0,
+    applicable_items: initial?.applicable_items || [],
+    is_claimable: initial?.is_claimable || false,
+    valid_days_after_claim: initial?.valid_days_after_claim || 0,
+    bulk_count: 1, // Default 1 kupon
     start_date: getLocalDatetime(initial?.start_date || null),
     expired_date: getLocalDatetime(initial?.expired_date || null),
   });
@@ -143,7 +182,7 @@ function PromoForm({ initial, branches, onSave, onCancel, isSubmitting }: PromoF
 
   const submit = () => {
     if (!form.title.trim() || !form.coupon_code.trim()) {
-      setError('Nama promo dan kode kupon wajib diisi.');
+      setError('Nama promo dan kode kupon/prefix wajib diisi.');
       return;
     }
     if (form.discountType === 'percentage' && (!form.discount_rate || Number(form.discount_rate) <= 0 || Number(form.discount_rate) > 100)) {
@@ -158,6 +197,10 @@ function PromoForm({ initial, branches, onSave, onCancel, isSubmitting }: PromoF
       setError('Waktu berakhir harus setelah waktu mulai.');
       return;
     }
+    if (form.is_claimable && form.bulk_count < 1) {
+      setError('Jumlah cetak massal minimal 1 voucher.');
+      return;
+    }
 
     setError('');
     onSave({
@@ -166,9 +209,18 @@ function PromoForm({ initial, branches, onSave, onCancel, isSubmitting }: PromoF
       description: form.description,
       coupon_code: form.coupon_code.toUpperCase().replace(/\s+/g, ''),
       is_member_only: form.is_member_only,
+      is_auto_apply: form.is_auto_apply,
       discount_rate: form.discountType === 'percentage' ? Number(form.discount_rate) : null,
       discount_price: form.discount_price ? String(form.discount_price) : null,
       max_use: Number(form.max_use) || 0,
+      max_use_per_user: Number(form.max_use_per_user) || 0,
+      daily_user_limit: Number(form.daily_user_limit) || 0,
+      monthly_user_limit: Number(form.monthly_user_limit) || 0,
+      yearly_user_limit: Number(form.yearly_user_limit) || 0,
+      applicable_items: form.applicable_items,
+      is_claimable: form.is_claimable,
+      valid_days_after_claim: Number(form.valid_days_after_claim) || 0,
+      bulk_count: Number(form.bulk_count) || 1,
       start_date: form.start_date ? new Date(form.start_date) : null,
       expired_date: form.expired_date ? new Date(form.expired_date) : null,
     });
@@ -180,7 +232,7 @@ function PromoForm({ initial, branches, onSave, onCancel, isSubmitting }: PromoF
         <div>
           <p className="text-[9px] font-bold uppercase tracking-[0.28em] text-[var(--color-primary)]">Campaign editor</p>
           <h3 className="mt-1 font-display text-xl font-semibold text-stone-900">{initial ? 'Edit promosi' : 'Buat promosi baru'}</h3>
-          <p className="mt-1 text-xs text-stone-400">Atur nilai diskon, periode, audiens, dan outlet berlakunya promo.</p>
+          <p className="mt-1 text-xs text-stone-400">Atur nilai diskon, limitasi pengguna, voucher klaim, dan auto-apply.</p>
         </div>
         <button type="button" onClick={onCancel} className="grid h-9 w-9 place-items-center rounded-full bg-stone-100 text-stone-500 transition hover:bg-stone-200"><X className="h-4 w-4" /></button>
       </div>
@@ -190,7 +242,37 @@ function PromoForm({ initial, branches, onSave, onCancel, isSubmitting }: PromoF
 
         <div className="grid gap-4 md:grid-cols-2">
           <div><label className={labelClass}>Nama promo</label><input className={inputClass} placeholder="Contoh: Payday Treat" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
-          <div><label className={labelClass}>Kode kupon</label><input className={`${inputClass} uppercase tracking-widest`} placeholder="PAYDAY20" value={form.coupon_code} onChange={(e) => setForm({ ...form, coupon_code: e.target.value })} /></div>
+          <div>
+            <label className={labelClass}>{form.is_claimable && !initial ? 'Prefix Kode Kupon' : 'Kode kupon'}</label>
+            <input className={`${inputClass} uppercase tracking-widest`} placeholder={form.is_claimable && !initial ? "GIFT" : "PAYDAY20"} value={form.coupon_code} onChange={(e) => setForm({ ...form, coupon_code: e.target.value })} />
+            {form.is_claimable && !initial && <p className="mt-1 text-[10px] text-stone-400">Kode akhir akan berbentuk: {form.coupon_code || 'PREFIX'}-XXXXX</p>}
+          </div>
+        </div>
+
+        {/* FITUR VOUCHER KLAIM */}
+        <div className="space-y-4 rounded-2xl border border-amber-200 bg-amber-50/40 p-5">
+           <label className="flex cursor-pointer items-center justify-between">
+              <span className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-amber-100 text-amber-600"><Ticket className="h-5 w-5" /></span><span><span className="block text-sm font-semibold text-stone-800">Voucher Klaim Eksklusif (Targeted)</span><span className="block text-[10px] text-stone-500">Kode unik sekali pakai yang akan mengikat ke akun 1 pelanggan.</span></span></span>
+              <input type="checkbox" checked={form.is_claimable} onChange={(e) => setForm({ ...form, is_claimable: e.target.checked, is_auto_apply: false, is_member_only: true })} className="h-5 w-5 accent-amber-600" />
+            </label>
+
+            {form.is_claimable && (
+              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="grid gap-4 border-t border-amber-200/60 pt-4 sm:grid-cols-2">
+                <div>
+                  <label className={labelClass}>Jumlah Dicetak (Bulk Generate)</label>
+                  <input type="number" min="1" max="1000" className={inputClass} value={form.bulk_count} onChange={(e) => setForm({ ...form, bulk_count: Number(e.target.value) })} disabled={!!initial} />
+                  <p className="mt-1 text-[10px] text-stone-500">Sistem akan membuat banyak voucher acak secara massal. (Nonaktif saat mode Edit)</p>
+                </div>
+                <div>
+                  <label className={labelClass}>Masa Aktif Setelah Diklaim</label>
+                  <div className="flex items-center rounded-xl border border-stone-200 bg-white px-4">
+                    <input type="number" min="0" className="w-full bg-transparent py-3 text-sm font-bold text-stone-900 outline-none" value={form.valid_days_after_claim} onChange={(e) => setForm({ ...form, valid_days_after_claim: Number(e.target.value) })} />
+                    <span className="text-xs font-bold text-stone-400">Hari</span>
+                  </div>
+                  <p className="mt-1 text-[10px] text-stone-500">Dihitung sejak hari pelanggan mengklaim voucher.</p>
+                </div>
+              </motion.div>
+            )}
         </div>
 
         <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-4">
@@ -218,7 +300,6 @@ function PromoForm({ initial, branches, onSave, onCancel, isSubmitting }: PromoF
               );
             })}
           </div>
-          <p className="mt-2 text-[10px] leading-relaxed text-stone-400">Centang Semua Cabang untuk promo global, atau pilih satu maupun beberapa cabang.</p>
         </div>
 
         <div>
@@ -237,17 +318,50 @@ function PromoForm({ initial, branches, onSave, onCancel, isSubmitting }: PromoF
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <div><label className={labelClass}>Mulai berlaku</label><input type="datetime-local" className={inputClass} value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} /></div>
-          <div><label className={labelClass}>Berakhir</label><input type="datetime-local" className={inputClass} value={form.expired_date} onChange={(e) => setForm({ ...form, expired_date: e.target.value })} /></div>
+          <div>
+            <label className={labelClass}>{form.is_claimable ? 'Tanggal Mulai Promo Publikasi' : 'Mulai berlaku'}</label>
+            <input type="datetime-local" className={inputClass} value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
+          </div>
+          <div>
+            <label className={labelClass}>{form.is_claimable ? 'Batas Akhir Klaim Voucher' : 'Berakhir'}</label>
+            <input type="datetime-local" className={inputClass} value={form.expired_date} onChange={(e) => setForm({ ...form, expired_date: e.target.value })} />
+          </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <div><label className={labelClass}>Batas penggunaan</label><input type="number" min="0" className={inputClass} value={form.max_use} onChange={(e) => setForm({ ...form, max_use: Number(e.target.value) })} /><p className="mt-1 text-[10px] text-stone-400">Isi 0 untuk penggunaan tanpa batas.</p></div>
-          <label className="flex cursor-pointer items-center justify-between rounded-2xl border border-stone-200 px-4 py-3">
-            <span className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-violet-50 text-violet-600"><Users className="h-4 w-4" /></span><span><span className="block text-sm font-semibold text-stone-800">Member eksklusif</span><span className="block text-[10px] text-stone-400">Hanya akun member yang dapat menggunakan.</span></span></span>
-            <input type="checkbox" checked={form.is_member_only} onChange={(e) => setForm({ ...form, is_member_only: e.target.checked })} className="h-5 w-5 accent-[var(--color-primary)]" />
-          </label>
+          <div>
+            <label className={labelClass}>Batas Kuota Kupon (Global)</label>
+            <input type="number" min="0" className={inputClass} value={form.max_use} onChange={(e) => setForm({ ...form, max_use: Number(e.target.value) })} disabled={form.is_claimable} />
+            <p className="mt-1 text-[10px] text-stone-400">Total maksimal kupon bisa dipakai. (Nonaktif untuk jenis voucher klaim unik).</p>
+          </div>
+          
+          <div className="space-y-3">
+             <label className={`flex cursor-pointer items-center justify-between rounded-2xl border px-4 py-3 ${form.is_claimable ? 'opacity-50 border-stone-200 bg-stone-100' : 'border-stone-200 bg-stone-50'}`}>
+              <span className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-violet-100 text-violet-600"><Users className="h-4 w-4" /></span><span><span className="block text-sm font-semibold text-stone-800">Member Eksklusif</span><span className="block text-[10px] text-stone-500">Kupon khusus pelanggan terdaftar.</span></span></span>
+              <input type="checkbox" disabled={form.is_claimable} checked={form.is_member_only || form.is_claimable} onChange={(e) => setForm({ ...form, is_member_only: e.target.checked })} className="h-5 w-5 accent-violet-600" />
+            </label>
+            
+            <label className={`flex cursor-pointer items-center justify-between rounded-2xl border px-4 py-3 ${form.is_claimable ? 'opacity-50 border-stone-200 bg-stone-100' : 'border-stone-200 bg-stone-50'}`}>
+              <span className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-sky-100 text-sky-600"><Zap className="h-4 w-4" /></span><span><span className="block text-sm font-semibold text-stone-800">Auto-Apply</span><span className="block text-[10px] text-stone-500">Terapkan otomatis ke keranjang.</span></span></span>
+              <input type="checkbox" disabled={form.is_claimable} checked={form.is_auto_apply && !form.is_claimable} onChange={(e) => setForm({ ...form, is_auto_apply: e.target.checked })} className="h-5 w-5 accent-sky-600" />
+            </label>
+          </div>
         </div>
+
+        {/* BATASAN PENGGUNAAN PER AKUN */}
+        {!form.is_claimable && (
+          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
+             <p className="mb-4 text-xs font-bold uppercase tracking-widest text-stone-500">Limit Penggunaan per Pelanggan</p>
+             <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
+               <div><label className={labelClass}>Limit Harian</label><input type="number" min="0" className={inputClass} value={form.daily_user_limit} onChange={(e) => setForm({ ...form, daily_user_limit: Number(e.target.value) })} /></div>
+               <div><label className={labelClass}>Limit Bulanan</label><input type="number" min="0" className={inputClass} value={form.monthly_user_limit} onChange={(e) => setForm({ ...form, monthly_user_limit: Number(e.target.value) })} /></div>
+               <div><label className={labelClass}>Limit Tahunan</label><input type="number" min="0" className={inputClass} value={form.yearly_user_limit} onChange={(e) => setForm({ ...form, yearly_user_limit: Number(e.target.value) })} /></div>
+               <div><label className={labelClass}>Total (Lifetime)</label><input type="number" min="0" className={inputClass} value={form.max_use_per_user} onChange={(e) => setForm({ ...form, max_use_per_user: Number(e.target.value) })} /></div>
+             </div>
+             <p className="mt-3 text-[10px] text-stone-400">*Isi 0 jika tidak ada batasan. Mengisi salah satu limit otomatis mewajibkan pelanggan untuk melakukan login.</p>
+          </div>
+        )}
+
       </div>
 
       <div className="flex gap-3 border-t border-stone-100 bg-stone-50/70 px-5 py-4 md:justify-end md:px-7">
@@ -336,20 +450,20 @@ export default function PromoManager() {
   }), [activeBranch, promos, searchQuery]);
 
   const activeCount = promos.filter((promo) => (!promo.expired_date || new Date(promo.expired_date) > new Date()) && (promo.max_use === 0 || promo.already_used < promo.max_use)).length;
-  const totalUsed = promos.reduce((sum, promo) => sum + promo.already_used, 0);
+  const claimableCount = promos.filter((promo) => promo.is_claimable).length;
 
   return (
     <div className="w-full space-y-6">
       <section className="relative overflow-hidden rounded-[2rem] bg-stone-950 p-6 text-white md:p-8">
         <div className="absolute -right-12 -top-16 h-48 w-48 rounded-full bg-emerald-500/15 blur-3xl" />
         <div className="relative flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-          <div><div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.25em] text-white/60"><Sparkles className="h-3.5 w-3.5 text-emerald-300" />Marketing studio</div><h2 className="max-w-xl font-display text-3xl font-semibold leading-tight md:text-4xl">Promosi yang tepat, untuk outlet yang tepat.</h2><p className="mt-3 max-w-lg text-sm leading-relaxed text-white/50">Kelola voucher global atau kampanye khusus cabang dalam satu tempat.</p></div>
+          <div><div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.25em] text-white/60"><Sparkles className="h-3.5 w-3.5 text-emerald-300" />Marketing studio</div><h2 className="max-w-xl font-display text-3xl font-semibold leading-tight md:text-4xl">Promosi yang tepat, untuk outlet yang tepat.</h2><p className="mt-3 max-w-lg text-sm leading-relaxed text-white/50">Kelola kupon diskon global, voucher fisik, dan kampanye cabang.</p></div>
           <button type="button" onClick={() => { setEditingPromo(null); setFormMode('create'); }} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3.5 text-[10px] font-bold uppercase tracking-widest text-stone-950 transition hover:bg-emerald-50"><Plus className="h-4 w-4" /> Buat promo</button>
         </div>
         <div className="relative mt-8 grid grid-cols-3 gap-3 border-t border-white/10 pt-5">
-          <div><p className="text-2xl font-semibold">{promos.length}</p><p className="text-[9px] uppercase tracking-widest text-white/40">Total promo</p></div>
+          <div><p className="text-2xl font-semibold">{promos.length}</p><p className="text-[9px] uppercase tracking-widest text-white/40">Total Kampanye</p></div>
           <div><p className="text-2xl font-semibold">{activeCount}</p><p className="text-[9px] uppercase tracking-widest text-white/40">Sedang aktif</p></div>
-          <div><p className="text-2xl font-semibold">{totalUsed}</p><p className="text-[9px] uppercase tracking-widest text-white/40">Digunakan</p></div>
+          <div><p className="text-2xl font-semibold">{claimableCount}</p><p className="text-[9px] uppercase tracking-widest text-white/40">Voucher Fisik</p></div>
         </div>
       </section>
 
@@ -359,7 +473,7 @@ export default function PromoManager() {
 
       <section className="rounded-[2rem] border border-stone-200 bg-white p-4 shadow-sm md:p-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="relative flex-1"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" /><input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Cari nama atau kode promo..." className="w-full rounded-2xl border border-stone-200 bg-stone-50 py-3 pl-11 pr-4 text-sm outline-none focus:border-[var(--color-primary)]" /></div>
+          <div className="relative flex-1"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" /><input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Cari nama, grup, atau kode promo..." className="w-full rounded-2xl border border-stone-200 bg-stone-50 py-3 pl-11 pr-4 text-sm outline-none focus:border-[var(--color-primary)]" /></div>
           <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
             {[{ id: 'all' as const, label: 'Semua' }, { id: 'global' as const, label: 'Semua cabang' }, ...branches.map((branch) => ({ id: branch.id, label: branch.name }))].map((tab) => <button key={tab.id} type="button" onClick={() => setActiveBranch(tab.id)} className={`whitespace-nowrap rounded-full px-4 py-2 text-[9px] font-bold uppercase tracking-widest transition ${activeBranch === tab.id ? 'bg-[var(--color-primary)] text-white' : 'border border-stone-200 bg-white text-stone-500 hover:bg-stone-50'}`}>{tab.label}</button>)}
           </div>
@@ -375,14 +489,43 @@ export default function PromoManager() {
               const percentage = Boolean(promo.discount_rate && promo.discount_rate > 0);
               const benefit = percentage ? `${promo.discount_rate}% OFF` : formatPrice(Number(promo.discount_price || 0));
               const selectedBranches = branches.filter((item) => promo.branch_ids.includes(item.id));
+              
+              // Cek apakah ada batasan limit user
+              const hasUserLimit = promo.max_use_per_user > 0 || promo.daily_user_limit > 0 || promo.monthly_user_limit > 0 || promo.yearly_user_limit > 0;
+
               return (
                 <motion.article key={promo.id} layout initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: .96 }} transition={{ delay: index * .025 }} className="group overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
                   <div className="grid grid-cols-[92px_1fr] md:grid-cols-[120px_1fr]">
                     <div className={`relative flex min-h-[190px] flex-col items-center justify-between p-4 text-white ${percentage ? 'bg-[var(--color-primary)]' : 'bg-stone-900'}`}><span className="text-[8px] font-bold uppercase tracking-[0.25em] text-white/50">Benefit</span><div className="text-center">{percentage ? <Percent className="mx-auto mb-2 h-6 w-6" /> : <Tag className="mx-auto mb-2 h-6 w-6" />}<p className="font-display text-xl font-semibold leading-tight">{benefit}</p></div><span className="text-[8px] font-bold uppercase tracking-widest text-white/50">EKASIR</span></div>
                     <div className="min-w-0 p-5">
-                      <div className="flex items-start justify-between gap-3"><div className="min-w-0"><PromoBadge promo={promo} /><h3 className="mt-3 truncate font-display text-xl font-semibold text-stone-900">{promo.title}</h3><p className="mt-1 font-mono text-[11px] font-bold tracking-[0.18em] text-[var(--color-primary)]">{promo.coupon_code}</p></div><div className="flex shrink-0 gap-1"><button type="button" onClick={() => { setEditingPromo(promo); setFormMode('edit'); }} className="grid h-9 w-9 place-items-center rounded-full text-stone-400 hover:bg-emerald-50 hover:text-[var(--color-primary)]"><Edit3 className="h-4 w-4" /></button><button type="button" onClick={() => setDeleteConfirm(promo.id)} className="grid h-9 w-9 place-items-center rounded-full text-stone-400 hover:bg-red-50 hover:text-red-500"><Trash2 className="h-4 w-4" /></button></div></div>
-                      <div className="mt-4 flex flex-wrap gap-2"><BranchBadge branchIds={promo.branch_ids} branches={branches} />{promo.is_member_only && <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-100 bg-violet-50 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-violet-600"><ShieldCheck className="h-3 w-3" /> Member</span>}</div>
-                      <div className="mt-5 space-y-2 border-t border-stone-100 pt-4 text-[10px] text-stone-400"><p className="flex items-center gap-2"><CalendarDays className="h-3.5 w-3.5" />{promo.start_date ? new Date(promo.start_date).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : 'Aktif sekarang'} <ChevronRight className="h-3 w-3" /> {promo.expired_date ? new Date(promo.expired_date).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : 'Tanpa batas'}</p><p>Digunakan <strong className="text-stone-700">{promo.already_used}</strong>{promo.max_use > 0 ? ` dari ${promo.max_use}` : ' kali · tanpa kuota'}</p>{selectedBranches.length > 0 && <p className="flex items-center gap-1"><MapPin className="h-3 w-3" /> Khusus {selectedBranches.map((item) => item.name).join(', ')}</p>}</div>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <PromoBadge promo={promo} />
+                          <h3 className="mt-3 truncate font-display text-xl font-semibold text-stone-900">{promo.title}</h3>
+                          <div className="mt-1 flex items-center gap-2">
+                             <p className="font-mono text-[11px] font-bold tracking-[0.18em] text-[var(--color-primary)]">{promo.coupon_code}</p>
+                             {promo.campaign_group_id && <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest text-stone-400" title="Campaign Group"><Layers className="mb-0.5 mr-1 inline h-2.5 w-2.5" />{promo.campaign_group_id.slice(-6)}</span>}
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 gap-1"><button type="button" onClick={() => { setEditingPromo(promo); setFormMode('edit'); }} className="grid h-9 w-9 place-items-center rounded-full text-stone-400 hover:bg-emerald-50 hover:text-[var(--color-primary)]"><Edit3 className="h-4 w-4" /></button><button type="button" onClick={() => setDeleteConfirm(promo.id)} className="grid h-9 w-9 place-items-center rounded-full text-stone-400 hover:bg-red-50 hover:text-red-500"><Trash2 className="h-4 w-4" /></button></div>
+                      </div>
+                      
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <BranchBadge branchIds={promo.branch_ids} branches={branches} />
+                        {(promo.is_member_only || hasUserLimit) && !promo.is_claimable && <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-100 bg-violet-50 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-violet-600"><ShieldCheck className="h-3 w-3" /> Member</span>}
+                        {promo.is_auto_apply && <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-sky-600"><Zap className="h-3 w-3" /> Auto-Apply</span>}
+                        {promo.is_claimable && <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest text-amber-700"><Ticket className="h-3 w-3" /> Voucher Targeted</span>}
+                      </div>
+
+                      <div className="mt-5 space-y-2 border-t border-stone-100 pt-4 text-[10px] text-stone-400">
+                        {promo.is_claimable ? (
+                          <p>Masa aktif <strong className="text-stone-700">{promo.valid_days_after_claim} Hari</strong> setelah diklaim oleh User.</p>
+                        ) : (
+                          <p className="flex items-center gap-2"><CalendarDays className="h-3.5 w-3.5" />{promo.start_date ? new Date(promo.start_date).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : 'Aktif sekarang'} <ChevronRight className="h-3 w-3" /> {promo.expired_date ? new Date(promo.expired_date).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : 'Tanpa batas'}</p>
+                        )}
+                        {!promo.is_claimable && <p>Digunakan <strong className="text-stone-700">{promo.already_used}</strong>{promo.max_use > 0 ? ` dari ${promo.max_use}` : ' kali · tanpa kuota'}</p>}
+                        {selectedBranches.length > 0 && <p className="flex items-center gap-1"><MapPin className="h-3 w-3" /> Khusus {selectedBranches.map((item) => item.name).join(', ')}</p>}
+                      </div>
                     </div>
                   </div>
                   <AnimatePresence>{deleteConfirm === promo.id && <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden border-t border-red-100 bg-red-50"><div className="flex items-center justify-between gap-3 px-5 py-3"><p className="text-xs font-semibold text-red-700">Hapus promo ini?</p><div className="flex gap-2"><button onClick={() => setDeleteConfirm(null)} className="rounded-lg px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-stone-500">Batal</button><button onClick={() => void removePromo(promo.id)} className="rounded-lg bg-red-600 px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-white">Hapus</button></div></div></motion.div>}</AnimatePresence>
