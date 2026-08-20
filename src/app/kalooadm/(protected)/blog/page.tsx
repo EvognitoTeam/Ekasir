@@ -18,6 +18,7 @@ export default function BlogManagementPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingCover, setIsUploadingCover] = useState(false);
 
+  const quillRef = useRef<any>(null);
 
   const fetchPosts = async () => {
     setIsLoading(true);
