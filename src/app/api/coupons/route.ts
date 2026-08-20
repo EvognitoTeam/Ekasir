@@ -75,7 +75,7 @@ export async function GET(request: Request) {
     // 🔴 KONDISI 2: Promo Privat (Hanya yang masih aktif)
     const privateActiveCondition = and(
       eq(coupon.is_claimable, true),
-      eq(coupon.claimed_by_user_id, userId),
+      userId ? eq(coupon.claimed_by_user_id, Number(userId)) : isNull(coupon.claimed_by_user_id),
       or(isNull(coupon.start_date), lt(coupon.start_date, now)),
       or(gt(coupon.expired_date, now), isNull(coupon.expired_date)),
       or(eq(coupon.max_use, 0), lt(coupon.already_used, coupon.max_use))
@@ -84,7 +84,7 @@ export async function GET(request: Request) {
     // 🔴 KONDISI 3: Semua Promo Privat (Termasuk kedaluwarsa, untuk history tab)
     const privateAllCondition = and(
       eq(coupon.is_claimable, true),
-      eq(coupon.claimed_by_user_id, userId)
+      userId ? eq(coupon.claimed_by_user_id, Number(userId)) : isNull(coupon.claimed_by_user_id)
     );
 
     // Beralih kondisi tergantung apakah minta history atau untuk checkout
