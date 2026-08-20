@@ -18,7 +18,6 @@ export default function BlogManagementPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingCover, setIsUploadingCover] = useState(false);
 
-  const quillRef = useRef<any>(null);
 
   const fetchPosts = async () => {
     setIsLoading(true);
@@ -271,7 +270,6 @@ export default function BlogManagementPage() {
               <label className="block text-[10px] font-bold uppercase tracking-widest text-stone-400 mb-2">Konten Artikel (Bisa Insert Gambar)</label>
               <div className="rounded-2xl border border-stone-200 overflow-hidden focus-within:border-emerald-500 transition-all">
                 <ReactQuill 
-                  ref={quillRef}
                   theme="snow" 
                   value={currentPost.content} 
                   onChange={(content) => setCurrentPost({ ...currentPost, content })}
