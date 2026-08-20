@@ -389,6 +389,7 @@ export default function EvokasirLandingPage() {
           <div className="flex items-center gap-6 text-sm text-[var(--color-on-surface-variant)]">
             <Link href="/privacy-policy" className="transition-colors hover:text-[var(--color-primary)]">Privacy Policy</Link>
             <Link href="/term-conditions" className="transition-colors hover:text-[var(--color-primary)]">Terms</Link>
+            <Link href="/blog" className="transition-colors hover:text-[var(--color-primary)]">Blog</Link>
           </div>
         </div>
       </footer>

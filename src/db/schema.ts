@@ -64,7 +64,7 @@ export const users = mysqlTable("users", {
   branch_id: bigint("branch_id", { mode: "number", unsigned: true }), // Branch ID
   is_login: boolean("is_login").default(false).notNull(),
   login_at: timestamp("login_at"),
-  role: mysqlEnum("role", ['Owner', 'Cashier', 'Kitchen', 'User']).default('User').notNull(),
+  role: mysqlEnum("role", ['Owner', 'Cashier', 'Kitchen', 'User', 'Superadmin']).default('User').notNull(),
   token: varchar("token", { length: 40 }),
   onesignalid: text("onesignalid"),
   createdAt: timestamp("created_at"),
@@ -619,4 +619,20 @@ export const couponBranches = mysqlTable("coupon_branches", {
   coupon_id: bigint("coupon_id", { mode: "number", unsigned: true }).notNull(),
   branch_id: bigint("branch_id", { mode: "number", unsigned: true }).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+// POST BLOG
+export const posts = mysqlTable("posts", {
+  id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
+  title: varchar("title", { length: 255 }).notNull(),
+  slug: varchar("slug", { length: 255 }).notNull().unique(),
+  content: text("content").notNull(), // Bisa menggunakan HTML dari Rich Text editor
+  excerpt: varchar("excerpt", { length: 500 }),
+  image: varchar("image", { length: 255 }),
+  is_published: boolean("is_published").default(false).notNull(),
+  views: int("views").default(0).notNull(),
+  publishedAt: timestamp("published_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at"),
 });

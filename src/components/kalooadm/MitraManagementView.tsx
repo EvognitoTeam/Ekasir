@@ -1,57 +1,29 @@
-'use client';
+"use client";
 
 import { useState, useEffect } from 'react';
-import { 
-  Search, Plus, MoreVertical, Edit, Ban, 
-  Trash2, ExternalLink, Store, CheckCircle2, XCircle, Clock, MapPin, X, Save, Loader2
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import Swal from 'sweetalert2';
-
-// 1. Interface Data
-interface Mitra {
-  id: number;
-  name: string;
-  slug: string;
-  owner: string;
-  email: string;
-  phone: string;
-  plan: string;
-  status: 'active' | 'expired' | 'suspended';
-  expiredAt: string;
-  branches: string[]; // Bisa juga array of objects, disesuaikan dengan response API
-}
+import { Store, Edit3, Trash2, Search, Plus, Loader2, X, Save, ShieldAlert, CheckCircle2 } from 'lucide-react';
 
 export default function MitraManagementView() {
-  const [mitras, setMitras] = useState<Mitra[]>([]);
+  const [mitras, setMitras] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
-  const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
-
-  // State Modal Form
+  // State untuk form & modal
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
-  const [formData, setFormData] = useState<Partial<Mitra>>({});
+  const [currentMitra, setCurrentMitra] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // ==========================================
-  // FETCH DATA DARI API BACKEND
-  // ==========================================
+  // 1. Fetch Data dari API
   const fetchMitras = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/superadmin/mitra');
-      const result = await response.json();
-      
-      if (result.success) {
-        setMitras(result.data);
-      } else {
-        ToastError(result.message || 'Gagal mengambil data mitra');
+      const res = await fetch('/api/superadmin/mitra');
+      const json = await res.json();
+      if (json.success) {
+        setMitras(json.data); // 🔴 Memasukkan data ke state
       }
     } catch (error) {
-      console.error('Fetch error:', error);
-      ToastError('Terjadi kesalahan koneksi ke server');
+      console.error("Gagal memuat mitra", error);
     } finally {
       setIsLoading(false);
     }
@@ -61,410 +33,329 @@ export default function MitraManagementView() {
     fetchMitras();
   }, []);
 
-  // Logika Filter & Search
-  const filteredMitra = mitras.filter(mitra => {
-    const matchSearch = mitra.name?.toLowerCase().includes(search.toLowerCase()) || 
-                        mitra.slug?.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = filterStatus === 'all' || mitra.status === filterStatus;
-    return matchSearch && matchStatus;
-  });
-
-  // Buka Modal Tambah
-  const handleOpenAdd = () => {
-    setModalMode('add');
-    setFormData({
-      name: '', slug: '', owner: '', email: '', phone: '', plan: 'Basic', status: 'active', expiredAt: '', branches: []
-    });
-    setIsModalOpen(true);
-  };
-
-  // Buka Modal Edit
-  const handleOpenEdit = (mitra: Mitra) => {
-    setModalMode('edit');
-    setFormData({ ...mitra });
-    setIsModalOpen(true);
-  };
-
-  // ==========================================
-  // SIMPAN DATA KE API (POST / PUT)
-  // ==========================================
-  const handleSaveForm = async (e: React.FormEvent) => {
+  // 2. Handle Simpan (POST/PUT)
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-
+    
     try {
-      const method = modalMode === 'add' ? 'POST' : 'PUT';
-      const response = await fetch('/api/superadmin/mitra', {
+      const method = currentMitra.id ? 'PUT' : 'POST';
+      const url = currentMitra.id ? `/api/superadmin/mitra?id=${currentMitra.id}` : '/api/superadmin/mitra';
+
+      const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(currentMitra),
       });
 
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        Swal.fire({ 
-          title: 'Berhasil!', 
-          text: modalMode === 'add' ? 'Mitra baru berhasil ditambahkan.' : 'Data mitra berhasil diperbarui.', 
-          icon: 'success', 
-          timer: 1500, 
-          showConfirmButton: false 
-        });
+      const json = await res.json();
+      if (json.success) {
         setIsModalOpen(false);
-        fetchMitras(); // Refresh data tabel
+        fetchMitras();
       } else {
-        throw new Error(result.message || 'Gagal menyimpan data');
+        alert(json.message || 'Gagal menyimpan data');
       }
-    } catch (error: any) {
-      Swal.fire('Gagal!', error.message, 'error');
+    } catch (error) {
+      alert('Terjadi kesalahan jaringan.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // ==========================================
-  // HAPUS DATA KE API (DELETE)
-  // ==========================================
-  const handleDelete = (id: number, name: string) => {
-    Swal.fire({
-      title: 'Hapus Mitra?',
-      text: `Anda yakin ingin menghapus tenant ${name} permanen? Seluruh data cabang dan pesanan mereka akan hilang.`,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#EF4444',
-      cancelButtonColor: '#9CA3AF',
-      confirmButtonText: 'Ya, Hapus Permanen',
-      cancelButtonText: 'Batal'
-    }).then(async (result) => {
-      if (result.isConfirmed) {
-        try {
-          const response = await fetch(`/api/superadmin/mitra?id=${id}`, {
-            method: 'DELETE',
-          });
-          
-          const resJson = await response.json();
-
-          if (response.ok && resJson.success) {
-            Swal.fire('Terhapus!', 'Mitra berhasil dihapus dari sistem.', 'success');
-            fetchMitras(); // Refresh data
-          } else {
-            throw new Error(resJson.message || 'Gagal menghapus mitra');
-          }
-        } catch (error: any) {
-          Swal.fire('Error!', error.message, 'error');
-        }
+  // 3. Handle Hapus (DELETE)
+  const handleDelete = async (id: number, name: string) => {
+    if (!confirm(`Yakin ingin menonaktifkan mitra "${name}"?`)) return;
+    
+    try {
+      const res = await fetch(`/api/superadmin/mitra?id=${id}`, { method: 'DELETE' });
+      const json = await res.json();
+      
+      if (json.success) {
+        fetchMitras();
+      } else {
+        alert(json.message);
       }
-    });
+    } catch (error) {
+      alert('Gagal menghapus mitra.');
+    }
   };
 
-  const ToastError = (msg: string) => {
-    Swal.fire({ toast: true, position: 'top-end', icon: 'error', title: msg, showConfirmButton: false, timer: 3000 });
-  };
+  // Filter pencarian
+  const filteredMitras = mitras.filter(m => 
+    m.mitra_name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    m.mitra_slug?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
-    <div className="flex flex-col h-full overflow-hidden relative">
-      {/* HEADER KHUSUS MANAJEMEN MITRA */}
-      <header className="px-8 py-6 border-b border-stone-200 bg-white flex items-center justify-between flex-shrink-0">
+    <div className="flex flex-col h-full bg-stone-50/50">
+      
+      {/* HEADER TAB */}
+      <div className="p-8 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-black text-stone-800 font-display">Manajemen Mitra & Cabang</h2>
-          <p className="text-sm font-medium text-stone-500 mt-1">Kelola data tenant, cabang, status langganan, dan akses sistem.</p>
+          <h2 className="text-xl font-black text-stone-800">Manajemen Mitra (Tenants)</h2>
+          <p className="text-xs text-stone-500 font-medium mt-1">Kelola data penyewa, pengaturan biaya platform, dan akses POS.</p>
         </div>
-        <button 
-          onClick={handleOpenAdd}
-          className="flex items-center gap-2 px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-sm font-bold transition shadow-md shadow-emerald-900/20 active:scale-95"
+        <button
+          onClick={() => {
+            setCurrentMitra({ mitra_name: '', mitra_slug: '', cashout: 0, taxRate: 0, serviceRate: 0 });
+            setIsModalOpen(true);
+          }}
+          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest transition-all shadow-sm"
         >
-          <Plus className="w-4 h-4" /> Tambah Mitra
+          <Plus className="w-4 h-4" /> Tambah Mitra Baru
         </button>
-      </header>
+      </div>
 
-      {/* TOOLBAR (SEARCH & FILTER) */}
-      <div className="px-8 py-4 bg-stone-50/50 border-b border-stone-200 flex items-center justify-between gap-4 flex-shrink-0">
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+      {/* FILTER & PENCARIAN */}
+      <div className="px-8 pb-4">
+        <div className="relative max-w-md">
+          <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" />
           <input 
             type="text" 
-            placeholder="Cari nama toko atau slug..." 
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-white border border-stone-200 rounded-xl outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600/20 text-sm font-medium text-stone-800"
+            placeholder="Cari nama atau slug mitra..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-white border border-stone-200 rounded-xl pl-11 pr-4 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all"
           />
-        </div>
-
-        <div className="flex items-center gap-2 bg-white border border-stone-200 p-1 rounded-xl">
-          {['all', 'active', 'expired', 'suspended'].map((status) => (
-            <button
-              key={status}
-              onClick={() => setFilterStatus(status)}
-              className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
-                filterStatus === status 
-                  ? 'bg-stone-100 text-stone-800 shadow-sm' 
-                  : 'text-stone-500 hover:bg-stone-50 hover:text-stone-700'
-              }`}
-            >
-              {status === 'all' ? 'Semua' : status}
-            </button>
-          ))}
         </div>
       </div>
 
       {/* TABEL DATA */}
-      <div className="flex-1 overflow-y-auto p-8 bg-stone-50/50">
+      <div className="flex-1 overflow-auto px-8 pb-8">
         <div className="bg-white border border-stone-200 rounded-2xl shadow-sm overflow-hidden">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-stone-100/80 border-b border-stone-200 text-stone-500 text-xs font-black uppercase tracking-wider">
-                <th className="p-4 pl-6">Detail Mitra</th>
-                <th className="p-4">Owner / Kontak</th>
-                <th className="p-4">Cabang</th>
-                <th className="p-4 text-center">Status & Paket</th>
-                <th className="p-4 text-center w-32">Aksi</th>
+              <tr className="bg-stone-50 border-b border-stone-200 text-[10px] font-bold uppercase tracking-widest text-stone-500">
+                <th className="p-4 pl-6">Identitas Mitra</th>
+                <th className="p-4">Platform Fee (Cashout)</th>
+                <th className="p-4">Pajak / Service</th>
+                <th className="p-4">Bergabung Sejak</th>
+                <th className="p-4 text-right pr-6">Aksi</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-stone-100">
+            <tbody className="divide-y divide-stone-100 text-sm">
               {isLoading ? (
                 <tr>
-                  <td colSpan={5} className="p-16 text-center">
-                    <Loader2 className="w-8 h-8 text-emerald-600 animate-spin mx-auto mb-3" />
-                    <p className="text-stone-500 font-bold text-sm uppercase tracking-widest">Memuat Data Tenant...</p>
+                  <td colSpan={5} className="p-12 text-center text-stone-400">
+                    <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-emerald-600" />
+                    Memuat data mitra...
                   </td>
                 </tr>
-              ) : filteredMitra.length === 0 ? (
+              ) : filteredMitras.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-stone-500 font-medium">
-                    Tidak ada mitra yang ditemukan.
+                  <td colSpan={5} className="p-12 text-center text-stone-400">
+                    <Store className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                    Belum ada mitra yang terdaftar.
                   </td>
                 </tr>
               ) : (
-                filteredMitra.map((mitra) => {
-                  let badgeBg = 'bg-stone-100 text-stone-600';
-                  let StatusIcon = Clock;
-                  
-                  if (mitra.status === 'active') {
-                    badgeBg = 'bg-emerald-100 text-emerald-700 border border-emerald-200';
-                    StatusIcon = CheckCircle2;
-                  } else if (mitra.status === 'expired') {
-                    badgeBg = 'bg-amber-100 text-amber-700 border border-amber-200';
-                    StatusIcon = Clock;
-                  } else if (mitra.status === 'suspended') {
-                    badgeBg = 'bg-red-100 text-red-700 border border-red-200';
-                    StatusIcon = XCircle;
-                  }
-
-                  const expiredDate = mitra.expiredAt ? new Date(mitra.expiredAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
-                  const branchesList = Array.isArray(mitra.branches) ? mitra.branches : [];
-
-                  return (
-                    <tr key={mitra.id} className="hover:bg-stone-50 transition-colors">
-                      <td className="p-4 pl-6">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-stone-100 border border-stone-200 flex items-center justify-center shrink-0">
-                            <Store className="w-5 h-5 text-stone-400" />
+                filteredMitras.map((mitra) => (
+                  <tr key={mitra.id} className="hover:bg-stone-50/50 transition-colors">
+                    <td className="p-4 pl-6">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
+                          <Store className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="font-bold text-stone-900">{mitra.mitra_name}</p>
+                          <p className="text-[10px] font-mono text-stone-400 bg-stone-100 px-1.5 py-0.5 rounded mt-0.5 inline-block">
+                            /{mitra.mitra_slug}
+                          </p>
+                          
+                          {/* 🔴 RENDER DAFTAR CABANG DI SINI */}
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {mitra.branches && mitra.branches.length > 0 ? (
+                              mitra.branches.map((branch: any) => (
+                                <span 
+                                  key={branch.id} 
+                                  className="text-[9px] font-bold uppercase tracking-widest text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full"
+                                >
+                                  {branch.branch_name}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-[9px] text-stone-400 italic">Belum ada cabang</span>
+                            )}
                           </div>
-                          <div>
-                            <p className="font-bold text-stone-800">{mitra.name}</p>
-                            <a href={`/${mitra.slug}`} target="_blank" className="text-xs font-medium text-emerald-600 hover:text-emerald-700 flex items-center gap-1 mt-0.5 group w-fit">
-                              /{mitra.slug} <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </a>
-                          </div>
+
                         </div>
-                      </td>
-                      <td className="p-4">
-                        <p className="font-bold text-stone-800 text-sm">{mitra.owner || '-'}</p>
-                        <p className="text-xs text-stone-500 font-medium mt-0.5">{mitra.phone || mitra.email || '-'}</p>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <MapPin className="w-3.5 h-3.5 text-stone-400" />
-                          <span className="text-sm font-black text-stone-700">{branchesList.length} Cabang</span>
-                        </div>
-                        <p className="text-[10px] font-bold text-stone-400 truncate max-w-[150px]">
-                          {branchesList.join(', ') || 'Pusat Saja'}
-                        </p>
-                      </td>
-                      <td className="p-4 text-center">
-                        <div className="flex flex-col items-center justify-center gap-1.5">
-                          <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${badgeBg}`}>
-                            <StatusIcon className="w-3 h-3" /> {mitra.status}
-                          </span>
-                          <span className="text-[10px] font-bold text-stone-500 bg-stone-100 border border-stone-200 px-2 py-0.5 rounded-full">
-                            {mitra.plan}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="p-4 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          {/* Tombol Edit Mitra */}
-                          <button onClick={() => handleOpenEdit(mitra)} className="p-2 text-stone-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Edit Data">
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          {/* Tombol Suspend (Bisa ditaruh handler quick suspend nanti) */}
-                          <button 
-                            onClick={() => setFormData({...mitra, status: 'suspended'}) /* Simulasi aja */}
-                            className="p-2 text-stone-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition" 
-                            title="Suspend Akun"
-                          >
-                            <Ban className="w-4 h-4" />
-                          </button>
-                          {/* Tombol Hapus */}
-                          <button onClick={() => handleDelete(mitra.id, mitra.name)} className="p-2 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="Hapus Permanen">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      {/* 🔴 Menampilkan Platform Fee (cashout) dari database */}
+                      {Number(mitra.cashout) > 100 ? (
+                         <span className="font-bold text-red-600">Rp {Number(mitra.cashout).toLocaleString('id-ID')}</span>
+                      ) : (
+                         <span className="font-bold text-red-600">{mitra.cashout}%</span>
+                      )}
+                    </td>
+                    <td className="p-4">
+                      <p className="text-xs text-stone-600">Pajak: <span className="font-bold">{mitra.taxRate || 0}%</span></p>
+                      <p className="text-xs text-stone-600 mt-0.5">SVC: <span className="font-bold">{mitra.serviceRate || 0}%</span></p>
+                    </td>
+                    <td className="p-4 text-xs text-stone-500">
+                      {new Date(mitra.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </td>
+                    <td className="p-4 pr-6 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button 
+                          onClick={() => { setCurrentMitra(mitra); setIsModalOpen(true); }}
+                          className="w-8 h-8 rounded-lg bg-stone-100 hover:bg-emerald-100 text-stone-600 hover:text-emerald-700 flex items-center justify-center transition-colors"
+                          title="Edit Mitra"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleDelete(mitra.id, mitra.mitra_name)}
+                          className="w-8 h-8 rounded-lg bg-stone-100 hover:bg-red-100 text-stone-600 hover:text-red-700 flex items-center justify-center transition-colors"
+                          title="Nonaktifkan Mitra"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* MODAL FORM TAMBAH / EDIT */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="absolute inset-0 z-50 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-6"
-            onClick={() => setIsModalOpen(false)}
-          >
-            <motion.div
-              initial={{ y: 50, scale: 0.95 }} animate={{ y: 0, scale: 1 }} exit={{ y: 50, scale: 0.95 }}
-              onClick={(e) => e.stopPropagation()} 
-              className="bg-white w-full max-w-2xl rounded-[2rem] overflow-hidden flex flex-col shadow-2xl max-h-[90vh]"
-            >
-              {/* Header Modal */}
-              <div className="p-6 border-b border-stone-100 flex items-center justify-between bg-stone-50 shrink-0">
-                <div>
-                  <h3 className="text-xl font-black text-stone-800 tracking-tight">
-                    {modalMode === 'add' ? 'Tambah Mitra Baru' : 'Edit Data Mitra'}
-                  </h3>
-                  <p className="text-xs font-bold text-stone-500 mt-1">Lengkapi informasi identitas toko dan pemilik</p>
-                </div>
-                <button onClick={() => setIsModalOpen(false)} className="w-10 h-10 rounded-full bg-white border border-stone-200 flex items-center justify-center hover:bg-stone-100 transition">
-                  <X className="w-5 h-5 text-stone-500" />
-                </button>
+      {/* MODAL EDIT / TAMBAH MITRA */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            
+            <div className="px-6 py-4 border-b border-stone-100 flex items-center justify-between bg-stone-50">
+              <div>
+                <h3 className="font-black text-stone-800 text-lg">
+                  {currentMitra.id ? 'Edit Data Mitra' : 'Daftarkan Mitra Baru'}
+                </h3>
+                <p className="text-[10px] uppercase tracking-widest text-stone-400 font-bold mt-0.5">Konfigurasi Sistem</p>
               </div>
+              <button onClick={() => setIsModalOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-stone-200 text-stone-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-              {/* Body Form */}
-              <form onSubmit={handleSaveForm} className="overflow-y-auto p-6 space-y-5">
-                <div className="grid grid-cols-2 gap-5">
-                  <div className="col-span-2 md:col-span-1">
-                    <label className="text-xs font-bold text-stone-500 uppercase tracking-wider mb-2 block">Nama Toko *</label>
-                    <input 
-                      type="text" required
-                      value={formData.name || ''} 
-                      onChange={(e) => setFormData({...formData, name: e.target.value})}
-                      className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-600 focus:bg-white font-bold" 
-                      placeholder="Contoh: Kopi Kenangan" 
-                    />
-                  </div>
-                  <div className="col-span-2 md:col-span-1">
-                    <label className="text-xs font-bold text-stone-500 uppercase tracking-wider mb-2 block">Slug URL *</label>
-                    <div className="flex items-center">
-                      <span className="bg-stone-100 border border-r-0 border-stone-200 rounded-l-xl px-3 py-3 text-sm font-medium text-stone-400">/</span>
+            <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
+              <form id="mitraForm" onSubmit={handleSave} className="space-y-6">
+                
+                {/* IDENTITAS */}
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-emerald-600 mb-3 border-b border-emerald-100 pb-2 flex items-center gap-2">
+                    <Store className="w-4 h-4" /> Identitas Dasar
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Nama Bisnis / Kafe</label>
                       <input 
                         type="text" required
-                        value={formData.slug || ''} 
-                        onChange={(e) => setFormData({...formData, slug: e.target.value.toLowerCase().replace(/\s+/g, '-')})}
-                        className="w-full bg-stone-50 border border-stone-200 rounded-r-xl px-4 py-3 text-sm outline-none focus:border-emerald-600 focus:bg-white font-bold" 
-                        placeholder="kopi-kenangan" 
+                        value={currentMitra.mitra_name}
+                        onChange={(e) => setCurrentMitra({...currentMitra, mitra_name: e.target.value})}
+                        className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-emerald-500"
                       />
                     </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Slug URL</label>
+                      <input 
+                        type="text" required disabled={!!currentMitra.id}
+                        value={currentMitra.mitra_slug}
+                        onChange={(e) => setCurrentMitra({...currentMitra, mitra_slug: e.target.value.toLowerCase().replace(/\s+/g, '-')})}
+                        className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm font-mono outline-none focus:border-emerald-500 disabled:bg-stone-100 disabled:text-stone-400"
+                        placeholder="kopi-senja"
+                      />
+                      {!currentMitra.id && <p className="text-[10px] text-amber-600">Slug tidak dapat diubah setelah disimpan.</p>}
+                    </div>
                   </div>
-
-                  <div className="col-span-2 border-t border-stone-100 pt-4 mt-2">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-4">Informasi Pemilik (Owner)</p>
-                  </div>
-
-                  <div className="col-span-2">
-                    <label className="text-xs font-bold text-stone-500 uppercase tracking-wider mb-2 block">Nama Lengkap Owner *</label>
-                    <input 
-                      type="text" required
-                      value={formData.owner || ''} 
-                      onChange={(e) => setFormData({...formData, owner: e.target.value})}
-                      className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-600 focus:bg-white font-bold" 
-                    />
-                  </div>
-                  <div className="col-span-2 md:col-span-1">
-                    <label className="text-xs font-bold text-stone-500 uppercase tracking-wider mb-2 block">Email *</label>
-                    <input 
-                      type="email" required
-                      value={formData.email || ''} 
-                      onChange={(e) => setFormData({...formData, email: e.target.value})}
-                      className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-600 focus:bg-white font-bold" 
-                    />
-                  </div>
-                  <div className="col-span-2 md:col-span-1">
-                    <label className="text-xs font-bold text-stone-500 uppercase tracking-wider mb-2 block">No. WhatsApp *</label>
-                    <input 
-                      type="tel" required
-                      value={formData.phone || ''} 
-                      onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                      className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-600 focus:bg-white font-bold" 
-                    />
-                  </div>
-
-                  <div className="col-span-2 border-t border-stone-100 pt-4 mt-2">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-4">Status & Langganan</p>
-                  </div>
-
-                  <div className="col-span-2 md:col-span-1">
-                    <label className="text-xs font-bold text-stone-500 uppercase tracking-wider mb-2 block">Paket SaaS</label>
-                    <select 
-                      value={formData.plan || 'Basic'} 
-                      onChange={(e) => setFormData({...formData, plan: e.target.value})}
-                      className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-600 focus:bg-white font-bold"
-                    >
-                      <option value="Trial">Trial (14 Hari)</option>
-                      <option value="Basic">Basic Plan</option>
-                      <option value="Pro Plan">Pro Plan</option>
-                      <option value="Enterprise">Enterprise</option>
-                    </select>
-                  </div>
-
-                  <div className="col-span-2 md:col-span-1">
-                    <label className="text-xs font-bold text-stone-500 uppercase tracking-wider mb-2 block">Status Akun</label>
-                    <select 
-                      value={formData.status || 'active'} 
-                      onChange={(e) => setFormData({...formData, status: e.target.value as 'active'|'expired'|'suspended'})}
-                      className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-600 focus:bg-white font-bold"
-                    >
-                      <option value="active">Active (Aktif)</option>
-                      <option value="expired">Expired (Kedaluwarsa)</option>
-                      <option value="suspended">Suspended (Diblokir)</option>
-                    </select>
-                  </div>
-
-                  {modalMode === 'edit' && (
-                     <div className="col-span-2 bg-amber-50 border border-amber-200 rounded-xl p-4 mt-2">
-                        <p className="text-xs font-bold text-amber-800 mb-2">Manajemen Cabang</p>
-                        <p className="text-[11px] font-medium text-amber-700">Manajemen cabang dilakukan secara spesifik pada masing-masing akun Owner Mitra.</p>
-                     </div>
+                  
+                  {/* Hanya tampil jika sedang edit (karena alamat/bank ada di tabel settings) */}
+                  {currentMitra.id && (
+                    <div className="mt-4 space-y-1.5">
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Alamat Fisik</label>
+                      <textarea 
+                        rows={2}
+                        value={currentMitra.mitraAddress || ''}
+                        onChange={(e) => setCurrentMitra({...currentMitra, mitraAddress: e.target.value})}
+                        className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-500"
+                      />
+                    </div>
                   )}
-
                 </div>
 
-                {/* Tombol Simpan */}
-                <div className="pt-6">
-                  <button 
-                    type="submit" 
-                    disabled={isSubmitting}
-                    className="w-full py-4 rounded-xl bg-emerald-700 text-white font-black flex justify-center items-center gap-2 hover:bg-emerald-800 transition shadow-lg shadow-emerald-900/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isSubmitting ? (
-                      <><Loader2 className="w-5 h-5 animate-spin" /> Sedang Menyimpan...</>
-                    ) : (
-                      <><Save className="w-5 h-5" /> Simpan Data Mitra</>
-                    )}
-                  </button>
-                </div>
+                {/* KONFIGURASI KEUANGAN (Hanya bisa diset setelah mitra jadi / saat PUT) */}
+                {currentMitra.id && (
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-widest text-amber-600 mb-3 border-b border-amber-100 pb-2 flex items-center gap-2">
+                      <ShieldAlert className="w-4 h-4" /> Pengaturan Keuangan
+                    </h4>
+                    
+                    <div className="bg-red-50 border border-red-100 rounded-2xl p-4 mb-4">
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-red-600 flex items-center gap-1.5 mb-2">
+                        Platform Fee / Payout Potongan
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="number" step="0.01"
+                          value={currentMitra.cashout || 0}
+                          onChange={(e) => setCurrentMitra({...currentMitra, cashout: e.target.value})}
+                          className="w-full border border-red-200 bg-white rounded-xl px-4 py-2.5 text-sm font-black text-red-700 outline-none focus:border-red-500"
+                        />
+                        <span className="text-xs font-bold text-red-600 w-1/3">Persen (%) atau Rupiah</span>
+                      </div>
+                      <p className="text-[10px] text-red-500 mt-1.5 leading-relaxed">
+                        Nilai ini adalah fee yang akan ditarik oleh Evognito dari setiap pesanan. Jika &lt; 100, dianggap Persen (%).
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Pajak Resto / PPN (%)</label>
+                        <input 
+                          type="number" step="1"
+                          value={currentMitra.taxRate || 0}
+                          onChange={(e) => setCurrentMitra({...currentMitra, taxRate: e.target.value})}
+                          className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Service Charge (%)</label>
+                        <input 
+                          type="number" step="1"
+                          value={currentMitra.serviceRate || 0}
+                          onChange={(e) => setCurrentMitra({...currentMitra, serviceRate: e.target.value})}
+                          className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </form>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            </div>
 
+            <div className="px-6 py-4 border-t border-stone-100 flex items-center justify-end gap-3 bg-stone-50">
+              <button 
+                type="button" 
+                onClick={() => setIsModalOpen(false)}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest text-stone-500 hover:bg-stone-200 transition-colors"
+              >
+                Batal
+              </button>
+              <button 
+                form="mitraForm"
+                type="submit"
+                disabled={isSubmitting}
+                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest disabled:opacity-50 transition-all shadow-sm"
+              >
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Simpan Konfigurasi
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }
