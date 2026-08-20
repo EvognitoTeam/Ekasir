@@ -275,9 +275,9 @@ export default function ReservationView({ onBack, cafeName = "Restoran Kami" }: 
                 </div>
               </div>
               <div>
-                <label className="text-[10px] font-bold text-stone-500 uppercase tracking-wider mb-1.5 block">Jumlah Tamu *</label>
+                <label className="text-[10px] font-bold text-stone-500 uppercase tracking-wider mb-1.5 block">Jumlah Tamu <small>(minimal 2 pax)</small>*</label>
                 <div className="flex items-center justify-between gap-4 bg-stone-50 border border-stone-200 rounded-xl p-2 max-w-[160px]">
-                  <button type="button" onClick={() => setForm({...form, pax: Math.max(1, form.pax - 1)})} className="w-10 h-10 bg-white rounded-lg border border-stone-200 text-stone-600 font-bold hover:bg-stone-100 flex items-center justify-center">-</button>
+                  <button type="button" onClick={() => setForm({...form, pax: Math.max(2, form.pax - 1)})} className="w-10 h-10 bg-white rounded-lg border border-stone-200 text-stone-600 font-bold hover:bg-stone-100 flex items-center justify-center">-</button>
                   <span className="font-black text-lg text-stone-800">{form.pax}</span>
                   <button type="button" onClick={() => setForm({...form, pax: form.pax + 1})} className="w-10 h-10 bg-[var(--color-primary)] rounded-lg text-white font-bold hover:opacity-90 flex items-center justify-center shadow-sm">+</button>
                 </div>
@@ -285,7 +285,7 @@ export default function ReservationView({ onBack, cafeName = "Restoran Kami" }: 
             </div>
           </section>
 
-          <section className="bg-white border border-stone-200 rounded-3xl p-5 sm:p-6 shadow-sm">
+          {/* <section className="bg-white border border-stone-200 rounded-3xl p-5 sm:p-6 shadow-sm">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center">
                 <Armchair className="w-4 h-4 text-stone-600" />
@@ -316,7 +316,7 @@ export default function ReservationView({ onBack, cafeName = "Restoran Kami" }: 
                 })}
               </div>
             )}
-          </section>
+          </section> */}
 
           <section className="bg-white border border-stone-200 rounded-3xl p-5 sm:p-6 shadow-sm">
              <div className="flex items-center gap-2 mb-5">
@@ -327,7 +327,7 @@ export default function ReservationView({ onBack, cafeName = "Restoran Kami" }: 
             </div>
             <textarea 
               value={form.notes} onChange={(e) => setForm({...form, notes: e.target.value})}
-              placeholder="Contoh: Tolong siapkan kursi bayi, dll."
+              placeholder="Contoh: Tolong siapkan kursi bayi, request outdoor, dll."
               className="w-full h-28 resize-none bg-stone-50 border border-stone-200 rounded-2xl p-4 text-sm outline-none focus:border-[var(--color-primary)] focus:bg-white transition"
             ></textarea>
           </section>

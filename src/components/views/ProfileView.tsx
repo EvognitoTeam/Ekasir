@@ -28,6 +28,7 @@ import {
   Coins,
   TrendingUp,
   Sparkles,
+  Phone, // Tambahan Icon Phone
 } from 'lucide-react';
 
 import { PRIVACY_CONTENT, TERMS_CONTENT } from '@/constants/legal';
@@ -93,11 +94,6 @@ export default function ProfileView({
     params.mitraSlug ?? '',
   );
 
-  /*
-   * Pada route customer berbasis catch-all, params.branchSlug
-   * dapat berisi nama halaman, misalnya "profile".
-   * Karena itu branchSlug ditentukan dari posisi segmen pathname.
-   */
   const pathSegments = pathname
     .split('/')
     .filter(Boolean);
@@ -118,14 +114,31 @@ export default function ProfileView({
     ? `/${mitraSlug}/${branchSlug}`
     : `/${mitraSlug}`;
 
+  // State Otentikasi Mode
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+
+  // State Form Login
   const [inputEmail, setInputEmail] = useState('');
   const [inputPassword, setInputPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [showSuccess, setShowSuccess] = useState(false);
+
+  // State Form Register
+  const [regName, setRegName] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  const [registerError, setRegisterError] = useState('');
+  const [registerSuccess, setRegisterSuccess] = useState('');
+
+  // State Global
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userData, setUserData] = useState<SessionUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [loginError, setLoginError] = useState('');
-  const [showSuccess, setShowSuccess] = useState(false);
+  
+  // State Modal
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [showTermModal, setShowTermModal] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
@@ -300,6 +313,7 @@ export default function ProfileView({
     [orderHistory],
   );
 
+  // ACTION: Proses Login
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoginError('');
@@ -335,6 +349,65 @@ export default function ProfileView({
         error instanceof Error
           ? error.message
           : 'Terjadi kesalahan saat login.',
+      );
+      setIsSubmitting(false);
+    }
+  };
+
+  // ACTION: Proses Register
+  const handleRegister = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setRegisterError('');
+    setRegisterSuccess('');
+
+    if (regPassword !== regConfirmPassword) {
+      setRegisterError('Password dan Konfirmasi Password tidak cocok!');
+      return;
+    }
+
+    const phoneClean = regPhone.replace(/\D/g, '');
+    if (phoneClean.length < 8) {
+      setRegisterError('Masukkan nomor WhatsApp yang valid.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      // Pastikan endpoint ini sesuai dengan rute register customer Anda di backend
+      const response = await fetch('/api/auth/customer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: regName.trim(),
+          email: regEmail.trim(),
+          phone: regPhone.trim(),
+          password: regPassword,
+          slug: mitraSlug,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Pendaftaran gagal. Email atau nomor mungkin sudah digunakan.');
+      }
+
+      setRegisterSuccess('Pendaftaran berhasil! Mengalihkan ke login...');
+      
+      // Mengubah tampilan menjadi form login dan pre-fill email
+      window.setTimeout(() => {
+        setAuthMode('login');
+        setInputEmail(regEmail);
+        setRegPassword('');
+        setRegConfirmPassword('');
+        setIsSubmitting(false);
+        setRegisterSuccess('');
+      }, 2000);
+
+    } catch (error) {
+      setRegisterError(
+        error instanceof Error ? error.message : 'Terjadi kesalahan saat pendaftaran.'
       );
       setIsSubmitting(false);
     }
@@ -573,15 +646,6 @@ export default function ProfileView({
                       Total Belanja
                     </p>
                   </div>
-
-                  {/* <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-center backdrop-blur-sm sm:p-4">
-                    <p className="font-display text-xl font-bold text-amber-300 sm:text-2xl">
-                      {(userData?.points ?? 0).toLocaleString('id-ID')}
-                    </p>
-                    <p className="mt-1 font-label text-[8px] font-bold uppercase tracking-widest text-amber-200/70 sm:text-[9px]">
-                      Poin Aktifs
-                    </p>
-                  </div> */}
                 </div>
 
                 <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.06]">
@@ -715,68 +779,171 @@ export default function ProfileView({
               exit={{ opacity: 0, y: -12 }}
               className="overflow-hidden rounded-[2rem] border border-stone-100 bg-white shadow-xl shadow-stone-200/50"
             >
-              <div className="border-b border-stone-100 px-8 py-5">
+              {/* HEADER FORM DENGAN TOGGLE LOGIN/REGISTER */}
+              <div className="flex items-center justify-between border-b border-stone-100 px-8 py-5">
                 <p className="font-label text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--color-primary)]">
-                  Masuk Akun
+                  {authMode === 'login' ? 'Masuk Akun' : 'Daftar Akun'}
                 </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode(authMode === 'login' ? 'register' : 'login');
+                    setLoginError('');
+                    setRegisterError('');
+                    setRegisterSuccess('');
+                  }}
+                  className="text-[10px] font-bold uppercase tracking-wider text-stone-400 transition-colors hover:text-[var(--color-primary)]"
+                >
+                  {authMode === 'login' ? 'Daftar Baru' : 'Masuk Saja'}
+                </button>
               </div>
 
-              <form className="flex flex-col gap-5 p-8" onSubmit={handleLogin}>
-                <div>
-                  <h2 className="font-display text-2xl font-medium text-stone-900">
-                    Selamat datang kembali.
-                  </h2>
-                  <p className="mt-1 text-xs leading-relaxed text-stone-500">
-                    Masuk untuk membuka riwayat pesanan, kupon, dan akses staf sesuai akun Anda.
-                  </p>
-                </div>
+              {/* RENDER FORM BERDASARKAN MODE */}
+              {authMode === 'login' ? (
+                <form className="flex flex-col gap-5 p-8" onSubmit={handleLogin}>
+                  <div>
+                    <h2 className="font-display text-2xl font-medium text-stone-900">
+                      Selamat datang kembali.
+                    </h2>
+                    <p className="mt-1 text-xs leading-relaxed text-stone-500">
+                      Masuk untuk membuka riwayat pesanan, kupon, dan akses staf sesuai akun Anda.
+                    </p>
+                  </div>
 
-                <AnimatePresence mode="popLayout">
-                  {showSuccess && (
-                    <StatusMessage type="success">
-                      Login berhasil. Menyiapkan profil Anda...
-                    </StatusMessage>
-                  )}
+                  <AnimatePresence mode="popLayout">
+                    {showSuccess && (
+                      <StatusMessage type="success">
+                        Login berhasil. Menyiapkan profil Anda...
+                      </StatusMessage>
+                    )}
 
-                  {loginError && (
-                    <StatusMessage type="error">
-                      {loginError}
-                    </StatusMessage>
-                  )}
-                </AnimatePresence>
+                    {loginError && (
+                      <StatusMessage type="error">
+                        {loginError}
+                      </StatusMessage>
+                    )}
+                  </AnimatePresence>
 
-                <Field
-                  label="Alamat Email"
-                  icon={Mail}
-                  type="email"
-                  value={inputEmail}
-                  onChange={setInputEmail}
-                  placeholder="nama@email.com"
-                  autoComplete="email"
-                />
+                  <Field
+                    label="Alamat Email"
+                    icon={Mail}
+                    type="email"
+                    value={inputEmail}
+                    onChange={setInputEmail}
+                    placeholder="nama@email.com"
+                    autoComplete="email"
+                  />
 
-                <Field
-                  label="Kata Sandi"
-                  icon={KeyRound}
-                  type="password"
-                  value={inputPassword}
-                  onChange={setInputPassword}
-                  placeholder="Masukkan kata sandi"
-                  autoComplete="current-password"
-                />
+                  <Field
+                    label="Kata Sandi"
+                    icon={KeyRound}
+                    type="password"
+                    value={inputPassword}
+                    onChange={setInputPassword}
+                    placeholder="Masukkan kata sandi"
+                    autoComplete="current-password"
+                  />
 
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] py-3.5 font-label text-xs font-bold uppercase tracking-widest text-white transition-all hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-stone-300"
-                >
-                  {isSubmitting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    'Masuk'
-                  )}
-                </button>
-              </form>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] py-3.5 font-label text-xs font-bold uppercase tracking-widest text-white transition-all hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-stone-300"
+                  >
+                    {isSubmitting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      'Masuk'
+                    )}
+                  </button>
+                </form>
+              ) : (
+                <form className="flex flex-col gap-5 p-8" onSubmit={handleRegister}>
+                  <div>
+                    <h2 className="font-display text-2xl font-medium text-stone-900">
+                      Mulai Bergabung.
+                    </h2>
+                    <p className="mt-1 text-xs leading-relaxed text-stone-500">
+                      Buat akun Anda sekarang untuk mendapatkan promo eksklusif dan mencatat riwayat pesanan.
+                    </p>
+                  </div>
+
+                  <AnimatePresence mode="popLayout">
+                    {registerSuccess && (
+                      <StatusMessage type="success">
+                        {registerSuccess}
+                      </StatusMessage>
+                    )}
+
+                    {registerError && (
+                      <StatusMessage type="error">
+                        {registerError}
+                      </StatusMessage>
+                    )}
+                  </AnimatePresence>
+
+                  <Field
+                    label="Nama Lengkap"
+                    icon={User}
+                    type="text"
+                    value={regName}
+                    onChange={setRegName}
+                    placeholder="Contoh: Budi Santoso"
+                    autoComplete="name"
+                  />
+
+                  <Field
+                    label="Alamat Email"
+                    icon={Mail}
+                    type="email"
+                    value={regEmail}
+                    onChange={setRegEmail}
+                    placeholder="budi@email.com"
+                    autoComplete="email"
+                  />
+
+                  <Field
+                    label="Nomor WhatsApp"
+                    icon={Phone}
+                    type="tel"
+                    value={regPhone}
+                    onChange={setRegPhone}
+                    placeholder="081234567890"
+                    autoComplete="tel"
+                  />
+
+                  <Field
+                    label="Kata Sandi"
+                    icon={KeyRound}
+                    type="password"
+                    value={regPassword}
+                    onChange={setRegPassword}
+                    placeholder="Minimal 6 karakter"
+                    autoComplete="new-password"
+                  />
+
+                  <Field
+                    label="Konfirmasi Sandi"
+                    icon={Shield}
+                    type="password"
+                    value={regConfirmPassword}
+                    onChange={setRegConfirmPassword}
+                    placeholder="Ulangi kata sandi"
+                    autoComplete="new-password"
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] py-3.5 font-label text-xs font-bold uppercase tracking-widest text-white transition-all hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-stone-300"
+                  >
+                    {isSubmitting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      'Daftar Sekarang'
+                    )}
+                  </button>
+                </form>
+              )}
             </motion.section>
           )}
         </AnimatePresence>
@@ -850,7 +1017,7 @@ function Field({
 }: {
   label: string;
   icon: typeof User;
-  type: 'email' | 'password';
+  type: 'email' | 'password' | 'text' | 'tel'; // Updated allowed types
   value: string;
   onChange: (value: string) => void;
   placeholder: string;

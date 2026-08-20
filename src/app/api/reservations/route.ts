@@ -102,7 +102,6 @@ export async function POST(request: Request) {
     await db.insert(reservations).values({
       customer_name: String(body.customer_name).trim(),
       customer_phone: body.customer_phone ? String(body.customer_phone).trim() : null,
-      table_id: Number(body.table_id),
       mitra_id: foundMitra[0].id,
       branch_id: finalBranchId,
       reserved_start: start,
