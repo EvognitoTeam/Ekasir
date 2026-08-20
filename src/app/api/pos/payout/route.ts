@@ -81,6 +81,15 @@ function jsonError(
   );
 }
 
+interface AuthCheckResult {
+  ok: boolean;
+  response?: NextResponse; // 🔴 Tambahkan ini untuk menampung hasil jsonError
+  userId?: number;
+  role?: string;
+  mitraId?: number;
+  message?: string;
+}
+
 // 🔴 BERIKAN EKSPLISIT RETURN TYPE DI SINI
 async function verifyOwnerSession(request: Request, targetSlug: string): Promise<AuthCheckResult> {
   const cookieStore = await cookies();
@@ -319,7 +328,7 @@ export async function GET(
     // 🔴 1. VERIFIKASI KEAMANAN SESI & ROLE OWNER
     const authCheck = await verifyOwnerSession(request, slug);
     if (!authCheck.ok) {
-      return authCheck.response;
+      return authCheck.response!;
     }
 
     const [foundMitra] = await db
@@ -835,7 +844,7 @@ export async function POST(
     // 🔴 2. VERIFIKASI KEAMANAN SESI & ROLE OWNER UNTUK AKSI PENARIKAN (POST)
     const authCheck = await verifyOwnerSession(request, slug);
     if (!authCheck.ok) {
-      return authCheck.response;
+      return authCheck.response!;
     }
 
     const [foundMitra] = await db
