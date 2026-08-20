@@ -500,14 +500,14 @@ export default function ProfileView({
     {
       id: 'privacy',
       label: 'Kebijakan Privasi',
-      description: 'Cara EKASIR mengelola dan melindungi data',
+      description: 'Cara KALOO POS mengelola dan melindungi data',
       icon: Shield,
       action: () => setShowPrivacyModal(true),
     },
     {
       id: 'terms',
       label: 'Syarat & Ketentuan',
-      description: 'Ketentuan penggunaan layanan EKASIR',
+      description: 'Ketentuan penggunaan layanan KALOO POS',
       icon: FileText,
       action: () => setShowTermModal(true),
     },
@@ -539,7 +539,7 @@ export default function ProfileView({
         open={showPrivacyModal}
         onClose={() => setShowPrivacyModal(false)}
         title="Kebijakan Privasi"
-        eyebrow="EKASIR Platform"
+        eyebrow="KALOO POS Platform"
         icon={Shield}
         content={PRIVACY_CONTENT}
         buttonLabel="Saya Mengerti"
@@ -557,7 +557,7 @@ export default function ProfileView({
         open={showTermModal}
         onClose={() => setShowTermModal(false)}
         title="Syarat & Ketentuan"
-        eyebrow="EKASIR Platform"
+        eyebrow="KALOO POS Platform"
         icon={FileText}
         content={
           TERMS_CONTENT ||

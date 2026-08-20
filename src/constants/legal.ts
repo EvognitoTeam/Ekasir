@@ -1,18 +1,18 @@
 export const LEGAL_LAST_UPDATED =
-  '29 Juli 2026';
+  '20 Agustus 2026';
 
 export const TERMS_CONTENT = `
-SYARAT DAN KETENTUAN EVOKASIR
+SYARAT DAN KETENTUAN KALOO POS
 
 Terakhir Diperbarui: ${LEGAL_LAST_UPDATED}
 
-Selamat datang di Evokasir, layanan Point of Sale (POS), pengelolaan usaha, pemesanan mandiri/kiosk, transaksi, pembayaran, voucher, member, loyalitas, inventaris, laporan, serta fitur pendukung lain yang dikelola oleh Evognito.
+Selamat datang di KALOO POS, layanan Point of Sale (POS), pengelolaan usaha, pemesanan mandiri/kiosk, transaksi, pembayaran, voucher, member, loyalitas, inventaris, laporan, serta fitur pendukung lain yang dikelola oleh Evognito.
 
-Dengan mendaftar, mengakses, atau menggunakan Evokasir, Anda menyatakan telah membaca, memahami, dan menyetujui Syarat dan Ketentuan ini.
+Dengan mendaftar, mengakses, atau menggunakan KALOO POS, Anda menyatakan telah membaca, memahami, dan menyetujui Syarat dan Ketentuan ini.
 
 1. RUANG LINGKUP LAYANAN
 
-Evokasir menyediakan perangkat lunak untuk membantu kegiatan operasional usaha, termasuk tetapi tidak terbatas pada:
+KALOO POS menyediakan perangkat lunak untuk membantu kegiatan operasional usaha, termasuk tetapi tidak terbatas pada:
 - Pengelolaan produk, kategori, harga, dan stok
 - Transaksi kasir dan pencatatan pesanan
 - Pemesanan melalui kiosk atau perangkat pelanggan
@@ -22,7 +22,7 @@ Evokasir menyediakan perangkat lunak untuk membantu kegiatan operasional usaha, 
 - Laporan transaksi, analitik, dan administrasi usaha
 - Integrasi API dan layanan pihak ketiga.
 
-Evokasir merupakan penyedia teknologi. Produk, layanan, harga, kualitas, ketersediaan, pemenuhan pesanan, dan hubungan jual beli dengan pelanggan tetap menjadi tanggung jawab mitra atau pemilik usaha.
+KALOO POS merupakan penyedia teknologi. Produk, layanan, harga, kualitas, ketersediaan, pemenuhan pesanan, dan hubungan jual beli dengan pelanggan tetap menjadi tanggung jawab mitra atau pemilik usaha.
 
 2. KELAYAKAN DAN AKUN
 
@@ -48,7 +48,7 @@ Pengguna atau mitra bertanggung jawab untuk:
 4. PENGGUNAAN YANG DILARANG
 
 Anda dilarang:
-- Menggunakan Evokasir untuk kegiatan ilegal, penipuan, pencucian uang, atau perdagangan barang terlarang
+- Menggunakan KALOO POS untuk kegiatan ilegal, penipuan, pencucian uang, atau perdagangan barang terlarang
 - Mengakses akun, server, API, atau data tanpa izin
 - Mengunggah malware, script berbahaya, atau melakukan serangan terhadap sistem
 - Memalsukan transaksi, identitas, voucher, status pembayaran, atau data member
@@ -64,7 +64,7 @@ Pengguna memahami bahwa:
 - Keberhasilan pembayaran bergantung pada konfirmasi penyedia pembayaran
 - Gangguan bank, jaringan, payment gateway, atau perangkat dapat memengaruhi status transaksi
 - Refund, pembatalan, chargeback, dan rekonsiliasi mengikuti kebijakan mitra, penyedia pembayaran, dan hukum yang berlaku
-- Evokasir tidak menyimpan PIN, CVV, atau kredensial perbankan pelanggan
+- KALOO POS tidak menyimpan PIN, CVV, atau kredensial perbankan pelanggan
 - Catatan transaksi elektronik, nomor pesanan, dan struk dapat digunakan sebagai bukti transaksi sesuai hukum yang berlaku.
 
 6. LANGGANAN, BIAYA, DAN PENAGIHAN
@@ -105,25 +105,25 @@ Mitra bertanggung jawab menempatkan perangkat kiosk secara aman dan membatasi ak
 
 9. API DAN INTEGRASI
 
-Penggunaan API atau integrasi wajib mengikuti dokumentasi, batas penggunaan, dan mekanisme keamanan Evokasir.
+Penggunaan API atau integrasi wajib mengikuti dokumentasi, batas penggunaan, dan mekanisme keamanan KALOO POS.
 
 API key, token, secret, dan kredensial integrasi wajib dijaga kerahasiaannya.
 
-Evokasir dapat membatasi atau mencabut akses API apabila terjadi penyalahgunaan, beban berlebihan, risiko keamanan, atau pelanggaran ketentuan.
+KALOO POS dapat membatasi atau mencabut akses API apabila terjadi penyalahgunaan, beban berlebihan, risiko keamanan, atau pelanggaran ketentuan.
 
 Ketersediaan integrasi pihak ketiga dapat berubah sesuai kebijakan pihak tersebut.
 
 10. HAK KEKAYAAN INTELEKTUAL
 
-Seluruh sistem, kode sumber, desain, logo, dokumentasi, merek, dan komponen Evokasir merupakan milik Evognito atau pemberi lisensinya dan dilindungi oleh hukum kekayaan intelektual.
+Seluruh sistem, kode sumber, desain, logo, dokumentasi, merek, dan komponen KALOO POS merupakan milik Evognito atau pemberi lisensinya dan dilindungi oleh hukum kekayaan intelektual.
 
 Mitra tetap memiliki data dan konten yang dimasukkan ke dalam sistem.
 
-Mitra memberikan izin terbatas kepada Evokasir untuk menyimpan, memproses, menampilkan, dan menggunakan konten tersebut sejauh diperlukan untuk menyediakan layanan.
+Mitra memberikan izin terbatas kepada KALOO POS untuk menyimpan, memproses, menampilkan, dan menggunakan konten tersebut sejauh diperlukan untuk menyediakan layanan.
 
 11. KETERSEDIAAN DAN PEMELIHARAAN
 
-Evokasir berupaya menjaga layanan tersedia, stabil, dan aman, tetapi tidak menjamin layanan selalu bebas gangguan atau kesalahan.
+KALOO POS berupaya menjaga layanan tersedia, stabil, dan aman, tetapi tidak menjamin layanan selalu bebas gangguan atau kesalahan.
 
 Pemeliharaan, pembaruan, serangan siber, gangguan internet, listrik, pusat data, bank, payment gateway, atau keadaan lain dapat memengaruhi ketersediaan.
 
@@ -131,7 +131,7 @@ Mitra disarankan memiliki prosedur operasional cadangan, termasuk pencatatan man
 
 12. PENANGGUHAN DAN PENGHENTIAN
 
-Evokasir dapat membatasi, menangguhkan, atau menghentikan akun apabila:
+KALOO POS dapat membatasi, menangguhkan, atau menghentikan akun apabila:
 - Terjadi pelanggaran ketentuan
 - Terdapat risiko keamanan
 - Pembayaran tertunggak
@@ -143,7 +143,7 @@ Pemberitahuan akan diberikan apabila memungkinkan, kecuali tindakan segera diper
 
 13. PEMBATASAN TANGGUNG JAWAB
 
-Dalam batas yang diizinkan hukum, Evokasir tidak bertanggung jawab atas:
+Dalam batas yang diizinkan hukum, KALOO POS tidak bertanggung jawab atas:
 - Kerugian tidak langsung
 - Kehilangan keuntungan, peluang, reputasi, atau data
 - Kesalahan input, konfigurasi, harga, atau stok oleh pengguna
@@ -154,11 +154,11 @@ Pembatasan ini tidak mengurangi hak konsumen yang wajib dilindungi berdasarkan h
 
 14. KEADAAN KAHAR
 
-Evokasir tidak bertanggung jawab atas kegagalan layanan akibat kejadian di luar kendali wajar, termasuk bencana alam, kebakaran, banjir, perang, kerusuhan, epidemi, gangguan listrik, internet, telekomunikasi, pusat data, pemerintah, bank, atau penyedia pembayaran.
+KALOO POS tidak bertanggung jawab atas kegagalan layanan akibat kejadian di luar kendali wajar, termasuk bencana alam, kebakaran, banjir, perang, kerusuhan, epidemi, gangguan listrik, internet, telekomunikasi, pusat data, pemerintah, bank, atau penyedia pembayaran.
 
 15. PERUBAHAN LAYANAN DAN KETENTUAN
 
-Evokasir dapat memperbarui fitur, harga, dan ketentuan untuk menyesuaikan perkembangan layanan, teknologi, keamanan, dan hukum.
+KALOO POS dapat memperbarui fitur, harga, dan ketentuan untuk menyesuaikan perkembangan layanan, teknologi, keamanan, dan hukum.
 
 Perubahan material akan diberitahukan melalui aplikasi, situs web, email, atau kanal lain yang wajar.
 
@@ -174,31 +174,31 @@ Sengketa akan terlebih dahulu diselesaikan melalui musyawarah. Apabila tidak ter
 
 Untuk pertanyaan mengenai Syarat dan Ketentuan, hubungi:
 
-Evokasir / Evognito
-Email: admin@evognito.my.id
+KALOO POS / Evognito
+Email: support@kaloopos.com
 Wilayah Operasional: Indonesia
 `;
 
 export const PRIVACY_CONTENT = `
-KEBIJAKAN PRIVASI EVOKASIR
+KEBIJAKAN PRIVASI KALOO POS
 
 Terakhir Diperbarui: ${LEGAL_LAST_UPDATED}
 
-Evokasir berkomitmen melindungi data pribadi pengguna, mitra, staf, member, dan pelanggan yang menggunakan layanan Point of Sale, dashboard, kiosk, pembayaran, voucher, loyalitas, API, dan fitur terkait lainnya.
+KALOO POS berkomitmen melindungi data pribadi pengguna, mitra, staf, member, dan pelanggan yang menggunakan layanan Point of Sale, dashboard, kiosk, pembayaran, voucher, loyalitas, API, dan fitur terkait lainnya.
 
-Kebijakan ini menjelaskan cara Evokasir memperoleh, menggunakan, menyimpan, membagikan, melindungi, serta menghapus data pribadi.
+Kebijakan ini menjelaskan cara KALOO POS memperoleh, menggunakan, menyimpan, membagikan, melindungi, serta menghapus data pribadi.
 
-1. PERAN EVOKASIR DAN MITRA
+1. PERAN KALOO POS DAN MITRA
 
-Dalam pengelolaan akun Evokasir, langganan, keamanan sistem, dukungan, dan pengembangan layanan, Evokasir dapat bertindak sebagai Pengendali Data Pribadi.
+Dalam pengelolaan akun KALOO POS, langganan, keamanan sistem, dukungan, dan pengembangan layanan, KALOO POS dapat bertindak sebagai Pengendali Data Pribadi.
 
-Untuk data pelanggan dan staf yang dimasukkan oleh mitra, mitra pada umumnya bertindak sebagai Pengendali Data Pribadi dan Evokasir bertindak sebagai Prosesor Data Pribadi yang memproses data berdasarkan instruksi mitra.
+Untuk data pelanggan dan staf yang dimasukkan oleh mitra, mitra pada umumnya bertindak sebagai Pengendali Data Pribadi dan KALOO POS bertindak sebagai Prosesor Data Pribadi yang memproses data berdasarkan instruksi mitra.
 
 Mitra bertanggung jawab memastikan data pelanggan dan staf diperoleh dan digunakan secara sah.
 
 2. DATA YANG DIKUMPULKAN
 
-Evokasir dapat memproses:
+KALOO POS dapat memproses:
 
 A. Data identitas dan akun
 - Nama
@@ -256,7 +256,7 @@ F. Data pembayaran
 - Informasi QRIS
 - Informasi yang diberikan penyedia pembayaran.
 
-Evokasir TIDAK menyimpan PIN, CVV, atau kata sandi perbankan pelanggan.
+KALOO POS TIDAK menyimpan PIN, CVV, atau kata sandi perbankan pelanggan.
 
 G. Data perangkat dan teknis
 - Jenis perangkat
@@ -272,7 +272,7 @@ H. Data komunikasi
 - Pesan dukungan
 - Laporan masalah
 - Umpan balik
-- Korespondensi dengan tim Evokasir.
+- Korespondensi dengan tim KALOO POS.
 
 3. SUMBER DATA
 
@@ -297,7 +297,7 @@ Data digunakan untuk:
 - Memberikan dukungan pelanggan
 - Melakukan analisis, pengujian, dan pengembangan fitur
 - Memenuhi kewajiban hukum, akuntansi, perpajakan, dan audit
-- Menyelesaikan sengketa dan melindungi hak pengguna serta Evokasir.
+- Menyelesaikan sengketa dan melindungi hak pengguna serta KALOO POS.
 
 5. DASAR PEMROSESAN
 
@@ -307,7 +307,7 @@ Pemrosesan dilakukan berdasarkan satu atau lebih dasar berikut:
 - Kewajiban hukum
 - Kepentingan vital
 - Kepentingan umum
-- Kepentingan sah Evokasir atau pihak lain yang tidak mengesampingkan hak pengguna.
+- Kepentingan sah KALOO POS atau pihak lain yang tidak mengesampingkan hak pengguna.
 
 Apabila pemrosesan didasarkan pada persetujuan, pengguna dapat menarik persetujuan sesuai mekanisme yang tersedia.
 
@@ -320,7 +320,7 @@ Mitra bertanggung jawab:
 - Membatasi akses staf sesuai kebutuhan
 - Menangani permintaan pelanggan terkait data mereka.
 
-Evokasir akan membantu mitra memenuhi kewajiban perlindungan data sepanjang memungkinkan dan sesuai layanan yang digunakan.
+KALOO POS akan membantu mitra memenuhi kewajiban perlindungan data sepanjang memungkinkan dan sesuai layanan yang digunakan.
 
 7. PEMBAGIAN DATA
 
@@ -341,13 +341,13 @@ Instansi pemerintah, pengadilan, aparat penegak hukum, atau regulator apabila di
 E. Transaksi korporasi
 Pihak yang terlibat dalam merger, akuisisi, restrukturisasi, pembiayaan, atau pengalihan aset dengan perlindungan kerahasiaan yang sesuai.
 
-Evokasir tidak menjual data pribadi kepada pengiklan.
+KALOO POS tidak menjual data pribadi kepada pengiklan.
 
 8. TRANSFER DATA LINTAS NEGARA
 
 Sebagian penyedia teknologi dapat memproses data di luar Indonesia.
 
-Apabila terjadi transfer lintas negara, Evokasir akan menerapkan dasar dan perlindungan yang diwajibkan oleh hukum, termasuk penilaian tingkat perlindungan, kontrak, persetujuan, atau mekanisme lain yang sah.
+Apabila terjadi transfer lintas negara, KALOO POS akan menerapkan dasar dan perlindungan yang diwajibkan oleh hukum, termasuk penilaian tingkat perlindungan, kontrak, persetujuan, atau mekanisme lain yang sah.
 
 9. PENYIMPANAN DATA
 
@@ -363,7 +363,7 @@ Setelah masa penyimpanan berakhir, data dapat dihapus, dimusnahkan, atau dianoni
 
 10. KEAMANAN DATA
 
-Evokasir menerapkan langkah teknis dan organisasi yang wajar, termasuk:
+KALOO POS menerapkan langkah teknis dan organisasi yang wajar, termasuk:
 - Kontrol akses
 - Autentikasi
 - Hashing kata sandi
@@ -377,7 +377,7 @@ Tidak ada sistem elektronik yang sepenuhnya bebas risiko. Pengguna wajib menjaga
 
 11. INSIDEN KEAMANAN
 
-Apabila terjadi kegagalan perlindungan data pribadi, Evokasir akan melakukan penanganan, mitigasi, dokumentasi, dan pemberitahuan kepada pihak yang diwajibkan sesuai peraturan yang berlaku.
+Apabila terjadi kegagalan perlindungan data pribadi, KALOO POS akan melakukan penanganan, mitigasi, dokumentasi, dan pemberitahuan kepada pihak yang diwajibkan sesuai peraturan yang berlaku.
 
 12. HAK SUBJEK DATA
 
@@ -394,11 +394,11 @@ Sesuai hukum yang berlaku, pengguna dapat memiliki hak untuk:
 
 Permintaan dapat memerlukan verifikasi identitas.
 
-Apabila data dikendalikan oleh mitra, Evokasir dapat mengarahkan permintaan kepada mitra terkait.
+Apabila data dikendalikan oleh mitra, KALOO POS dapat mengarahkan permintaan kepada mitra terkait.
 
 13. COOKIE DAN PENYIMPANAN LOKAL
 
-Evokasir dapat menggunakan cookie atau penyimpanan lokal untuk:
+KALOO POS dapat menggunakan cookie atau penyimpanan lokal untuk:
 - Login dan sesi
 - Keamanan
 - Keranjang belanja
@@ -409,7 +409,7 @@ Menonaktifkan cookie tertentu dapat menyebabkan sebagian fungsi tidak berjalan.
 
 14. DATA ANAK
 
-Layanan Evokasir ditujukan untuk kegiatan usaha dan transaksi umum.
+Layanan KALOO POS ditujukan untuk kegiatan usaha dan transaksi umum.
 
 Anak yang belum cakap secara hukum harus menggunakan layanan dengan persetujuan atau pendampingan orang tua atau wali apabila diwajibkan oleh hukum.
 
@@ -433,7 +433,7 @@ Penghapusan dapat dibatasi apabila data masih diperlukan untuk:
 
 17. PERUBAHAN KEBIJAKAN
 
-Evokasir dapat memperbarui Kebijakan Privasi ini untuk menyesuaikan perubahan hukum, teknologi, dan layanan.
+KALOO POS dapat memperbarui Kebijakan Privasi ini untuk menyesuaikan perubahan hukum, teknologi, dan layanan.
 
 Perubahan material akan diberitahukan melalui aplikasi, situs, email, atau kanal lain yang wajar.
 
@@ -441,7 +441,7 @@ Perubahan material akan diberitahukan melalui aplikasi, situs, email, atau kanal
 
 Untuk pertanyaan, permintaan hak data, atau pengaduan privasi, hubungi:
 
-Evokasir / Evognito
-Email: admin@evognito.my.id
+KALOO POS / Evognito
+Email: support@kaloopos.com
 Wilayah Operasional: Indonesia
 `;
