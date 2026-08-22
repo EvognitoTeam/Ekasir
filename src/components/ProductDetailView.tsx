@@ -101,8 +101,10 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
   const handleSelectAddon = (addonId: number, group: any) => {
-    const maxSelected = Number(group.maxSelected || group.max_selected || 0); 
-    const isRequired = Boolean(group.is_required || group.isRequired);
+    const maxSelected = Number(group.maxSelected || group.max_selected || 0);
+    const isSingleChoice = maxSelected === 1; // <-- Ini penyebabnya
+    const isRequired = Boolean(group.isRequired || group.is_required);
+    const isRadioUI = maxSelected === 1 && isRequired;
     const groupAddonIds = group.addons.map((a: any) => Number(a.id));
 
     setSelectedAddons(prev => {
@@ -205,8 +207,8 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
               {item.categorizedAddons?.map((group: any) => {
                 // 🔴 PERBAIKAN 2: Gunakan pembacaan yang sama untuk UI
                 const maxSelected = Number(group.maxSelected || group.max_selected || 0);
-                const isSingleChoice = maxSelected === 1;
                 const isRequired = Boolean(group.isRequired || group.is_required);
+                const isRadioUI = maxSelected === 1 && isRequired;
                 
                 return (
                   <section key={group.categoryName} className="py-5 px-5">
@@ -216,7 +218,10 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
                           <h3 className="text-sm font-bold text-stone-900">{group.categoryName}</h3>
                           {isRequired && <span className="bg-red-50 text-red-600 border border-red-200 text-[8px] font-bold px-1.5 py-0.5 rounded uppercase tracking-widest">Required</span>}
                         </div>
-                        <p className="text-[10px] text-stone-400 uppercase tracking-widest font-bold">{isSingleChoice ? 'Pilih 1 Opsi' : maxSelected > 1 ? `Pilih Maks. ${maxSelected}` : 'Pilihan (Opsional)'}</p>
+                        {/* 🔴 Teks akan berubah menjadi "Pilihan (Opsional)" jika tidak wajib */}
+                        <p className="text-[10px] text-stone-400 uppercase tracking-widest font-bold">
+                          {isRadioUI ? 'Pilih 1 Opsi' : maxSelected > 1 ? `Pilih Maks. ${maxSelected}` : 'Pilihan (Opsional)'}
+                        </p>
                       </div>
                     </div>
                     <div className="space-y-3">
@@ -226,13 +231,13 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
                         return (
                           <label key={addon.id} className={`flex items-center justify-between p-3 border rounded-xl cursor-pointer hover:bg-stone-50 transition-all ${isSelected ? 'border-[#0E5C37] bg-emerald-50' : 'border-stone-100'}`}>
                             <div className="flex items-center gap-3">
-                              {/* 🔴 PERBAIKAN 3: Tambahkan name="" untuk grouping radio button HTML */}
+                              {/* 🔴 Gunakan isRadioUI di type dan className */}
                               <input 
-                                type={isSingleChoice ? "radio" : "checkbox"} 
+                                type={isRadioUI ? "radio" : "checkbox"} 
                                 name={`addon-group-${group.categoryName}`}
                                 checked={isSelected} 
                                 onChange={() => handleSelectAddon(Number(addon.id), group)} 
-                                className={`w-5 h-5 accent-[#0E5C37] cursor-pointer ${isSingleChoice ? 'rounded-full' : 'rounded'}`} 
+                                className={`w-5 h-5 accent-[#0E5C37] cursor-pointer ${isRadioUI ? 'rounded-full' : 'rounded'}`} 
                               />
                               <span className={`text-sm font-medium ${isSelected ? 'text-[#0E5C37]' : 'text-stone-700'}`}>{addon.name}</span>
                             </div>
