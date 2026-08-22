@@ -219,6 +219,12 @@ export default function CustomerPage() {
 
     const controller = new AbortController();
     const tableCode = searchParams.get('tableCode');
+    if (!tableCode) {
+      // Catatan: Sesuaikan dengan cara state Anda menerima nilai kosong. 
+      // Bisa setTable(null, null), setTable('', ''), atau memanggil fungsi clearTable()
+      setTable('', ''); 
+      
+    }
 
     async function loadCustomerData() {
       setLoading(true);
@@ -254,6 +260,9 @@ export default function CustomerPage() {
 
         if (tableCode && productResult.tableName) {
           setTable(tableCode, productResult.tableName);
+        } else if (!tableCode) {
+          // Double check: Pastikan meja terhapus jika di tengah proses URL berubah
+          setTable('', '');
         }
 
         if (couponResponse.ok) {
@@ -283,7 +292,6 @@ export default function CustomerPage() {
   useEffect(() => {
     // Jalankan auto-apply setiap kali keranjang (currentCart) atau daftar promo berubah
     if (slug && items.length > 0 && promos.length > 0) {
-      // @ts-ignore - mengabaikan validasi tipe sementara jika ada perbedaan strict type pada CouponData
       autoApplyBestCoupon(slug as string, items, promos);
     }
   }, [currentCart, promos, items, slug, autoApplyBestCoupon]);
@@ -349,7 +357,7 @@ export default function CustomerPage() {
   const isMainShellView = ['menu', 'roasts', 'history', 'help', 'profile', 'coupons'].includes(currentView);
   const isCategoryDetail = currentView === 'menu' && selectedCategoryId !== null;
   const showBottomNav = isMainShellView && currentView !== 'coupons';
-
+  // console.log("ISI DATA ORDER:", currentOrder);
   return (
     <div className="flex min-h-[100dvh] bg-stone-200/60 font-body">
       {isMainShellView && (
@@ -395,9 +403,10 @@ export default function CustomerPage() {
                               </p>
                               <p className="text-xs font-bold">
                                 #{
-                                  (currentOrder as { order_code?: string })?.order_code ||
-                                  currentOrder?.id?.toString().slice(-6)
-                                }
+                                    currentOrder?.orderCode || 
+                                    currentOrder?.id?.toString().slice(-6) ||
+                                    "MEMUAT..." // Fallback agar tidak kosong sama sekali
+                                  }
                               </p>
                             </div>
                           </div>

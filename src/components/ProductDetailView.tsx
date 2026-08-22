@@ -101,7 +101,6 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
   const handleSelectAddon = (addonId: number, group: any) => {
-    // 🔴 PERBAIKAN 1: Baca maxSelected dengan aman dari kedua versi key
     const maxSelected = Number(group.maxSelected || group.max_selected || 0); 
     const isRequired = Boolean(group.is_required || group.isRequired);
     const groupAddonIds = group.addons.map((a: any) => Number(a.id));
@@ -111,8 +110,9 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
 
       if (maxSelected === 1) {
         if (isAlreadySelected) {
+          // 🔴 KUNCI UTAMA: Jika tidak wajib (optional), izinkan untuk di-uncheck!
           if (!isRequired) return prev.filter(id => id !== addonId);
-          return prev;
+          return prev; // Jika wajib (required), tidak boleh kosong
         }
         // Bersihkan opsi lain di grup ini, lalu masukkan yang baru diklik
         const filteredPrev = prev.filter(id => !groupAddonIds.includes(id));

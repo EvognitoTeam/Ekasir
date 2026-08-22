@@ -13,6 +13,7 @@ import {
   CheckCircle,
   ChevronRight,
   CookingPot,
+  CalendarClock,
   FileText,
   History,
   KeyRound,
@@ -440,6 +441,11 @@ export default function ProfileView({
 
     router.push(`${basePath}/coupons`);
   };
+  
+  const openReservation = () => {
+  // Ubah rute ini sesuai dengan path halaman reservasi Anda
+  router.push(`${basePath}/reservation`);
+};
 
   const accountMenus = useMemo<MenuItem[]>(() => {
     const items: MenuItem[] = [];
@@ -495,6 +501,16 @@ export default function ProfileView({
 
     return items;
   }, [isLoggedIn, mitraSlug, router, userRole]);
+
+  const publicFeatureMenus: MenuItem[] = [
+  {
+    id: 'reservations',
+    label: 'Reservasi Meja',
+    description: 'Pesan meja atau tempat tanpa perlu antre',
+    icon: CalendarClock,
+    action: openReservation,
+  },
+];
 
   const generalMenus: MenuItem[] = [
     {
@@ -948,6 +964,8 @@ export default function ProfileView({
           )}
         </AnimatePresence>
 
+        <MenuGroup title="Layanan" items={publicFeatureMenus} />
+        
         {accountMenus.length > 0 && (
           <MenuGroup title="Akun" items={accountMenus} />
         )}

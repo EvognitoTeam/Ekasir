@@ -50,7 +50,7 @@ export default function Sidebar({
     },
     { id: 'history' as const, label: 'Riwayat', icon: History, visible: true },
     { id: 'help' as const, label: 'Bantuan', icon: HelpCircle, visible: true },
-    { id: 'reservation' as const, label: 'Reservasi', icon: CalendarClock, visible: true },
+    // { id: 'reservation' as const, label: 'Reservasi', icon: CalendarClock, visible: true },
     { id: 'profile' as const, label: 'Profil', icon: User, visible: true },
   ].filter((item) => item.visible);
 

@@ -1,23 +1,35 @@
 import { motion } from 'framer-motion';
-import { BookOpen, History, LifeBuoy, User } from 'lucide-react';
+import { BookOpen, History, LifeBuoy, User, ClipboardList } from 'lucide-react';
 
 interface Props {
   activeView: string;
-  onViewChange: (view: 'menu' | 'history' | 'help' | 'profile') => void;
+  // 🔴 1. Tambahkan 'tracking' ke dalam tipe union ini
+  onViewChange: (view: 'menu' | 'history' | 'help' | 'profile' | 'tracking') => void;
+  hasActiveOrder?: boolean;
 }
 
-const NAV_ITEMS = [
-  { id: 'menu' as const, label: 'Menu', icon: BookOpen },
-  { id: 'history' as const, label: 'Pesanan', icon: History },
-  { id: 'help' as const, label: 'Bantuan', icon: LifeBuoy },
-  { id: 'profile' as const, label: 'Profil', icon: User },
-];
+// 🔴 2. Panggil (destructure) hasActiveOrder di parameter fungsi ini
+export default function BottomNav({ activeView, onViewChange, hasActiveOrder }: Props) {
+  
+  // 🔴 3. Pindahkan NAV_ITEMS ke DALAM komponen agar bisa membaca nilai hasActiveOrder
+  const NAV_ITEMS = [
+    { id: 'menu' as const, label: 'Menu', icon: BookOpen },
+    {
+      id: 'tracking' as const,
+      label: 'Pesanan aktif',
+      icon: ClipboardList,
+      visible: hasActiveOrder, // Sekarang ini tidak akan error!
+    },
+    { id: 'history' as const, label: 'Pesanan', icon: History },
+    { id: 'help' as const, label: 'Bantuan', icon: LifeBuoy },
+    { id: 'profile' as const, label: 'Profil', icon: User },
+  ];
 
-export default function BottomNav({ activeView, onViewChange }: Props) {
   return (
     <nav className="absolute inset-x-0 bottom-0 z-[80] h-[calc(80px+env(safe-area-inset-bottom))] border-t border-stone-100 bg-white/92 pb-safe backdrop-blur-2xl md:hidden">
       <div className="flex h-20 items-center justify-between px-3">
-        {NAV_ITEMS.map((item) => {
+        {/* 🔴 4. Tambahkan filter sebelum .map agar yang visible-nya false tidak dirender */}
+        {NAV_ITEMS.filter((item) => item.visible !== false).map((item) => {
           const Icon = item.icon;
           const active = activeView === item.id;
 
