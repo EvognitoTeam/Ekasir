@@ -839,7 +839,7 @@ export async function POST(request: Request): Promise<Response> {
     const qrAction = Array.isArray(midtransData.actions)
       ? midtransData.actions.find(
           (action: { name?: string; url?: string }) =>
-            action.name === 'generate-qr-code-v2',
+            action.name === 'generate-qr-code',
         )
       : null;
 

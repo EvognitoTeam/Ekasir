@@ -313,18 +313,18 @@ export default function EvokasirLandingPage() {
               <div className="mt-7 rounded-2xl border border-[var(--color-outline-variant)]/20 bg-[var(--color-surface)]/60 p-5">
                 <div className="flex items-start gap-3">
                   <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary)]/10 text-[var(--color-primary)]"><ShieldCheck size={17} /></div>
-                  <p className="text-sm leading-relaxed text-[var(--color-on-surface-variant)]">Fee platform dihitung dari nilai transaksi berhasil yang tercatat melalui KALOO POS. Biaya MDR, settlement, atau biaya penyedia pembayaran dapat berlaku secara terpisah sesuai metode pembayaran yang digunakan.</p>
+                  <p className="text-sm leading-relaxed text-[var(--color-on-surface-variant)]">Fee platform dihitung dari nilai transaksi berhasil yang tercatat melalui KALOO POS. Biaya MDR, settlement, atau biaya penyedia pembayaran sudah termasuk di dalamnya.</p>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="mx-auto mt-8 max-w-5xl">
+        {/* <div className="mx-auto mt-8 max-w-5xl">
           <div className="rounded-2xl border border-[var(--color-outline-variant)]/20 bg-[var(--color-surface-container)]/40 p-5">
             <p className="text-center text-sm leading-relaxed text-[var(--color-on-surface-variant)]">Fee platform flat 1,4% dikenakan pada seluruh transaksi berhasil yang diproses atau dicatat melalui KALOO POS, termasuk transaksi tunai dan non-tunai. Biaya MDR, settlement, atau biaya penyedia pembayaran dapat berlaku secara terpisah.</p>
           </div>
-        </div>
+        </div> */}
       </section>
 
       {/* <section className="relative z-10 mx-auto max-w-6xl px-4 pb-24">
@@ -389,7 +389,7 @@ export default function EvokasirLandingPage() {
           <div className="flex items-center gap-6 text-sm text-[var(--color-on-surface-variant)]">
             <Link href="/privacy-policy" className="transition-colors hover:text-[var(--color-primary)]">Privacy Policy</Link>
             <Link href="/term-conditions" className="transition-colors hover:text-[var(--color-primary)]">Terms</Link>
-            <Link href="/blog" className="transition-colors hover:text-[var(--color-primary)]">Blog</Link>
+            <Link href="https://blog.kaloopos.com/" className="transition-colors hover:text-[var(--color-primary)]">Blog</Link>
           </div>
         </div>
       </footer>

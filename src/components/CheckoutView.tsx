@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Clock,
+  Download,
   Loader2,
   Mail,
   MapPin,
@@ -604,8 +605,6 @@ function QrisStep({ onBack, onFinish, qrUrl, qrString, total, orderCode, expiryT
   const [isExpired, setIsExpired] = useState(false);
 
   // Logika penentuan sumber QR Code
-  // 1. Prioritas utama: qrUrl dari Midtrans
-  // 2. Fallback: Generate QR dari qrString menggunakan layanan publik (misal: api.qrserver.com)
   const finalQrSrc = qrUrl 
     ? qrUrl 
     : qrString 
@@ -680,6 +679,55 @@ function QrisStep({ onBack, onFinish, qrUrl, qrString, total, orderCode, expiryT
     }
   };
 
+  // Fungsi untuk mengunduh QR Code
+  const handleDownloadQr = async () => {
+    // Jika tidak ada qrString dan finalQrSrc, hentikan
+    if (!qrString && !finalQrSrc) {
+      Toast.fire({ icon: 'error', title: 'Data QR tidak tersedia' });
+      return;
+    }
+
+    try {
+      // 1. Prioritaskan generate ulang dari qrString menggunakan layanan bebas CORS
+      // Kita set ukuran 500x500 agar hasil unduhan lebih HD/tajam
+      const downloadUrl = qrString 
+        ? `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(qrString)}`
+        : finalQrSrc;
+
+      const response = await fetch(downloadUrl);
+      
+      if (!response.ok) throw new Error('Gagal mengambil gambar QR');
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      // Beri nama file yang rapi sesuai kode pesanan
+      link.download = `QRIS-${orderCode || 'Payment'}.png`; 
+      
+      document.body.appendChild(link);
+      link.click();
+      
+      // Bersihkan URL dari memori setelah diunduh
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      Toast.fire({ icon: 'success', title: 'QR Code berhasil diunduh!' });
+      
+    } catch (error) {
+      console.error('Download QR failed:', error);
+      
+      // 2. FALLBACK: Jika entah kenapa fetch masih gagal, buka di tab baru
+      const fallbackUrl = qrString 
+        ? `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(qrString)}` 
+        : finalQrSrc;
+        
+      window.open(fallbackUrl, '_blank');
+      Toast.fire({ icon: 'info', title: 'Silakan simpan gambar anda dengan tekan lama pada gambar.' });
+    }
+  };
+
   return (
     <div className="flex h-full flex-col bg-[var(--color-surface)]">
       <header className="flex items-center gap-4 bg-[var(--color-primary)] px-4 py-6 text-white">
@@ -703,10 +751,21 @@ function QrisStep({ onBack, onFinish, qrUrl, qrString, total, orderCode, expiryT
             <span className="font-mono text-xs font-bold">{timeLeft || '0:00'}</span>
           </div>
 
-          {/* Kondisi Tampilan QR / Error */}
-          <div className={`mb-6 rounded-xl border-4 bg-white p-2 flex items-center justify-center h-72 w-64 ${isExpired ? 'border-red-200 grayscale' : 'border-[var(--color-primary)]'}`}>
+          {/* Kondisi Tampilan QR & Tombol Download */}
+          <div className={`mb-6 mt-4 rounded-xl border-4 bg-white p-3 flex flex-col items-center justify-center h-auto w-64 ${isExpired ? 'border-red-200 grayscale' : 'border-[var(--color-primary)]'}`}>
             {finalQrSrc ? (
-              <img src={finalQrSrc} alt="QR Code" className="h-full w-full object-contain" />
+              <>
+                <div className="h-48 w-48 mb-3">
+                  <img src={finalQrSrc} alt="QR Code" className="h-full w-full object-contain" />
+                </div>
+                <button
+                  onClick={handleDownloadQr}
+                  className="flex items-center justify-center gap-2 w-full rounded-lg bg-stone-100 py-2.5 text-xs font-bold text-stone-700 hover:bg-stone-200 active:scale-95 transition"
+                >
+                  <Download className="h-4 w-4" />
+                  Simpan QR
+                </button>
+              </>
             ) : (
               <div className="text-center p-4">
                 <p className="text-xs font-bold text-red-500">Gagal memuat QR Code.</p>
