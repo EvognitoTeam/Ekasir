@@ -7,15 +7,18 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
   request: Request,
-  { params }: { params: { tableId: string } }
+  { params }: { params: Promise<{ tableId: string }> }
 ) {
   try {
-    const tableId = parseInt(params.tableId, 10);
+    // 1. Await params sesuai standar Next.js terbaru
+    const resolvedParams = await params;
+    const tableId = parseInt(resolvedParams.tableId, 10);
+    
     if (!Number.isFinite(tableId)) {
       return NextResponse.json({ success: false, message: 'Invalid table ID' }, { status: 400 });
     }
 
-    // 1. Ambil status meja dari table_list
+    // 2. Ambil status meja dari table_list
     const [tableInfo] = await db
       .select({ status: tableList.status })
       .from(tableList)
@@ -28,7 +31,7 @@ export async function GET(
     let orderCode = "";
     let customerName = "";
 
-    // 2. Jika Occupied (2), ambil detail pesanan terakhir
+    // 3. Jika Occupied (2), ambil detail pesanan terakhir
     if (currentStatusInt === 2) {
       const [activeOrder] = await db
         .select({
@@ -45,7 +48,7 @@ export async function GET(
         customerName = activeOrder.customer_name || "Tamu Umum";
       }
     } 
-    // 3. Jika Reserved (3), ambil detail reservasi
+    // 4. Jika Reserved (3), ambil detail reservasi
     else if (currentStatusInt === 3) {
       const [upcomingRes] = await db
         .select({
