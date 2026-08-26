@@ -183,6 +183,8 @@ export const orders = mysqlTable("orders", {
   }),
   admin_notes: text("admin_notes"),
   is_cashouted: boolean("is_cashouted").default(false).notNull(),
+  cashout_id: int('cashout_id'),
+  time_cashout: timestamp("time_cashout"),
   total_price: decimal("total_price", { precision: 10, scale: 0 }).default('0').notNull(),
   service: decimal("service", { precision: 10, scale: 0 }).default('0').notNull(),
   platformFee: decimal('platform_fee', {
@@ -635,4 +637,16 @@ export const posts = mysqlTable("posts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   deletedAt: timestamp("deleted_at"),
+});
+
+export const tableDevice = mysqlTable("iot_devices", {
+  id: bigint("id", { mode: "number", unsigned: true }).primaryKey().autoincrement(),
+  mitra_id: bigint("mitra_id", { mode: "number", unsigned: true }),
+  table_id: bigint("table_id", { mode: "number", unsigned: true }), // FK ke table_list.id
+  hex_id: varchar("hex_id", { length: 50 }), // MAC Address ESP32
+  serial_number: varchar("serial_number", { length: 50 }),
+  secret_key: varchar("secret_key", { length: 64 }),
+  status: mysqlEnum("status", ['active', 'inactive']).default('active'),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
 });

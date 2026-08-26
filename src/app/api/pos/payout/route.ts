@@ -19,9 +19,11 @@ import {
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const SECRET_KEY = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'rahasia-super-aman-evokasir-2026',
-);
+const secret = process.env.JWT_SECRET;
+if (!secret) {
+  throw new Error('FATAL: JWT_SECRET tidak dikonfigurasi pada environment variables!');
+}
+const SECRET_KEY = new TextEncoder().encode(secret);
 
 const MONTH_NAMES = [
   'Januari',
@@ -1003,7 +1005,22 @@ export async function POST(
 
     await db.transaction(
       async (tx) => {
-        await tx
+        const ordersToUpdate = await tx
+          .select({ id: orders.id })
+          .from(orders)
+          .where(
+            and(
+              inArray(orders.id, eligibleOrderIds),
+              eq(orders.is_cashouted, false)
+            )
+          );
+
+        if (ordersToUpdate.length !== eligibleOrderIds.length) {
+          throw new Error('Terjadi bentrok data (Race Condition). Silakan muat ulang dan coba lagi.');
+        }
+
+        // 1. Tangkap hasil eksekusi insert untuk mendapatkan ID cashout baru
+        const [insertResult] = await tx
           .insert(cashouts)
           .values({
             mitra_id:
@@ -1019,11 +1036,21 @@ export async function POST(
               createdAt,
           });
 
+        // Ekstrak ID yang baru saja di-generate (khusus MySQL di Drizzle)
+        const newCashoutId = insertResult.insertId;
+
+        // 2. Masukkan ID tersebut beserta waktu pencairannya ke tabel orders
         await tx
           .update(orders)
           .set({
             is_cashouted:
               true,
+
+            cashout_id:
+              newCashoutId,
+
+            time_cashout:
+              createdAt,
 
             updatedAt:
               createdAt,

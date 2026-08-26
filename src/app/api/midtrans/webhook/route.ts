@@ -50,16 +50,49 @@ export async function POST(request: Request) {
       paymentStatus = '1';
     }
 
+    const [targetOrder] = await db
+      .select({
+        id: orders.id,
+        orderCode: orders.order_code,
+        tableId: orders.table_number, // Ini menyimpan integer ID meja
+        customerName: orders.name,
+      })
+      .from(orders)
+      .where(eq(orders.transaction_id, transaction_id))
+      .limit(1);
+
     // 4. UPDATE DATABASE MENGGUNAKAN DRIZZLE
     // Cari transaksi berdasarkan order_id dan update statusnya
     await db.update(orders)
       .set({ 
         payment_status: paymentStatus,
-        updatedAt: new Date() // Opsional: catat waktu update
+        updatedAt: new Date() 
       })
       .where(eq(orders.transaction_id, transaction_id));
 
     console.log(`✅ Order ${order_id} berhasil diupdate menjadi: ${paymentStatus}`);
+
+    // ==========================================
+    // 6. TRIGGER WEBSOCKET IoT KE ESP32 MEJA
+    // ==========================================
+    // Jika pembayaran QRIS sukses (settlement), ubah layar meja jadi Occupied secara real-time
+    if (paymentStatus === '2' && targetOrder && targetOrder.tableId) {
+      const tableIdToNotify = targetOrder.tableId;
+
+      if (tableIdToNotify && global.iotClients && global.iotClients.has(tableIdToNotify)) {
+        fetch('http://localhost:3009/api/internal/push-iot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tableId: tableIdToNotify,
+            status: 'occupied',
+            order_code: targetOrder.orderCode,
+            customer_name: targetOrder.customerName
+          })
+        }).catch(err => console.error('Gagal memicu IoT push:', err));
+      }
+    }
+    // ==========================================
 
     // 5. KASIH RESPONSE 200 OK KE MIDTRANS
     // Ini wajib, kalau nggak, Midtrans bakal ngirim notifikasi ini terus-terusan

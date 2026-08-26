@@ -603,6 +603,13 @@ export async function POST(request: Request): Promise<Response> {
 
         if (foundTable) {
           finalTableId = foundTable.id;
+          await tx
+            .update(tableList)
+            .set({ 
+              status: 2, // 2 artinya Occupied / Terisi
+              updatedAt: now 
+            })
+            .where(eq(tableList.id, finalTableId));
         }
       }
 
@@ -718,10 +725,26 @@ export async function POST(request: Request): Promise<Response> {
         id: newOrderId,
         code: generatedCode,
         midtransOrderId,
+        finalTableId
       };
     });
 
     if (paymentMethod === 'cash') {
+      const tableIdToNotify = transactionResult.finalTableId;
+      // console.log(tableIdToNotify);
+      if (tableIdToNotify && global.iotClients && global.iotClients.has(tableIdToNotify)) {
+        fetch('http://localhost:3009/api/internal/push-iot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tableId: tableIdToNotify,
+            status: 'occupied',
+            order_code: transactionResult.code,
+            customer_name: customerName
+          })
+        }).catch(err => console.error('Gagal memicu IoT push:', err));
+      }
+      // ==========================================
       return NextResponse.json(
         {
           success: true,

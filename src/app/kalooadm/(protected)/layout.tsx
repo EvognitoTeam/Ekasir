@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { 
   LayoutDashboard, 
   Store, 
-  FileText, 
+  Banknote, // 🔴 Ikon diganti ke Banknote untuk Cashout
   LogOut, 
   Menu, 
   X, 
@@ -37,10 +37,10 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
       isActive: pathname.startsWith('/kalooadm/mitra') 
     },
     { 
-      name: 'Kelola Blog', 
-      href: '/kalooadm/blog', 
-      icon: FileText,
-      isActive: pathname.startsWith('/kalooadm/blog')
+      name: 'Kelola Cashout', // 🔴 Menu Blog diganti menjadi Cashout
+      href: '/kalooadm/cashout', 
+      icon: Banknote,
+      isActive: pathname.startsWith('/kalooadm/cashout')
     },
   ];
 
@@ -49,7 +49,7 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
     setIsLoggingOut(true);
     
     try {
-      // Panggil API logout (akan kita buat di bawah)
+      // Panggil API logout
       await fetch('/api/auth/superadmin/logout', { method: 'POST' });
       router.push('/kalooadm/login');
       router.refresh();

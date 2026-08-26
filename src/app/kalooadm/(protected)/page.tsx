@@ -1,34 +1,65 @@
 import { db } from '@/db';
-import { mitra, branches, posts } from '@/db/schema';
-import { isNull, count, eq, and } from 'drizzle-orm';
+import { mitra, branches, cashouts } from '@/db/schema'; // 🔴 posts diganti dengan cashouts
+import { isNull, count } from 'drizzle-orm'; // eq, and dihapus karena tidak dipakai
 import Link from 'next/link';
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
+import { jwtVerify } from 'jose';
 import { 
   Store, 
   Building2, 
-  FileText, 
-  TrendingUp, 
+  Wallet,      // 🔴 Ikon baru untuk metrik Cashout
+  Banknote,    // 🔴 Ikon baru untuk pintasan Cashout
   ArrowRight,
   ShieldAlert,
   Activity
 } from 'lucide-react';
 
-export const dynamic = 'force-dynamic'; // Memastikan data selalu segar setiap kali dimuat
+export const dynamic = 'force-dynamic';
+
+// Sesuaikan dengan kunci rahasia aplikasi Anda
+const SECRET_KEY = new TextEncoder().encode(
+  process.env.JWT_SECRET || 'rahasia-super-aman-evokasir-2026'
+);
 
 export default async function SuperadminOverviewPage() {
-  // 1. Fetch Statistik dari Database secara paralel
+  // ========================================================
+  // 1. PROTEKSI HALAMAN (Auth & Role Check)
+  // ========================================================
+  const cookieStore = await cookies();
+  const token = cookieStore.get('ekasir_session')?.value;
+
+  if (!token) {
+    redirect('/kalooadm/login');
+  }
+
+  try {
+    const { payload } = await jwtVerify(token, SECRET_KEY);
+    const role = String(payload.role ?? '').trim().toLowerCase();
+
+    if (role !== 'superadmin') {
+      redirect('/kalooadm/login');
+    }
+  } catch (error) {
+    redirect('/kalooadm/login');
+  }
+
+  // ========================================================
+  // 2. Fetch Statistik dari Database secara paralel
+  // ========================================================
   const [
     [mitraResult],
     [branchesResult],
-    [postsResult]
+    [cashoutsResult] // 🔴 Mengambil jumlah transaksi cashout
   ] = await Promise.all([
     db.select({ value: count() }).from(mitra).where(isNull(mitra.deletedAt)),
     db.select({ value: count() }).from(branches).where(isNull(branches.deletedAt)),
-    db.select({ value: count() }).from(posts).where(and(isNull(posts.deletedAt), eq(posts.is_published, true))),
+    db.select({ value: count() }).from(cashouts), 
   ]);
 
   const totalMitra = mitraResult?.value || 0;
   const totalBranches = branchesResult?.value || 0;
-  const totalPosts = postsResult?.value || 0;
+  const totalCashouts = cashoutsResult?.value || 0;
 
   return (
     <div className="p-4 sm:p-8 space-y-8 animate-in fade-in duration-500">
@@ -80,17 +111,17 @@ export default async function SuperadminOverviewPage() {
           </div>
         </div>
 
-        {/* Card 3: Total Artikel Blog */}
+        {/* Card 3: Total Cashout (Menggantikan Blog) */}
         <div className="bg-white rounded-2xl p-6 border border-stone-200 shadow-sm relative overflow-hidden group hover:border-amber-500 transition-colors">
           <div className="absolute -right-6 -top-6 text-stone-50 group-hover:text-amber-50 transition-colors">
-            <FileText className="w-32 h-32" />
+            <Wallet className="w-32 h-32" />
           </div>
           <div className="relative z-10">
             <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center mb-4">
-              <FileText className="w-5 h-5" />
+              <Wallet className="w-5 h-5" />
             </div>
-            <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1">Artikel Publikasi</p>
-            <h3 className="text-4xl font-black text-stone-800">{totalPosts}</h3>
+            <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1">Total Riwayat Pencairan</p>
+            <h3 className="text-4xl font-black text-stone-800">{totalCashouts}</h3>
           </div>
         </div>
 
@@ -118,21 +149,21 @@ export default async function SuperadminOverviewPage() {
           </div>
         </div>
 
-        {/* Quick Action: Tulis Blog */}
+        {/* Quick Action: Kelola Cashout (Menggantikan Blog) */}
         <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 sm:p-8 flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left">
           <div className="w-16 h-16 rounded-full bg-stone-100 text-stone-600 flex items-center justify-center shrink-0">
-            <TrendingUp className="w-8 h-8" />
+            <Banknote className="w-8 h-8" />
           </div>
           <div className="flex-1">
-            <h3 className="text-lg font-black text-stone-800 mb-2">Pusat Informasi & Blog</h3>
+            <h3 className="text-lg font-black text-stone-800 mb-2">Manajemen Cashout</h3>
             <p className="text-sm text-stone-500 mb-4 leading-relaxed">
-              Terbitkan pembaruan fitur terbaru, edukasi penggunaan sistem kasir, atau artikel pemasaran untuk pengguna publik.
+              Tinjau dan proses permintaan pencairan dana (QRIS) dari mitra, validasi nominal, serta pantau riwayat transfer.
             </p>
             <Link 
-              href="/kalooadm/blog"
-              className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-blue-600 hover:text-blue-700 transition-colors"
+              href="/kalooadm/cashout"
+              className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-amber-600 hover:text-amber-700 transition-colors"
             >
-              Tulis Artikel Baru <ArrowRight className="w-4 h-4" />
+              Kelola Pencairan Dana <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
         </div>

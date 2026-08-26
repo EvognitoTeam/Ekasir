@@ -11,7 +11,7 @@ if (!process.env.DATABASE_URL) {
 
 declare global {
   // Mencegah pool baru dibuat setiap hot reload Next.js.
-  // eslint-disable-next-line no-var
+   
   var ekasirMysqlPool: Pool | undefined;
 }
 
