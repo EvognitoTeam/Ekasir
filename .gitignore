@@ -11,6 +11,13 @@
 !.yarn/versions
 package-lock.json
 /printer-diagnostic
+# =========================
+# KALOO ERP
+# =========================
+/src/app/\[mitraSlug\]/erp/
+/src/components/erp/
+/src/app/api/erp/
+/src/lib/erp/
 
 # testing
 /coverage

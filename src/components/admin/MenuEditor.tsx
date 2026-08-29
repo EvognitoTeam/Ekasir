@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useMenuStore } from '@/store/menu.store';
 import { useInventoryStore } from '@/store/inventory.store';
-import { Search, Save, Power, Edit3, Loader2, Image as ImageIcon, Plus, X, Layers, Box, Tag, Settings, CheckCircle2, BookOpen, Trash2, Store } from 'lucide-react'; // 🔴 Tambah Store icon
+import { Search, Save, Power, Edit3, Loader2, Image as ImageIcon, Plus, X, Layers, Box, Tag, Settings, CheckCircle2, BookOpen, Trash2, Store } from 'lucide-react'; 
 import { formatPrice } from '@/utils/formatters';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toast } from '@/utils/toast';
@@ -24,7 +24,7 @@ export default function MenuEditor() {
   const { materials, initializeDefaultMaterials } = useInventoryStore();
   const [search, setSearch] = useState('');
   
-  // 🔴 STATE UNTUK CABANG
+  // STATE UNTUK CABANG
   const [dbBranches, setDbBranches] = useState<any[]>([]);
   const [activeBranchId, setActiveBranchId] = useState<string>(''); // '' berarti Pusat / Semua Cabang
 
@@ -49,9 +49,6 @@ export default function MenuEditor() {
 
   const [editingSubId, setEditingSubId] = useState<number | null>(null);
 
-  const [tempMat, setTempMat] = useState('');
-  const [tempAmt, setTempAmt] = useState('');
-
   // FORM STATES
   const [formMenu, setFormMenu] = useState({ 
     name: '', 
@@ -66,15 +63,21 @@ export default function MenuEditor() {
   });
   const [formCategory, setFormCategory] = useState({ name: '' });
   const [formAddonGroup, setFormAddonGroup] = useState({ name: '', isRequired: '0', maxSelected: '1' });
-  const [formAddonItem, setFormAddonItem] = useState({ name: '', price: '', groupId: '' });
-  const [formRecipe, setFormRecipe] = useState({ productId: '', materialId: '', amount: '' });
+  
+  // 🔴 FORM ADDON ITEM DIPERBARUI DENGAN STOK
+  const [formAddonItem, setFormAddonItem] = useState({ 
+    name: '', 
+    price: '', 
+    groupId: '', 
+    stock: '', 
+    isTrackStock: '1' 
+  });
 
-  // 🔴 FETCH DATA DENGAN FILTER CABANG
+  // FETCH DATA DENGAN FILTER CABANG
   const fetchAllData = useCallback(async () => {
     if (!slug) return;
     setIsLoading(true);
     try {
-      // Tambahkan branch_id ke URL jika tidak kosong
       const menuUrl = activeBranchId 
         ? `/api/menu?slug=${slug}&branch_id=${activeBranchId}` 
         : `/api/menu?slug=${slug}`;
@@ -83,7 +86,7 @@ export default function MenuEditor() {
         fetch(menuUrl),
         fetch('/api/recipes'),
         fetch('/api/inventory'), 
-        fetch(`/api/pos/branches?slug=${slug}`) // Ambil data cabang
+        fetch(`/api/pos/branches?slug=${slug}`) 
       ]);
 
       const data = await menuRes.json();
@@ -103,29 +106,22 @@ export default function MenuEditor() {
 
     } catch (e) { console.error(e); }
     finally { setIsLoading(false); }
-  }, [slug, activeBranchId, setMenu]); // 🔴 activeBranchId masuk dependency agar re-fetch saat tab diganti
+  }, [slug, activeBranchId, setMenu]); 
 
   useEffect(() => {
     fetchAllData();
     initializeDefaultMaterials();
   }, [fetchAllData, initializeDefaultMaterials]);
 
-  const filteredItems = items.filter(item => 
-    item.name.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const addRecipe = (materialId: string, amount: string) => {
-      const mat = dbMaterials.find(m => m.id.toString() === materialId);
-      if (!mat || !amount) return;
-      setFormMenu(prev => ({
-          ...prev,
-          recipes: [...prev.recipes, { materialId, amount, materialName: mat.name, unit: mat.unit}]
-      }));
-  };
-
-  const removeRecipe = (index: number) => {
-      setFormMenu(prev => ({ ...prev, recipes: prev.recipes.filter((_, i) => i !== index) }));
-  };
+  // 🔴 LOGIKA FILTER CABANG PUSAT
+  const filteredItems = items.filter(item => {
+    const matchesSearch = item.name.toLowerCase().includes(search.toLowerCase());
+    if (activeBranchId === '') {
+      return matchesSearch && !item.branch_id; 
+    } else {
+      return matchesSearch && item.branch_id?.toString() === activeBranchId;
+    }
+  });
 
   const toggleAvailability = async (id: string, currentStatus: boolean) => {
     setSavingId(id);
@@ -194,7 +190,7 @@ export default function MenuEditor() {
     setFormMenu({ name: '', image: '', imageFile: null, price: '', stock: '', category: '', description: '', addonGroups: [], recipes: [] });
     setFormCategory({ name: '' });
     setFormAddonGroup({ name: '', isRequired: '0', maxSelected: '1' });
-    setFormAddonItem({ name: '', price: '', groupId: '' });
+    setFormAddonItem({ name: '', price: '', groupId: '', stock: '', isTrackStock: '1' });
     setShowModal(true);
   };
 
@@ -260,26 +256,32 @@ export default function MenuEditor() {
     setFormAddonGroup({ name: group.name, isRequired: group.isRequired?.toString() || '0', maxSelected: group.maxSelected?.toString() || '1' });
   };
 
+  // 🔴 START EDIT ADDON DIUPDATE
   const startEditAddonItem = (addon: any) => {
     setEditingSubId(addon.id);
-    setFormAddonItem({ name: addon.name, price: addon.price?.toString() || '', groupId: addon.category_id?.toString() || '' });
+    setFormAddonItem({ 
+      name: addon.name, 
+      price: addon.price?.toString() || '', 
+      groupId: addon.category_id?.toString() || '',
+      stock: addon.stock?.toString() || '', 
+      isTrackStock: addon.is_track_stock?.toString() ?? '1' 
+    });
   };
 
+  // 🔴 CANCEL EDIT ADDON DIUPDATE
   const cancelSubEdit = () => {
     setEditingSubId(null);
     setFormCategory({ name: '' });
     setFormAddonGroup({ name: '', isRequired: '0', maxSelected: '1' });
-    setFormAddonItem({ name: '', price: '', groupId: '' });
+    setFormAddonItem({ name: '', price: '', groupId: '', stock: '', isTrackStock: '1' });
   };
 
   const handleSaveForm = async () => {
     setIsSubmitting(true);
     try {
       const formData = new FormData();
-      
       formData.append('entity', activeTab); 
 
-      // 🔴 SUNTIKKAN BRANCH ID SAAT MENAMBAHKAN/MENGEDIT
       if (activeBranchId) {
         formData.append('branch_id', activeBranchId);
       }
@@ -310,6 +312,9 @@ export default function MenuEditor() {
           formData.append('name', formAddonItem.name);
           formData.append('price', formAddonItem.price);
           formData.append('category_id', formAddonItem.groupId);
+          // 🔴 APPEND STOK ADDON
+          formData.append('stock', formAddonItem.stock);
+          formData.append('is_track_stock', formAddonItem.isTrackStock);
         }
         if (editingSubId) formData.append('id', editingSubId.toString());
       }
@@ -347,7 +352,7 @@ export default function MenuEditor() {
   return (
     <div className="w-full pb-10 relative">
 
-      {/* 🔴 TAB FILTER CABANG */}
+      {/* TAB FILTER CABANG */}
       {dbBranches.length > 0 && (
         <div className="flex gap-2 overflow-x-auto no-scrollbar mb-6 pb-2 border-b border-stone-200">
           <button
@@ -493,7 +498,7 @@ export default function MenuEditor() {
         </div>
       )}
 
-      {/* 🔴 MODAL MASTER DATA MANAGER */}
+      {/* MODAL MASTER DATA MANAGER */}
       <AnimatePresence>
         {showModal && (
           <motion.div 
@@ -515,7 +520,6 @@ export default function MenuEditor() {
                     </h3>
                     <p className="text-[10px] uppercase tracking-widest font-bold text-stone-400">
                       {modalMode === 'edit' ? 'Modifikasi Entitas' : 'Penambahan Entitas Baru'}
-                      {/* 🔴 Tampilkan info cabang yang sedang dituju */}
                       {activeBranchId && ` • ${dbBranches.find(b => b.id.toString() === activeBranchId)?.name}`}
                     </p>
                   </div>
@@ -531,8 +535,6 @@ export default function MenuEditor() {
                     { id: 'menu', label: 'Produk Menu', icon: <Box className="w-4 h-4" /> },
                     { id: 'category', label: 'Kategori Utama', icon: <Layers className="w-4 h-4" /> },
                     { id: 'addon', label: 'Addon Ekstra', icon: <Tag className="w-4 h-4" /> },
-                    // { id: 'recipe', label: 'Resep (BoM)', icon: <BookOpen className="w-4 h-4" /> }
-
                   ].map(tab => (
                     <button 
                       key={tab.id} onClick={() => { setActiveTab(tab.id as AddModalTab); cancelSubEdit(); }}
@@ -549,7 +551,6 @@ export default function MenuEditor() {
               <div className="p-6 overflow-y-auto no-scrollbar flex-1 bg-stone-50/30">
                 
                 {/* 🟢 TAB 1: FORM INPUT MENU */}
-                
                 {activeTab === 'menu' && (
                   <div className="space-y-5">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -739,25 +740,46 @@ export default function MenuEditor() {
                     ) : (
                       <div className="space-y-6">
                         <div className="bg-white p-5 rounded-xl border border-stone-200 shadow-sm space-y-4">
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div className="space-y-1">
-                              <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Pilih Grup Induk</label>
+                          
+                          {/* 🔴 FORM INPUT ITEM ADDON (TERMASUK STOK) */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                            <div className="space-y-1 lg:col-span-1">
+                              <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Grup Induk</label>
                               <select value={formAddonItem.groupId} onChange={e => setFormAddonItem({...formAddonItem, groupId: e.target.value})} className="w-full bg-stone-50/50 border border-stone-200 rounded-xl py-2 px-3 text-sm focus:outline-none focus:border-[#0E5C37] bg-white">
-                                <option value="">-- Pilih Kategori Addon --</option>
+                                <option value="">-- Pilih --</option>
                                 {dbAddonGroups.map(group => (
                                   <option key={group.id} value={group.id}>{group.name}</option>
                                 ))}
                               </select>
                             </div>
-                            <div className="space-y-1">
+                            <div className="space-y-1 lg:col-span-2">
                               <label className="text-[10px] font-bold uppercase tracking-widest text-[#0E5C37]">Nama Addon</label>
                               <input type="text" placeholder="Cth: Ekstra Keju" value={formAddonItem.name} onChange={e => setFormAddonItem({...formAddonItem, name: e.target.value})} className="w-full bg-stone-50/50 border border-stone-200 rounded-xl py-2 px-3 text-sm focus:outline-none focus:border-[#0E5C37]" />
                             </div>
-                            <div className="space-y-1">
-                              <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Harga (Rp)</label>
+                            <div className="space-y-1 lg:col-span-1">
+                              <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Harga</label>
                               <input type="number" placeholder="5000" value={formAddonItem.price} onChange={e => setFormAddonItem({...formAddonItem, price: e.target.value})} className="w-full bg-stone-50/50 border border-stone-200 rounded-xl py-2 px-3 text-sm focus:outline-none focus:border-[#0E5C37]" />
                             </div>
+                            
+                            <div className="space-y-1 lg:col-span-1 flex flex-col justify-end">
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Stok</label>
+                                <label className="flex items-center gap-1 text-[8px] uppercase tracking-wider font-bold text-[#0E5C37] cursor-pointer">
+                                  <input type="checkbox" checked={formAddonItem.isTrackStock === '1'} onChange={(e) => setFormAddonItem({...formAddonItem, isTrackStock: e.target.checked ? '1' : '0'})} className="accent-[#0E5C37]" />
+                                  Lacak
+                                </label>
+                              </div>
+                              <input 
+                                type="number" 
+                                placeholder={formAddonItem.isTrackStock === '1' ? 'Cth: 50' : '∞'} 
+                                disabled={formAddonItem.isTrackStock === '0'}
+                                value={formAddonItem.stock} 
+                                onChange={e => setFormAddonItem({...formAddonItem, stock: e.target.value})} 
+                                className="w-full bg-stone-50/50 border border-stone-200 rounded-xl py-2 px-3 text-sm focus:outline-none focus:border-[#0E5C37] disabled:bg-stone-100 disabled:text-stone-400" 
+                              />
+                            </div>
                           </div>
+
                           <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
                             {editingSubId && <button type="button" onClick={cancelSubEdit} className="px-4 py-2 bg-stone-100 text-stone-600 rounded-xl text-xs font-bold uppercase">Batal</button>}
                             <button type="button" onClick={handleSaveForm} className="px-5 py-2 bg-[#0E5C37] text-white rounded-xl text-xs font-bold uppercase hover:bg-emerald-700">{editingSubId ? 'Update' : 'Simpan'}</button>
@@ -773,7 +795,15 @@ export default function MenuEditor() {
                                 <div key={addon.id} className="p-3.5 flex items-center justify-between">
                                   <div>
                                     <span className="text-sm font-bold text-stone-800 block">{addon.name}</span>
-                                    <span className="text-[9px] font-bold uppercase text-stone-400 tracking-wider block mt-0.5">{pGroup} • +{formatPrice(Number(addon.price))}</span>
+                                    
+                                    {/* 🔴 TAMPILAN INFO STOK DI LIST ADDON */}
+                                    <span className="text-[9px] font-bold uppercase text-stone-400 tracking-wider block mt-0.5">
+                                      {pGroup} • +{formatPrice(Number(addon.price))} 
+                                      <span className="ml-2 px-1.5 py-0.5 bg-stone-100 rounded text-stone-500">
+                                        Stok: {addon.is_track_stock?.toString() === '1' ? addon.stock : 'Unlimited'}
+                                      </span>
+                                    </span>
+                                    
                                   </div>
                                   <button type="button" onClick={() => startEditAddonItem(addon)} className="p-1.5 text-stone-400 hover:text-[#0E5C37] rounded-md"><Edit3 className="w-3.5 h-3.5" /></button>
                                 </div>
@@ -785,8 +815,6 @@ export default function MenuEditor() {
                     )}
                   </div>
                 )}
-
-              
               </div>
 
               {/* FOOTER UTAMA */}

@@ -54,6 +54,36 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
     (currentOrder as any)?.paymentMethod || (currentOrder as any)?.payment_method || 'qris'
   );
 
+  /**
+   * QRIS payment data.
+   *
+   * qr_url berasal dari Midtrans dan merupakan QR pembayaran sebenarnya.
+   * qr_string disimpan sebagai fallback jika suatu saat qr_url tidak tersedia.
+   */
+  const [qrisQrUrl, setQrisQrUrl] = useState(
+    (currentOrder as any)?.qr_url ||
+      (currentOrder as any)?.qrUrl ||
+      ''
+  );
+
+  const [qrisQrString, setQrisQrString] = useState(
+    (currentOrder as any)?.qr_string ||
+      (currentOrder as any)?.qrString ||
+      ''
+  );
+
+  const [qrisImageFailed, setQrisImageFailed] = useState(false);
+
+  const [qrisExpiryTime, setQrisExpiryTime] = useState<string | null>(
+    (currentOrder as any)?.expiry_time ||
+      (currentOrder as any)?.expiryTime ||
+      null
+  );
+
+  const [expiryRemainingMs, setExpiryRemainingMs] = useState<number | null>(
+    null
+  );
+
   const [timestamps, setTimestamps] = useState({
     created: (currentOrder as any)?.createdAt || (currentOrder as any)?.created_at,
     confirmed: (currentOrder as any)?.confirmedAt || (currentOrder as any)?.confirmed_at,
@@ -119,6 +149,47 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
         newManualTableInfo,
       );
     }
+
+    const newQrUrl =
+      (currentOrder as any)?.qr_url ||
+      (currentOrder as any)?.qrUrl ||
+      '';
+
+    const newQrString =
+      (currentOrder as any)?.qr_string ||
+      (currentOrder as any)?.qrString ||
+      '';
+
+    const newExpiryTime =
+      (currentOrder as any)?.expiry_time ||
+      (currentOrder as any)?.expiryTime ||
+      null;
+
+    /**
+     * Penting:
+     * currentOrder dari Zustand belum tentu membawa field QRIS.
+     *
+     * Jangan pernah menimpa state hasil polling dengan string kosong,
+     * karena /api/orders/track adalah sumber data QRIS terbaru.
+     */
+    if (newQrUrl) {
+      setQrisQrUrl(
+        newQrUrl,
+      );
+      setQrisImageFailed(false);
+    }
+
+    if (newQrString) {
+      setQrisQrString(
+        newQrString,
+      );
+    }
+
+    if (newExpiryTime) {
+      setQrisExpiryTime(
+        newExpiryTime,
+      );
+    }
   }, [
     currentOrder,
     actualTableName,
@@ -130,7 +201,26 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
     const trackOrder = async () => {
       if (!orderCodeToDisplay) return;
       try {
-        const res = await fetch(`/api/orders/track?code=${orderCodeToDisplay}`);
+        const trackQuery =
+          new URLSearchParams({
+            code: String(orderCodeToDisplay),
+          });
+
+        if (slug) {
+          trackQuery.set(
+            'slug',
+            slug,
+          );
+        }
+
+        const res = await fetch(
+          `/api/orders/track?${trackQuery.toString()}`,
+          {
+            cache: 'no-store',
+            credentials: 'include',
+          },
+        );
+
         const result = await res.json();
 
         if (result.success && result.data && result.data.length > 0) {
@@ -172,7 +262,61 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
               fetchedOrder.payment_status.toString(),
             );
           }
-          if (fetchedOrder.payment_method) setPaymentMethod(fetchedOrder.payment_method);
+
+          if (
+            fetchedOrder.payment_method
+          ) {
+            setPaymentMethod(
+              fetchedOrder.payment_method,
+            );
+          }
+
+          const fetchedQrUrl =
+            fetchedOrder.qr_url ||
+            fetchedOrder.qrUrl ||
+            '';
+
+          const fetchedQrString =
+            fetchedOrder.qr_string ||
+            fetchedOrder.qrString ||
+            '';
+
+          const fetchedExpiryTime =
+            fetchedOrder.expiry_time ||
+            fetchedOrder.expiryTime ||
+            null;
+
+          /**
+           * /api/orders/track adalah source of truth untuk QRIS.
+           * Nilai ini tidak boleh kemudian ditimpa oleh currentOrder lama.
+           */
+          setQrisQrUrl(
+            String(
+              fetchedQrUrl ||
+              '',
+            ),
+          );
+
+          setQrisQrString(
+            String(
+              fetchedQrString ||
+              '',
+            ),
+          );
+
+          setQrisExpiryTime(
+            fetchedExpiryTime
+              ? String(
+                  fetchedExpiryTime,
+                )
+              : null,
+          );
+
+          if (fetchedQrUrl) {
+            setQrisImageFailed(
+              false,
+            );
+          }
 
           setTimestamps({
             created: fetchedOrder.createdAt || fetchedOrder.created_at,
@@ -189,7 +333,199 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
     trackOrder();
     const interval = setInterval(trackOrder, 5000); 
     return () => clearInterval(interval);
-  }, [orderCodeToDisplay, currentOrder?.status, updateStatus]);
+  }, [orderCodeToDisplay, currentOrder?.status, updateStatus, slug]);
+
+  const parseExpiryDate = (
+    value?: string | null,
+  ): Date | null => {
+    if (!value) return null;
+
+    const direct =
+      new Date(value);
+
+    if (
+      !Number.isNaN(
+        direct.getTime(),
+      )
+    ) {
+      return direct;
+    }
+
+    /**
+     * Fallback untuk format SQL:
+     * YYYY-MM-DD HH:mm:ss
+     *
+     * Database KALOO menyimpan timestamp Midtrans.
+     * Jika driver mengembalikannya tanpa "T", browser tertentu
+     * bisa gagal parse.
+     */
+    const normalized =
+      value.trim().replace(
+        /^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})$/,
+        '$1T$2',
+      );
+
+    const fallback =
+      new Date(normalized);
+
+    return Number.isNaN(
+      fallback.getTime(),
+    )
+      ? null
+      : fallback;
+  };
+
+  useEffect(() => {
+    if (
+      !qrisExpiryTime ||
+      actualPaymentStatus !== '1'
+    ) {
+      setExpiryRemainingMs(
+        null,
+      );
+      return;
+    }
+
+    const expiryDate =
+      parseExpiryDate(
+        qrisExpiryTime,
+      );
+
+    if (!expiryDate) {
+      setExpiryRemainingMs(
+        null,
+      );
+      return;
+    }
+
+    const updateCountdown =
+      () => {
+        setExpiryRemainingMs(
+          Math.max(
+            0,
+            expiryDate.getTime() -
+              Date.now(),
+          ),
+        );
+      };
+
+    updateCountdown();
+
+    const timer =
+      window.setInterval(
+        updateCountdown,
+        1000,
+      );
+
+    return () => {
+      window.clearInterval(
+        timer,
+      );
+    };
+  }, [
+    qrisExpiryTime,
+    actualPaymentStatus,
+  ]);
+
+  const formatExpiryDateTime = (
+    value?: string | null,
+  ) => {
+    const date =
+      parseExpiryDate(
+        value,
+      );
+
+    if (!date) {
+      return null;
+    }
+
+    return date.toLocaleString(
+      'id-ID',
+      {
+        day:
+          '2-digit',
+        month:
+          'short',
+        year:
+          'numeric',
+        hour:
+          '2-digit',
+        minute:
+          '2-digit',
+      },
+    );
+  };
+
+  const formatRemainingTime = (
+    milliseconds:
+      number | null,
+  ) => {
+    if (
+      milliseconds ===
+      null
+    ) {
+      return null;
+    }
+
+    const totalSeconds =
+      Math.max(
+        0,
+        Math.floor(
+          milliseconds /
+            1000,
+        ),
+      );
+
+    const hours =
+      Math.floor(
+        totalSeconds /
+          3600,
+      );
+
+    const minutes =
+      Math.floor(
+        (
+          totalSeconds %
+          3600
+        ) /
+          60,
+      );
+
+    const seconds =
+      totalSeconds %
+      60;
+
+    if (hours > 0) {
+      return `${String(
+        hours,
+      ).padStart(
+        2,
+        '0',
+      )}:${String(
+        minutes,
+      ).padStart(
+        2,
+        '0',
+      )}:${String(
+        seconds,
+      ).padStart(
+        2,
+        '0',
+      )}`;
+    }
+
+    return `${String(
+      minutes,
+    ).padStart(
+      2,
+      '0',
+    )}:${String(
+      seconds,
+    ).padStart(
+      2,
+      '0',
+    )}`;
+  };
 
   const formatTime = (dateString?: string | null) => {
     if (!dateString) return null;
@@ -260,7 +596,41 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
     );
   }
 
-  const isUnpaidCash = paymentMethod === 'cash' && actualPaymentStatus === '1';
+  const normalizedPaymentMethod =
+    String(
+      paymentMethod ||
+      '',
+    )
+      .trim()
+      .toLowerCase();
+
+  const isUnpaidCash =
+    normalizedPaymentMethod ===
+      'cash' &&
+    actualPaymentStatus ===
+      '1';
+
+  const isUnpaidQris =
+    normalizedPaymentMethod ===
+      'qris' &&
+    actualPaymentStatus ===
+      '1';
+
+  const qrisExpired =
+    expiryRemainingMs !==
+      null &&
+    expiryRemainingMs <=
+      0;
+
+  const formattedExpiry =
+    formatExpiryDateTime(
+      qrisExpiryTime,
+    );
+
+  const formattedRemaining =
+    formatRemainingTime(
+      expiryRemainingMs,
+    );
 
   return (
     <div className="min-h-screen bg-[#F7F8FA] relative overflow-hidden font-sans text-stone-900">
@@ -370,6 +740,150 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
           )}
         </AnimatePresence>
 
+        <AnimatePresence>
+          {isUnpaidQris && (
+            <motion.div
+              initial={{
+                opacity: 0,
+                height: 0,
+                scale: 0.9,
+              }}
+              animate={{
+                opacity: 1,
+                height: 'auto',
+                scale: 1,
+              }}
+              exit={{
+                opacity: 0,
+                height: 0,
+                scale: 0.9,
+                marginBottom: 0,
+              }}
+              className="mb-12 overflow-hidden"
+            >
+              <div className="bg-white rounded-3xl p-6 border-2 border-[#0E5C37] shadow-xl shadow-emerald-900/10 relative">
+                <div className="absolute top-0 right-0 bg-[#0E5C37] text-white px-4 py-1 rounded-bl-xl font-bold text-[10px] uppercase tracking-widest flex items-center gap-2">
+                  <QrCode className="w-3 h-3" />
+                  Pay with QRIS
+                </div>
+
+                <div className="mt-4 flex flex-col items-center text-center">
+                  <p className="text-sm font-bold text-stone-800 mb-1">
+                    {qrisExpired
+                      ? 'QRIS Expired'
+                      : 'Waiting for Payment'}
+                  </p>
+
+                  <p className="text-xs text-stone-500 mb-6 max-w-[300px]">
+                    {qrisExpired
+                      ? 'Waktu pembayaran QRIS ini sudah berakhir.'
+                      : 'Scan QRIS berikut menggunakan aplikasi mobile banking atau e-wallet Anda.'}
+                  </p>
+
+                  <div className="p-4 bg-white rounded-2xl border border-stone-200 mb-4 shadow-sm flex min-h-[192px] min-w-[192px] items-center justify-center">
+                    {qrisExpired ? (
+                      <div className="flex max-w-[180px] flex-col items-center gap-3 py-6">
+                        <QrCode className="h-12 w-12 text-stone-300" />
+
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-red-500">
+                          QRIS sudah kedaluwarsa
+                        </p>
+                      </div>
+                    ) : qrisQrString ? (
+                      /**
+                       * qr_string adalah payload QRIS sebenarnya dan paling
+                       * stabil untuk dirender langsung di browser.
+                       */
+                      <QRCodeSVG
+                        value={qrisQrString}
+                        size={176}
+                        bgColor="#ffffff"
+                        fgColor="#1c1c19"
+                        level="H"
+                      />
+                    ) : qrisQrUrl && !qrisImageFailed ? (
+                      <img
+                        src={qrisQrUrl}
+                        alt={`QRIS pembayaran order ${orderCodeToDisplay}`}
+                        width={176}
+                        height={176}
+                        className="h-44 w-44 object-contain"
+                        onError={() => {
+                          setQrisImageFailed(true);
+                        }}
+                      />
+                    ) : (
+                      <div className="flex max-w-[180px] flex-col items-center gap-3 py-6">
+                        <Loader2 className="h-8 w-8 animate-spin text-[#0E5C37]" />
+
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">
+                          Menunggu data QRIS dari server...
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {qrisQrUrl && qrisImageFailed && !qrisQrString && (
+                    <p className="mb-4 max-w-[280px] text-[10px] font-medium text-amber-600">
+                      QR URL Midtrans tidak dapat dimuat sebagai gambar.
+                    </p>
+                  )}
+
+                  {qrisExpiryTime && (
+                    <div
+                      className={`mb-4 w-full rounded-2xl border px-4 py-3 ${
+                        qrisExpired
+                          ? 'border-red-200 bg-red-50'
+                          : 'border-amber-200 bg-amber-50'
+                      }`}
+                    >
+                      <p
+                        className={`text-[9px] font-bold uppercase tracking-widest ${
+                          qrisExpired
+                            ? 'text-red-500'
+                            : 'text-amber-600'
+                        }`}
+                      >
+                        Payment Expiry
+                      </p>
+
+                      {formattedRemaining && (
+                        <p
+                          className={`mt-1 text-2xl font-black tracking-wider ${
+                            qrisExpired
+                              ? 'text-red-600'
+                              : 'text-amber-700'
+                          }`}
+                        >
+                          {qrisExpired
+                            ? 'EXPIRED'
+                            : formattedRemaining}
+                        </p>
+                      )}
+
+                      {formattedExpiry && (
+                        <p className="mt-1 text-[10px] font-medium text-stone-500">
+                          Berlaku sampai {formattedExpiry}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="bg-emerald-50 px-6 py-3 rounded-xl border border-emerald-200">
+                    <p className="text-[10px] font-bold text-[#0E5C37] uppercase tracking-widest mb-1">
+                      Order Code
+                    </p>
+
+                    <p className="text-2xl font-black text-[#0E5C37] tracking-widest">
+                      {orderCodeToDisplay}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="flex flex-col gap-12">
            <div className="w-full">
               <div className="relative pl-12 border-l-2 border-stone-100 space-y-12">
@@ -450,7 +964,7 @@ export default function OrderTrackingView({ onBackToMenu, onViewRoasts }: Props)
                        <div className="h-px flex-1 bg-stone-100" />
                     </div>
                     <h4 className="text-lg font-medium text-stone-800 italic mb-6 leading-relaxed">
-                      "We are meticulously preparing your order to ensure the best quality and taste. Thank you for your patience."
+                      &quot;We are meticulously preparing your order to ensure the best quality and taste. Thank you for your patience.&quot;
                     </h4>
                     <div className="flex items-center gap-3">
                        <div className="w-10 h-10 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center text-[#0E5C37]">

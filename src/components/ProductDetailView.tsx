@@ -1,14 +1,12 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { X, MinusCircle, PlusCircle, AlertCircle, ImageIcon } from 'lucide-react';
 import { MenuItem } from '@/types/menu';
 import { useParams } from 'next/navigation';
 import { applyFallbackImage, normalizeImageSrc } from '@/utils/image';
-
-// IMPORT TOAST SWEETALERT
 import { Toast } from '@/utils/toast'; 
 
 interface Props {
@@ -24,47 +22,21 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
   const [quantity, setQuantity] = useState(1);
   const [selectedAddons, setSelectedAddons] = useState<number[]>([]);
   const [selectedSize, setSelectedSize] = useState(item.meta?.sizes?.[0]?.label || 'Regular');
-  // const [totalPrice, setTotalPrice] = useState(item.basePrice);
 
   const stockNum = item.stock !== null && item.stock !== undefined ? Number(item.stock) : 0;
   const isSoldOut = (item.isAvailable === false) || (stockNum <= 0);
   const isLowStock = !isSoldOut && stockNum > 0 && stockNum <= 5; 
 
   // ─── Perhitungan Harga Otomatis ──────────────────────────────────────────
-  // useEffect(() => {
-  //   let base = Number(item.basePrice);
-  //   let extra = 0;
-
-  //   if (item.meta && item.meta.sizes) {
-  //     const sizeDef = item.meta.sizes.find((s: any) => s.label === selectedSize);
-  //     if (sizeDef) base = Number(sizeDef.price);
-  //   }
-
-  //   if (item.categorizedAddons && Array.isArray(item.categorizedAddons)) {
-  //     selectedAddons.forEach(addonId => {
-  //       item.categorizedAddons?.forEach((group: any) => {
-  //         const addonData = group.addons?.find((a: any) => Number(a.id) === Number(addonId));
-  //         if (addonData) {
-  //           extra += Number(addonData.price);
-  //         }
-  //       });
-  //     });
-  //   }
-
-  //   setTotalPrice((base + extra) * quantity);
-  // }, [selectedSize, selectedAddons, item, quantity]);
-
   const totalPrice = useMemo(() => {
     let base = Number(item.basePrice);
     let extra = 0;
 
-    // 1. Hitung berdasarkan Ukuran
     if (item.meta && item.meta.sizes) {
       const sizeDef = item.meta.sizes.find((s: any) => s.label === selectedSize);
       if (sizeDef) base = Number(sizeDef.price);
     }
 
-    // 2. Hitung berdasarkan Kategori Add-ons
     if (item.categorizedAddons && Array.isArray(item.categorizedAddons)) {
       selectedAddons.forEach(addonId => {
         item.categorizedAddons?.forEach((group: any) => {
@@ -76,7 +48,6 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
       });
     }
 
-    // Langsung return hasilnya
     return (base + extra) * quantity;
   }, [selectedSize, selectedAddons, item, quantity]);
 
@@ -85,7 +56,6 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
     if (!item.categorizedAddons || !Array.isArray(item.categorizedAddons)) return true;
 
     for (const group of item.categorizedAddons) {
-      // 🔴 Amankan pembacaan key isRequired / is_required
       const isRequired = Boolean(group.is_required || group.isRequired);
       
       if (isRequired) {
@@ -100,11 +70,22 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
   const isValid = checkIsValid();
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
-  const handleSelectAddon = (addonId: number, group: any) => {
+  
+  // 🔴 PERBAIKAN: Fungsi ini sekarang menerima object 'addon' secara utuh untuk validasi stok
+  const handleSelectAddon = (addon: any, group: any) => {
+    const addonId = Number(addon.id);
+    const addonStock = addon.stock !== null && addon.stock !== undefined ? Number(addon.stock) : 0;
+    const isAddonTracked = Boolean(addon.is_track_stock ?? addon.isTrackStock);
+    const isAddonSoldOut = isAddonTracked && addonStock <= 0;
+
+    // Cegah pemilihan jika stok addon habis
+    if (isAddonSoldOut) {
+      Toast.fire({ icon: 'warning', title: 'Maaf, opsi ini sedang habis!' });
+      return;
+    }
+
     const maxSelected = Number(group.maxSelected || group.max_selected || 0);
-    const isSingleChoice = maxSelected === 1; // <-- Ini penyebabnya
     const isRequired = Boolean(group.isRequired || group.is_required);
-    const isRadioUI = maxSelected === 1 && isRequired;
     const groupAddonIds = group.addons.map((a: any) => Number(a.id));
 
     setSelectedAddons(prev => {
@@ -112,11 +93,9 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
 
       if (maxSelected === 1) {
         if (isAlreadySelected) {
-          // 🔴 KUNCI UTAMA: Jika tidak wajib (optional), izinkan untuk di-uncheck!
           if (!isRequired) return prev.filter(id => id !== addonId);
-          return prev; // Jika wajib (required), tidak boleh kosong
+          return prev; 
         }
-        // Bersihkan opsi lain di grup ini, lalu masukkan yang baru diklik
         const filteredPrev = prev.filter(id => !groupAddonIds.includes(id));
         return [...filteredPrev, addonId];
       } else {
@@ -205,7 +184,6 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
 
             <div className="divide-y divide-stone-100">
               {item.categorizedAddons?.map((group: any) => {
-                // 🔴 PERBAIKAN 2: Gunakan pembacaan yang sama untuk UI
                 const maxSelected = Number(group.maxSelected || group.max_selected || 0);
                 const isRequired = Boolean(group.isRequired || group.is_required);
                 const isRadioUI = maxSelected === 1 && isRequired;
@@ -216,11 +194,10 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <h3 className="text-sm font-bold text-stone-900">{group.categoryName}</h3>
-                          {isRequired && <span className="bg-red-50 text-red-600 border border-red-200 text-[8px] font-bold px-1.5 py-0.5 rounded uppercase tracking-widest">Required</span>}
+                          {isRequired && <span className="bg-red-50 text-red-600 border border-red-200 text-[8px] font-bold px-1.5 py-0.5 rounded uppercase tracking-widest">Wajib</span>}
                         </div>
-                        {/* 🔴 Teks akan berubah menjadi "Pilihan (Opsional)" jika tidak wajib */}
                         <p className="text-[10px] text-stone-400 uppercase tracking-widest font-bold">
-                          {isRadioUI ? 'Pilih 1 Opsi' : maxSelected > 1 ? `Pilih Maks. ${maxSelected}` : 'Pilihan (Opsional)'}
+                          {isRadioUI ? 'Pilih 1 Opsi' : maxSelected > 1 ? `Pilih Maks. ${maxSelected}` : 'Opsional'}
                         </p>
                       </div>
                     </div>
@@ -228,20 +205,41 @@ export default function ProductDetailView({ item, onClose, onAddToCart }: Props)
                       {group.addons?.map((addon: any) => {
                         const isSelected = selectedAddons.includes(Number(addon.id));
                         
+                        // 🔴 Logika Visual Addon Sold Out
+                        const addonStock = addon.stock !== null && addon.stock !== undefined ? Number(addon.stock) : 0;
+                        const isAddonTracked = Boolean(addon.is_track_stock ?? addon.isTrackStock);
+                        const isAddonSoldOut = isAddonTracked && addonStock <= 0;
+                        const isAddonLowStock = isAddonTracked && addonStock > 0 && addonStock <= 5;
+                        
                         return (
-                          <label key={addon.id} className={`flex items-center justify-between p-3 border rounded-xl cursor-pointer hover:bg-stone-50 transition-all ${isSelected ? 'border-[#0E5C37] bg-emerald-50' : 'border-stone-100'}`}>
+                          <label key={addon.id} className={`flex items-center justify-between p-3 border rounded-xl transition-all ${
+                            isAddonSoldOut ? 'opacity-50 cursor-not-allowed bg-stone-50 border-stone-100' :
+                            isSelected ? 'border-[#0E5C37] bg-emerald-50 cursor-pointer' : 'border-stone-100 hover:bg-stone-50 cursor-pointer'
+                          }`}>
                             <div className="flex items-center gap-3">
-                              {/* 🔴 Gunakan isRadioUI di type dan className */}
                               <input 
                                 type={isRadioUI ? "radio" : "checkbox"} 
                                 name={`addon-group-${group.categoryName}`}
                                 checked={isSelected} 
-                                onChange={() => handleSelectAddon(Number(addon.id), group)} 
-                                className={`w-5 h-5 accent-[#0E5C37] cursor-pointer ${isRadioUI ? 'rounded-full' : 'rounded'}`} 
+                                disabled={isAddonSoldOut}
+                                onChange={() => handleSelectAddon(addon, group)} 
+                                className={`w-5 h-5 accent-[#0E5C37] ${isAddonSoldOut ? 'cursor-not-allowed' : 'cursor-pointer'} ${isRadioUI ? 'rounded-full' : 'rounded'}`} 
                               />
-                              <span className={`text-sm font-medium ${isSelected ? 'text-[#0E5C37]' : 'text-stone-700'}`}>{addon.name}</span>
+                              <span className={`text-sm font-medium ${isAddonSoldOut ? 'text-stone-500 line-through' : isSelected ? 'text-[#0E5C37]' : 'text-stone-700'}`}>{addon.name}</span>
                             </div>
-                            <span className={`text-sm font-bold ${isSelected ? 'text-[#0E5C37]' : 'text-stone-900'}`}>{addon.price > 0 ? `+${formatIDR(addon.price)}` : 'Gratis'}</span>
+                            
+                            <div className="text-right">
+                              <span className={`text-sm font-bold block ${isSelected ? 'text-[#0E5C37]' : 'text-stone-900'} ${isAddonSoldOut ? 'text-stone-400' : ''}`}>
+                                {addon.price > 0 ? `+${formatIDR(addon.price)}` : 'Gratis'}
+                              </span>
+                              
+                              {/* 🔴 Indikator Sisa Stok Addon */}
+                              {isAddonTracked && (
+                                <span className={`text-[9px] font-bold uppercase tracking-widest ${isAddonSoldOut ? 'text-red-500' : isAddonLowStock ? 'text-amber-500' : 'text-stone-400'}`}>
+                                  {isAddonSoldOut ? 'Habis' : `Sisa ${addonStock}`}
+                                </span>
+                              )}
+                            </div>
                           </label>
                         );
                       })}

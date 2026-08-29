@@ -4,21 +4,28 @@ import {
   jwtVerify,
   type JWTPayload,
 } from 'jose';
+import { requirePosAuth } from '@/lib/auth/posAuth';
+import {
+  reverseOrder,
+  type ReverseOrderResult,
+} from '@/lib/orders/reverseOrder';
 import { db } from '@/db';
 import {
   coupon,
-  mitra,
   orderItems,
   orders,
   products,
-  settings,
   tableList,
+  settings,
 } from '@/db/schema';
 import {
   and,
   desc,
   eq,
+  gte,
+  inArray,
   isNull,
+  ne,
   sql,
   type SQL,
 } from 'drizzle-orm';
@@ -79,6 +86,20 @@ type LockedOrderRow = {
   points_earned: number;
   points_awarded_at:
     Date | string | null;
+  confirmed_at:
+    Date | string | null;
+  preparing_at:
+    Date | string | null;
+  ready_at:
+    Date | string | null;
+  completed_at:
+    Date | string | null;
+  cancelled_at:
+    Date | string | null;
+  payment_paid_at:
+    Date | string | null;
+  table_number:
+    number | null;
 };
 
 type PointSettingsRow = {
@@ -138,6 +159,79 @@ type AwardResult = {
   tierName: string | null;
   reason: string;
 };
+
+type OrderStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'preparing'
+  | 'ready'
+  | 'completed'
+  | 'cancelled';
+
+type PaymentStatus = '1' | '2' | '3' | '4';
+
+class OrderUpdateError extends Error {
+  status: number;
+  code: string;
+  details: unknown;
+
+  constructor(
+    status: number,
+    message: string,
+    code: string,
+    details: unknown = null,
+  ) {
+    super(message);
+    this.name = 'OrderUpdateError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+function normalizeOrderStatus(value: unknown): OrderStatus | null {
+  const status = normalizeString(value).toLowerCase();
+
+  if (
+    status === 'pending' ||
+    status === 'confirmed' ||
+    status === 'preparing' ||
+    status === 'ready' ||
+    status === 'completed' ||
+    status === 'cancelled'
+  ) {
+    return status;
+  }
+
+  return null;
+}
+
+function normalizePaymentStatus(value: unknown): PaymentStatus | null {
+  const status = normalizeString(value);
+  return status === '1' || status === '2' || status === '3' || status === '4'
+    ? status
+    : null;
+}
+
+function isValidCashierTransition(
+  currentStatus: OrderStatus,
+  nextStatus: OrderStatus,
+): boolean {
+  if (currentStatus === nextStatus) {
+    return true;
+  }
+
+  const transitions: Record<OrderStatus, readonly OrderStatus[]> = {
+    pending: ['confirmed', 'cancelled'],
+    confirmed: ['cancelled'],
+    preparing: ['cancelled'],
+    ready: ['completed', 'cancelled'],
+    completed: [],
+    cancelled: [],
+  };
+
+  return transitions[currentStatus].includes(nextStatus);
+}
 
 function jsonError(
   status: number,
@@ -410,116 +504,64 @@ Promise<AuthPayload | null> {
 async function getCashierOrderScope(
   slug: string,
 ) {
-  const payload =
-    await getAuthPayload();
+  const auth = await requirePosAuth({
+    roles: [
+      'Owner',
+      'Cashier',
+      'Kitchen',
+    ],
+  });
 
-  if (!payload) {
+  if (!auth.ok) {
     return {
-      error:
-        jsonError(
-          401,
-          'Sesi kasir tidak ditemukan atau sudah berakhir.',
-        ),
+      error: auth.response,
     };
   }
 
-  if (
-    payload.slug !== slug
-  ) {
+  const { session } = auth;
+
+  if (session.slug !== slug) {
     return {
-      error:
-        jsonError(
-          403,
-          'Sesi kasir tidak sesuai dengan toko ini.',
-        ),
-    };
-  }
-
-  const role =
-    normalizeString(
-      payload.role,
-    ).toLowerCase();
-
-  if (
-    ![
-      'owner',
-      'cashier',
-      'kitchen',
-    ].includes(role)
-  ) {
-    return {
-      error:
-        jsonError(
-          403,
-          'Akun tidak memiliki akses operasional.',
-        ),
-    };
-  }
-
-  const foundMitra =
-    await db
-      .select({
-        id:
-          mitra.id,
-      })
-      .from(mitra)
-      .where(
-        eq(
-          mitra.mitra_slug,
-          slug,
-        ),
-      )
-      .limit(1);
-
-  if (
-    foundMitra.length ===
-      0 ||
-    Number(
-      payload.mitraId,
-    ) !==
-      Number(
-        foundMitra[0].id,
-      )
-  ) {
-    return {
-      error:
-        jsonError(
-          403,
-          'Mitra tidak ditemukan atau akses ditolak.',
-        ),
-    };
-  }
-
-  const conditions:
-    SQL[] = [
-      eq(
-        orders.mitra_id,
-        foundMitra[0].id,
+      error: jsonError(
+        403,
+        'Sesi operasional tidak sesuai dengan toko ini.',
       ),
-    ];
+    };
+  }
 
+  const conditions: SQL[] = [
+    eq(
+      orders.mitra_id,
+      session.mitraId,
+    ),
+    isNull(
+      orders.deletedAt,
+    ),
+  ];
+
+  /*
+   * Preserve behaviour KALOO POS:
+   * - Owner dapat memantau seluruh mitra.
+   * - Cashier dan Kitchen hanya cabang pada session.
+   */
   if (
-    isBranchScopedRole(
-      payload.role,
-    )
+    session.role === 'Cashier' ||
+    session.role === 'Kitchen'
   ) {
     conditions.push(
       branchCondition(
-        payload.branchId,
+        session.branchId,
       ),
     );
   }
 
   return {
-    payload,
-    mitraId:
-      Number(
-        foundMitra[0].id,
-      ),
-    condition:
-      and(
-        ...conditions,
-      ) as SQL,
+    session,
+    mitraId: session.mitraId,
+    branchId: session.branchId,
+    condition: and(
+      ...conditions,
+    ) as SQL,
   };
 }
 
@@ -870,12 +912,9 @@ function calculateEarnedPoints({
   eligibleAmount,
   tier,
 }: {
-  settings:
-    PointSettingsRow;
-  eligibleAmount:
-    number;
-  tier:
-    LoyaltyTierRow | null;
+  settings: PointSettingsRow;
+  eligibleAmount: number;
+  tier: LoyaltyTierRow | null;
 }) {
   if (
     eligibleAmount <
@@ -966,14 +1005,11 @@ function calculateEarnedPoints({
   }
 
   const maximumPoints =
-    settings
-      .points_maximum_earn_per_order;
+    settings.points_maximum_earn_per_order;
 
   if (
-    maximumPoints !==
-      null &&
-    Number(maximumPoints) >
-      0
+    maximumPoints !== null &&
+    Number(maximumPoints) > 0
   ) {
     points =
       Math.min(
@@ -1415,7 +1451,7 @@ export async function GET(
   const { searchParams } =
     new URL(request.url);
 
-  const userId =
+  const userIdRaw =
     searchParams.get(
       'userId',
     );
@@ -1425,8 +1461,15 @@ export async function GET(
       'slug',
     );
 
+  const statusFilter =
+    normalizeString(
+      searchParams.get(
+        'status',
+      ),
+    ).toLowerCase();
+
   if (
-    !userId &&
+    !userIdRaw &&
     !slug
   ) {
     return jsonError(
@@ -1436,8 +1479,7 @@ export async function GET(
   }
 
   try {
-    let queryCondition:
-      SQL;
+    let queryCondition: SQL;
 
     if (slug) {
       const scope =
@@ -1453,12 +1495,104 @@ export async function GET(
 
       queryCondition =
         scope.condition;
+
+      if (
+        statusFilter ===
+        'active'
+      ) {
+        queryCondition =
+          and(
+            queryCondition,
+            inArray(
+              orders.status,
+              [
+                'pending',
+                'confirmed',
+                'preparing',
+                'ready',
+              ],
+            ),
+          ) as SQL;
+      }
     } else {
-      queryCondition =
+      const numericUserId =
+        Number(userIdRaw);
+
+      if (
+        !Number.isInteger(
+          numericUserId,
+        ) ||
+        numericUserId <= 0
+      ) {
+        return jsonError(
+          400,
+          'User ID tidak valid.',
+        );
+      }
+
+      /*
+       * Customer history tidak boleh dapat dibaca hanya dengan menebak userId.
+       * Pastikan cookie session adalah User yang sama.
+       */
+      const payload =
+        await getAuthPayload();
+
+      const sessionUserId =
+        Number(
+          payload?.userId ?? 0,
+        );
+
+      const sessionRole =
+        normalizeString(
+          payload?.role,
+        ).toLowerCase();
+
+      if (
+        !payload ||
+        sessionRole !==
+          'user' ||
+        sessionUserId !==
+          numericUserId
+      ) {
+        return jsonError(
+          403,
+          'Anda tidak memiliki akses ke riwayat pesanan ini.',
+        );
+      }
+
+      const customerConditions: SQL[] = [
         eq(
           orders.user_id,
-          Number(userId),
+          numericUserId,
+        ),
+        isNull(
+          orders.deletedAt,
+        ),
+      ];
+
+      const sessionMitraId =
+        Number(
+          payload.mitraId ?? 0,
         );
+
+      if (
+        Number.isInteger(
+          sessionMitraId,
+        ) &&
+        sessionMitraId > 0
+      ) {
+        customerConditions.push(
+          eq(
+            orders.mitra_id,
+            sessionMitraId,
+          ),
+        );
+      }
+
+      queryCondition =
+        and(
+          ...customerConditions,
+        ) as SQL;
     }
 
     const userOrders =
@@ -1607,119 +1741,162 @@ export async function GET(
           ),
         );
 
+    if (
+      userOrders.length === 0
+    ) {
+      return NextResponse.json({
+        success: true,
+        data: [],
+      });
+    }
+
+    /*
+     * Hindari N+1:
+     * semua order item diambil sekali lalu dikelompokkan di memory.
+     */
+    const orderIds =
+      userOrders.map(
+        (order) =>
+          Number(order.id),
+      );
+
+    const allItems =
+      await db
+        .select()
+        .from(
+          orderItems,
+        )
+        .where(
+          and(
+            inArray(
+              orderItems.order_id,
+              orderIds,
+            ),
+            isNull(
+              orderItems.deletedAt,
+            ),
+          ),
+        );
+
+    const itemsByOrder =
+      new Map<
+        number,
+        typeof allItems
+      >();
+
+    for (
+      const item of
+      allItems
+    ) {
+      const orderId =
+        Number(
+          item.order_id,
+        );
+
+      const list =
+        itemsByOrder.get(
+          orderId,
+        ) ?? [];
+
+      list.push(item);
+
+      itemsByOrder.set(
+        orderId,
+        list,
+      );
+    }
+
     const historyWithItems =
-      await Promise.all(
-        userOrders.map(
-          async (order) => {
-            /*
-             * Checkout website saat ini belum selalu mengisi branch_id
-             * pada order_items. Query item cukup dikunci oleh order_id.
-             */
-            const items =
-              await db
-                .select()
-                .from(
-                  orderItems,
-                )
-                .where(
-                  eq(
-                    orderItems.order_id,
-                    order.id,
-                  ),
-                );
+      userOrders.map(
+        (order) => {
+          const items =
+            itemsByOrder.get(
+              Number(
+                order.id,
+              ),
+            ) ?? [];
 
-            const itemsWithParsedNotes =
-              items.map(
-                (item) => {
-                  const parsedAddOns =
-                    parseStoredAddons(
-                      item.notes,
-                    );
-
-                  return {
-                    ...item,
-                    menuItemId:
-                      String(
-                        item.product_id,
-                      ),
-                    selectedAddOnsDetails:
-                      parsedAddOns,
-                  };
-                },
-              );
-
-            const normalizedManualTableInfo =
-              normalizeString(
-                order.manual_table_info,
-              ).toLowerCase();
-
-            const manualIsTakeaway =
-              [
-                'takeaway',
-                'take away',
-                'take_away',
-                'bungkus',
-              ].includes(
-                normalizedManualTableInfo,
-              );
-
-            const hasPhysicalTable =
-              Boolean(
-                order.table_number
-              );
-
-            /*
-             * Aturan layanan:
-             * - meja ada + manual Takeaway => Takeaway, meja tetap meja fisik;
-             * - meja kosong + manual bukan Takeaway => Dine In, meja manual;
-             * - meja ada + manual bukan Takeaway => Dine In;
-             * - meja kosong + manual Takeaway => Takeaway.
-             */
-            const isTakeaway =
-              manualIsTakeaway;
-
-            const resolvedTableLabel =
-              hasPhysicalTable
-                ? (
-                    order.table_name ||
-                    String(
-                      order.table_number
-                    )
-                  )
-                : (
-                    order.manual_table_info ||
-                    null
+          const itemsWithParsedNotes =
+            items.map(
+              (item) => {
+                const parsedAddOns =
+                  parseStoredAddons(
+                    item.notes,
                   );
 
-            return {
-              ...order,
-              tableLabel:
-                resolvedTableLabel,
-              table_label:
-                resolvedTableLabel,
-              orderType:
-                isTakeaway
-                  ? 'takeaway'
-                  : 'dine-in',
-              order_type:
-                isTakeaway
-                  ? 'takeaway'
-                  : 'dine-in',
-              serviceType:
-                isTakeaway
-                  ? 'takeaway'
-                  : 'dine_in',
-              service_type:
-                isTakeaway
-                  ? 'takeaway'
-                  : 'dine_in',
-              adminNotes:
-                '',
-              items:
-                itemsWithParsedNotes,
-            };
-          },
-        ),
+                return {
+                  ...item,
+                  menuItemId:
+                    String(
+                      item.product_id,
+                    ),
+                  selectedAddOnsDetails:
+                    parsedAddOns,
+                };
+              },
+            );
+
+          const normalizedManualTableInfo =
+            normalizeString(
+              order.manual_table_info,
+            ).toLowerCase();
+
+          const manualIsTakeaway =
+            [
+              'takeaway',
+              'take away',
+              'take_away',
+              'bungkus',
+            ].includes(
+              normalizedManualTableInfo,
+            );
+
+          const hasPhysicalTable =
+            Boolean(
+              order.table_number,
+            );
+
+          const resolvedTableLabel =
+            hasPhysicalTable
+              ? (
+                  order.table_name ||
+                  String(
+                    order.table_number,
+                  )
+                )
+              : (
+                  order.manual_table_info ||
+                  null
+                );
+
+          return {
+            ...order,
+            tableLabel:
+              resolvedTableLabel,
+            table_label:
+              resolvedTableLabel,
+            orderType:
+              manualIsTakeaway
+                ? 'takeaway'
+                : 'dine-in',
+            order_type:
+              manualIsTakeaway
+                ? 'takeaway'
+                : 'dine-in',
+            serviceType:
+              manualIsTakeaway
+                ? 'takeaway'
+                : 'dine_in',
+            service_type:
+              manualIsTakeaway
+                ? 'takeaway'
+                : 'dine_in',
+            adminNotes:
+              '',
+            items:
+              itemsWithParsedNotes,
+          };
+        },
       );
 
     return NextResponse.json({
@@ -1747,8 +1924,10 @@ export async function PUT(
     new URL(request.url);
 
   const slug =
-    searchParams.get(
-      'slug',
+    normalizeString(
+      searchParams.get(
+        'slug',
+      ),
     );
 
   if (!slug) {
@@ -1758,32 +1937,67 @@ export async function PUT(
     );
   }
 
-  try {
-    const scope =
-      await getCashierOrderScope(
-        slug,
-      );
+  /*
+   * Flow front-of-house KALOO POS:
+   * Owner adalah mode pantau pada Cashier UI.
+   * Perubahan order dari route ini dilakukan Cashier.
+   * Kitchen mempunyai endpoint sendiri dan berhenti di ready.
+   */
+  const auth =
+    await requirePosAuth({
+      roles: [
+        'Cashier',
+      ],
+    });
 
-    if (
-      'error' in scope
-    ) {
-      return scope.error;
+  if (!auth.ok) {
+    return auth.response;
+  }
+
+  const { session } = auth;
+
+  if (
+    session.slug !== slug
+  ) {
+    return jsonError(
+      403,
+      'Sesi kasir tidak sesuai dengan toko ini.',
+    );
+  }
+
+  try {
+    let body: {
+      orderId?: unknown;
+      status?: unknown;
+      paymentStatus?: unknown;
+      adminNotes?: unknown;
+      getPayment?: unknown;
+      cashChange?: unknown;
+      cancelReason?: unknown;
+    };
+
+    try {
+      body =
+        await request.json() as {
+          orderId?: unknown;
+          status?: unknown;
+          paymentStatus?: unknown;
+          adminNotes?: unknown;
+          getPayment?: unknown;
+          cashChange?: unknown;
+          cancelReason?: unknown;
+        };
+    } catch {
+      return jsonError(
+        400,
+        'Request body harus berupa JSON yang valid.',
+      );
     }
 
-    const body =
-      await request.json();
-
-    const {
-      orderId,
-      status,
-      paymentStatus,
-      adminNotes,
-      getPayment,
-      cashChange,
-    } = body;
-
     const numericOrderId =
-      Number(orderId);
+      Number(
+        body.orderId,
+      );
 
     if (
       !Number.isInteger(
@@ -1797,16 +2011,72 @@ export async function PUT(
       );
     }
 
+    const requestedStatus =
+      body.status ===
+        undefined
+        ? null
+        : normalizeOrderStatus(
+            body.status,
+          );
+
+    if (
+      body.status !==
+        undefined &&
+      requestedStatus === null
+    ) {
+      return jsonError(
+        400,
+        'Status pesanan tidak valid.',
+      );
+    }
+
+    const requestedPaymentStatus =
+      body.paymentStatus ===
+        undefined
+        ? null
+        : normalizePaymentStatus(
+            body.paymentStatus,
+          );
+
+    if (
+      body.paymentStatus !==
+        undefined &&
+      requestedPaymentStatus ===
+        null
+    ) {
+      return jsonError(
+        400,
+        'Status pembayaran tidak valid.',
+      );
+    }
+
+    /*
+     * Scope Cashier SELALU mengikuti mitra + branch dari session.
+     * slug hanya validasi tambahan, bukan sumber scope database.
+     */
+    const targetConditions: SQL[] = [
+      eq(
+        orders.id,
+        numericOrderId,
+      ),
+      eq(
+        orders.mitra_id,
+        session.mitraId,
+      ),
+      isNull(
+        orders.deletedAt,
+      ),
+      branchCondition(
+        session.branchId,
+      ),
+    ];
+
     const targetCondition =
       and(
-        eq(
-          orders.id,
-          numericOrderId,
-        ),
-        scope.condition,
-      );
+        ...targetConditions,
+      ) as SQL;
 
-    const targetOrder =
+    const [targetOrder] =
       await db
         .select({
           id:
@@ -1818,10 +2088,7 @@ export async function PUT(
         )
         .limit(1);
 
-    if (
-      targetOrder.length ===
-      0
-    ) {
+    if (!targetOrder) {
       return jsonError(
         404,
         'Pesanan tidak ditemukan pada scope kasir ini.',
@@ -1838,11 +2105,25 @@ export async function PUT(
           'Belum diproses.',
       };
 
+    let reversalResult:
+      ReverseOrderResult | null =
+        null;
+
+    const tableNotificationRef: {
+      current:
+        | {
+            tableId: number;
+            status: 'available';
+            orderCode: string;
+          }
+        | null;
+    } = {
+      current: null,
+    };
+
     await db.transaction(
       async (tx) => {
-        const [
-          lockedRows,
-        ] =
+        const [lockedRows] =
           await tx.execute(
             sql`
               SELECT
@@ -1862,15 +2143,28 @@ export async function PUT(
                 service,
                 points_discount,
                 points_earned,
-                points_awarded_at
+                points_awarded_at,
+                confirmed_at,
+                preparing_at,
+                ready_at,
+                completed_at,
+                cancelled_at,
+                payment_paid_at,
+                table_number
               FROM orders
               WHERE id =
                 ${numericOrderId}
                 AND mitra_id =
-                  ${scope.mitraId}
+                  ${session.mitraId}
+                AND branch_id
+                  ${rawBranchCondition(
+                    session.branchId,
+                  )}
+                AND deleted_at
+                  IS NULL
               LIMIT 1
               FOR UPDATE
-            `
+            `,
           ) as unknown as MysqlExecuteResult<
             LockedOrderRow[]
           >;
@@ -1879,46 +2173,195 @@ export async function PUT(
           lockedRows[0];
 
         if (!lockedOrder) {
-          throw new Error(
+          throw new OrderUpdateError(
+            404,
             'Order tidak ditemukan saat transaksi dikunci.',
+            'ORDER_NOT_FOUND',
           );
         }
 
         const now =
           new Date();
 
-        const finalStatus =
-          status
-            ? normalizeString(
-                status,
-              )
-            : lockedOrder.status;
+        const finalStatus: OrderStatus =
+          requestedStatus ??
+          lockedOrder.status;
 
-        let finalPaymentStatus =
-          paymentStatus
-            ? normalizeString(
-                paymentStatus,
+        let finalPaymentStatus: PaymentStatus =
+          requestedPaymentStatus ??
+          lockedOrder.payment_status;
+
+        if (
+          requestedStatus !== null &&
+          !isValidCashierTransition(
+            lockedOrder.status,
+            requestedStatus,
+          )
+        ) {
+          throw new OrderUpdateError(
+            409,
+            'Perubahan status pesanan tidak diperbolehkan untuk flow Cashier.',
+            'INVALID_ORDER_STATUS_TRANSITION',
+            {
+              currentStatus: lockedOrder.status,
+              requestedStatus,
+            },
+          );
+        }
+
+        if (
+          requestedStatus === 'completed' &&
+          finalPaymentStatus !== '2'
+        ) {
+          throw new OrderUpdateError(
+            409,
+            'Pesanan harus berstatus lunas sebelum diselesaikan.',
+            'ORDER_NOT_PAID',
+            {
+              paymentStatus: finalPaymentStatus,
+            },
+          );
+        }
+
+        /**
+         * ==================================================
+         * CANCEL / REVERSAL
+         * ==================================================
+         *
+         * Semua side-effect cancel dipusatkan di reverseOrder().
+         * Kitchen tidak menggunakan route ini.
+         *
+         * pending:
+         * - addon + coupon + table
+         *
+         * confirmed:
+         * - product + addon + coupon + table
+         *
+         * preparing / ready:
+         * - product TIDAK direstore otomatis
+         * - addon + coupon + table
+         */
+        if (
+          requestedStatus ===
+          'cancelled'
+        ) {
+          if (
+            lockedOrder.status ===
+            'completed'
+          ) {
+            throw new OrderUpdateError(
+              409,
+              'Order completed tidak dapat dibatalkan dengan flow cancel biasa.',
+              'COMPLETED_ORDER_REQUIRES_REFUND',
+            );
+          }
+
+          const cancelReason =
+            normalizeString(
+              body.cancelReason ??
+              body.adminNotes,
+            ) ||
+            'Dibatalkan oleh kasir';
+
+          reversalResult =
+            await reverseOrder({
+              tx,
+              order: {
+                id:
+                  lockedOrder.id,
+                orderCode:
+                  lockedOrder.order_code,
+                mitraId:
+                  lockedOrder.mitra_id,
+                branchId:
+                  lockedOrder.branch_id,
+                tableId:
+                  lockedOrder.table_number,
+                status:
+                  lockedOrder.status,
+                confirmedAt:
+                  lockedOrder.confirmed_at,
+              },
+              reason:
+                cancelReason,
+              source:
+                'cashier',
+              now,
+            });
+
+          if (
+            body.adminNotes !==
+            undefined
+          ) {
+            await tx
+              .update(
+                orders,
               )
-            : lockedOrder.payment_status;
+              .set({
+                admin_notes:
+                  normalizeString(
+                    body.adminNotes,
+                  ) ||
+                  null,
+                updatedAt:
+                  now,
+              })
+              .where(
+                targetCondition,
+              );
+          }
+
+          if (
+            reversalResult.tableReleased &&
+            reversalResult.tableId
+          ) {
+            tableNotificationRef.current = {
+              tableId:
+                reversalResult.tableId,
+              status:
+                'available',
+              orderCode:
+                reversalResult.orderCode,
+            };
+          }
+
+          pointResult = {
+            processed:
+              false,
+            awarded:
+              false,
+            points:
+              0,
+            tierName:
+              null,
+            reason:
+              'Order dibatalkan, poin tidak diberikan.',
+          };
+
+          return;
+        }
 
         const updateData:
-          Record<
-            string,
-            unknown
+          Partial<
+            typeof orders.$inferInsert
           > = {
             updatedAt:
               now,
           };
 
         if (
-          paymentStatus
+          requestedPaymentStatus !==
+          null
         ) {
           updateData.payment_status =
-            finalPaymentStatus;
+            requestedPaymentStatus;
 
           if (
-            finalPaymentStatus ===
-            '2'
+            requestedPaymentStatus ===
+              '2' &&
+            lockedOrder.payment_status !==
+              '2' &&
+            !lockedOrder.payment_paid_at
           ) {
             updateData.paymentPaidAt =
               now;
@@ -1926,90 +2369,263 @@ export async function PUT(
         }
 
         if (
-          adminNotes !==
+          body.adminNotes !==
           undefined
         ) {
           updateData.admin_notes =
-            adminNotes;
+            normalizeString(
+              body.adminNotes,
+            ) || null;
         }
 
         if (
-          getPayment !==
+          body.getPayment !==
             undefined &&
-          getPayment !==
+          body.getPayment !==
             null
         ) {
+          const amount =
+            Number(
+              body.getPayment,
+            );
+
+          if (
+            !Number.isFinite(
+              amount,
+            ) ||
+            amount < 0
+          ) {
+            throw new OrderUpdateError(
+              400,
+              'Nominal pembayaran tidak valid.',
+              'INVALID_GET_PAYMENT',
+            );
+          }
+
           updateData.getPayment =
             String(
-              getPayment,
+              Math.floor(
+                amount,
+              ),
             );
         }
 
         if (
-          cashChange !==
+          body.cashChange !==
             undefined &&
-          cashChange !==
+          body.cashChange !==
             null
         ) {
+          const change =
+            Number(
+              body.cashChange,
+            );
+
+          if (
+            !Number.isFinite(
+              change,
+            ) ||
+            change < 0
+          ) {
+            throw new OrderUpdateError(
+              400,
+              'Nominal kembalian tidak valid.',
+              'INVALID_CASH_CHANGE',
+            );
+          }
+
           updateData.cashChange =
             String(
-              cashChange,
+              Math.floor(
+                change,
+              ),
             );
 
           updateData.payment_status =
             '2';
 
-          updateData.paymentPaidAt =
-            now;
-
           finalPaymentStatus =
             '2';
-        }
-
-        if (status) {
-          updateData.status =
-            finalStatus;
 
           if (
-            finalStatus ===
-            'confirmed'
+            lockedOrder.payment_status !==
+              '2' &&
+            !lockedOrder.payment_paid_at
+          ) {
+            updateData.paymentPaidAt =
+              now;
+          }
+        }
+
+        if (
+          requestedStatus !==
+          null
+        ) {
+          updateData.status =
+            requestedStatus;
+
+          /*
+           * Timestamp tidak ditulis ulang saat retry status yang sama.
+           * confirmedAt juga menjadi marker first confirmation / stock deduction.
+           */
+          if (
+            requestedStatus ===
+              'confirmed' &&
+            !lockedOrder.confirmed_at
           ) {
             updateData.confirmedAt =
               now;
           }
 
           if (
-            finalStatus ===
-            'preparing'
+            requestedStatus ===
+              'preparing' &&
+            !lockedOrder.preparing_at
           ) {
             updateData.preparingAt =
               now;
           }
 
           if (
-            finalStatus ===
-              'ready' ||
-            finalStatus ===
-              'completed'
+            requestedStatus ===
+              'ready' &&
+            !lockedOrder.ready_at
           ) {
             updateData.readyAt =
               now;
           }
 
+          /*
+           * completed hanya mengisi completedAt.
+           * readyAt adalah tanggung jawab Kitchen saat order menjadi ready.
+           */
           if (
-            finalStatus ===
-            'completed'
+            requestedStatus ===
+              'completed' &&
+            lockedOrder.status !==
+              'completed'
           ) {
             updateData.completedAt =
               now;
           }
 
-          if (
-            finalStatus ===
-            'cancelled'
+        }
+
+        /*
+         * FIRST CONFIRMATION
+         * ------------------
+         * Jangan memakai lockedOrder.status !== 'confirmed', karena request
+         * retry / undo dapat membuat stok terpotong berkali-kali.
+         * confirmed_at adalah marker bahwa first-confirmation pernah diproses.
+         */
+        const isFirstConfirmation =
+          finalStatus ===
+            'confirmed' &&
+          !lockedOrder.confirmed_at;
+
+        if (
+          isFirstConfirmation
+        ) {
+          const items =
+            await tx
+              .select()
+              .from(
+                orderItems,
+              )
+              .where(
+                and(
+                  eq(
+                    orderItems.order_id,
+                    numericOrderId,
+                  ),
+                  isNull(
+                    orderItems.deletedAt,
+                  ),
+                ),
+              );
+
+          for (
+            const item of
+            items
           ) {
-            updateData.cancelledAt =
-              now;
+            const productConditions: SQL[] = [
+              eq(
+                products.id,
+                item.product_id,
+              ),
+              eq(
+                products.mitra_id,
+                lockedOrder.mitra_id,
+              ),
+              eq(
+                products.status,
+                1,
+              ),
+              isNull(
+                products.deletedAt,
+              ),
+              gte(
+                products.stock,
+                item.quantity,
+              ),
+            ];
+
+            productConditions.push(
+              lockedOrder.branch_id ===
+                null
+                ? isNull(
+                    products.branch_id,
+                  )
+                : eq(
+                    products.branch_id,
+                    lockedOrder.branch_id,
+                  ),
+            );
+
+            const stockResult =
+              await tx
+                .update(
+                  products,
+                )
+                .set({
+                  stock:
+                    sql`
+                      ${products.stock}
+                      -
+                      ${item.quantity}
+                    `,
+                })
+                .where(
+                  and(
+                    ...productConditions,
+                  ),
+                );
+
+            const header =
+              stockResult[0] as {
+                affectedRows?: number;
+              };
+
+            if (
+              Number(
+                header?.affectedRows ??
+                  0,
+              ) === 0
+            ) {
+              throw new OrderUpdateError(
+                409,
+                'Stok produk tidak mencukupi atau produk sudah tidak tersedia.',
+                'PRODUCT_STOCK_NOT_AVAILABLE',
+                {
+                  productId:
+                    item.product_id,
+                  quantity:
+                    item.quantity,
+                  branchId:
+                    lockedOrder.branch_id,
+                },
+              );
+            }
           }
         }
 
@@ -2022,50 +2638,109 @@ export async function PUT(
             targetCondition,
           );
 
-        const isFirstConfirmation =
-          finalStatus ===
-            'confirmed' &&
-          lockedOrder.status !==
-            'confirmed';
-
+        /*
+         * Cashier/front adalah pihak yang menutup order.
+         * Saat completed/cancelled, meja boleh kembali available hanya jika
+         * tidak ada order aktif lain pada meja yang sama.
+         */
         if (
-          isFirstConfirmation
+          requestedStatus === 'completed' &&
+          lockedOrder.table_number
         ) {
-          const items =
-            await tx
-              .select()
-              .from(
-                orderItems,
-              )
-              .where(
-                eq(
-                  orderItems.order_id,
-                  numericOrderId,
-                ),
-              );
+          const otherActiveConditions: SQL[] = [
+            eq(
+              orders.mitra_id,
+              lockedOrder.mitra_id,
+            ),
+            eq(
+              orders.table_number,
+              lockedOrder.table_number,
+            ),
+            ne(
+              orders.id,
+              lockedOrder.id,
+            ),
+            inArray(
+              orders.status,
+              [
+                'pending',
+                'confirmed',
+                'preparing',
+                'ready',
+              ],
+            ),
+            isNull(
+              orders.deletedAt,
+            ),
+          ];
 
-          for (
-            const item of
-            items
-          ) {
+          otherActiveConditions.push(
+            lockedOrder.branch_id === null
+              ? isNull(
+                  orders.branch_id,
+                )
+              : eq(
+                  orders.branch_id,
+                  lockedOrder.branch_id,
+                ),
+          );
+
+          const [otherActiveOrder] =
             await tx
-              .update(
-                products,
+              .select({
+                id: orders.id,
+              })
+              .from(orders)
+              .where(
+                and(
+                  ...otherActiveConditions,
+                ),
               )
+              .limit(1);
+
+          if (!otherActiveOrder) {
+            const tableConditions: SQL[] = [
+              eq(
+                tableList.id,
+                lockedOrder.table_number,
+              ),
+              eq(
+                tableList.mitra_id,
+                lockedOrder.mitra_id,
+              ),
+              isNull(
+                tableList.deletedAt,
+              ),
+            ];
+
+            tableConditions.push(
+              lockedOrder.branch_id === null
+                ? isNull(
+                    tableList.branch_id,
+                  )
+                : eq(
+                    tableList.branch_id,
+                    lockedOrder.branch_id,
+                  ),
+            );
+
+            await tx
+              .update(tableList)
               .set({
-                stock:
-                  sql`
-                    ${products.stock}
-                    -
-                    ${item.quantity}
-                  `,
+                status: 1,
+                updatedAt: now,
               })
               .where(
-                eq(
-                  products.id,
-                  item.product_id,
+                and(
+                  ...tableConditions,
                 ),
               );
+
+            tableNotificationRef.current = {
+              tableId: lockedOrder.table_number,
+              status: 'available',
+              orderCode: lockedOrder.order_code,
+            };
           }
         }
 
@@ -2080,19 +2755,80 @@ export async function PUT(
       },
     );
 
+    const tableNotification =
+      tableNotificationRef.current;
+
+    if (
+      tableNotification &&
+      global.iotClients &&
+      global.iotClients.has(
+        tableNotification.tableId,
+      )
+    ) {
+      fetch(
+        'http://localhost:3009/api/internal/push-iot',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type':
+              'application/json',
+          },
+          body: JSON.stringify({
+            tableId:
+              tableNotification.tableId,
+            status:
+              tableNotification.status,
+            order_code:
+              tableNotification.orderCode,
+          }),
+        },
+      ).catch((error) => {
+        console.error(
+          '[ORDER_TABLE_IOT_RELEASE_ERROR]',
+          error,
+        );
+      });
+    }
+
     return NextResponse.json({
       success: true,
       message:
         pointResult.awarded
           ? `Data pesanan diperbarui dan ${pointResult.points} poin diberikan.`
           : 'Data pesanan berhasil diperbarui.',
-      loyalty: pointResult,
+      loyalty:
+        pointResult,
+      reversal:
+        reversalResult,
     });
   } catch (error) {
     console.error(
       '[ORDERS_PUT_ERROR]',
       error,
     );
+
+    if (
+      error instanceof
+      OrderUpdateError
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            error.message,
+          error: {
+            code:
+              error.code,
+            details:
+              error.details,
+          },
+        },
+        {
+          status:
+            error.status,
+        },
+      );
+    }
 
     return jsonError(
       500,

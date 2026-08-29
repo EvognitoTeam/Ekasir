@@ -125,6 +125,8 @@ export const addons = mysqlTable("addons", {
   name: varchar("name", { length: 255 }).notNull(),
   price: decimal("price", { precision: 10, scale: 0 }).notNull(),
   is_active: boolean("is_active").default(true),
+  stock: int('stock').default(0),
+  is_track_stock: boolean('is_track_stock').default(true),
   createdAt: timestamp("created_at"),
   updatedAt: timestamp("updated_at"),
   deletedAt: timestamp("deleted_at"),
@@ -536,26 +538,76 @@ export const settings = mysqlTable('settings', {
     .default(false)
     .notNull(),
 
-  pointsEarnRate: int(
-    'points_earn_rate',
+  pointsEarningMode: varchar(
+    'points_earning_mode',
+    {
+      length: 30,
+    },
   )
-    .default(1000)
+    .$type<
+      | 'fixed_ratio'
+      | 'tier_percentage'
+    >()
+    .default('fixed_ratio')
+    .notNull(),
+
+  pointsEarnRate: decimal(
+    'points_earn_rate',
+    {
+      precision: 15,
+      scale: 2,
+    },
+  )
+    .default('10000.00')
+    .notNull(),
+
+  pointsEarnPoints: int(
+    'points_earn_points',
+  )
+    .default(1)
+    .notNull(),
+
+  pointsMinimumTransaction: decimal(
+    'points_minimum_transaction',
+    {
+      precision: 15,
+      scale: 2,
+    },
+  )
+    .default('0.00')
+    .notNull(),
+
+  pointsMaximumEarnPerOrder: int(
+    'points_maximum_earn_per_order',
+  ),
+
+  pointsTierBasis: varchar(
+    'points_tier_basis',
+    {
+      length: 30,
+    },
+  )
+    .$type<
+      | 'lifetime_spending'
+      | 'lifetime_points'
+    >()
+    .default('lifetime_spending')
     .notNull(),
 
   pointsRedeemRate: decimal(
     'points_redeem_rate',
     {
-      precision: 12,
-      scale: 0,
+      precision: 15,
+      scale: 2,
     },
   )
-    .default('10')
+    .default('1000.00')
     .notNull(),
 
   pointsMinimumRedeem: int(
     'points_minimum_redeem',
   )
-    .default(100)
+    .default(10)
     .notNull(),
 
   pointsMaximumRedeem: int(
@@ -571,6 +623,22 @@ export const settings = mysqlTable('settings', {
   )
     .default('50.00')
     .notNull(),
+
+  pointsAllowWithCoupon: boolean(
+    'points_allow_with_coupon',
+  )
+    .default(false)
+    .notNull(),
+
+  pointsExpirationEnabled: boolean(
+    'points_expiration_enabled',
+  )
+    .default(false)
+    .notNull(),
+
+  pointsExpirationDays: int(
+    'points_expiration_days',
+  ),
 
   pointsRequirePaidOrder: boolean(
     'points_require_paid_order',

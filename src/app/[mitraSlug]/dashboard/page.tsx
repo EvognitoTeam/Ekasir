@@ -44,6 +44,7 @@ const StaffManager = dynamic(() => import('@/components/admin/StaffManager'), { 
 const TableConfig = dynamic(() => import('@/components/admin/TableConfig'), { loading: LoadingFallback });
 const BranchManager = dynamic(() => import('@/components/admin/BranchManager'), { loading: LoadingFallback });
 const LoyaltyConfig = dynamic(() => import('@/components/admin/LoyaltyConfig'), { loading: LoadingFallback });
+const AddonEditor = dynamic(() => import('@/components/admin/AddonEditor'), { loading: LoadingFallback });
 
 type AdminTab =
   | 'dashboard'
@@ -56,6 +57,7 @@ type AdminTab =
   | 'staff'
   | 'branch'
   | 'loyalty'
+  | 'addon'
   | 'settings';
 
 type NavItem = {
@@ -77,7 +79,8 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   {
     label: 'Operasional',
     items: [
-      { id: 'menu', label: 'Katalog Menu', description: 'Produk dan kategori', icon: Coffee },
+      { id: 'menu', label: 'Katalog Menu', description: 'Produk', icon: Coffee },
+      { id: 'addon', label: 'Addon Menu', description: 'Kategori dan Addon', icon: Package },
       // { id: 'inventory', label: 'Bahan Baku', description: 'Stok dan peringatan', icon: Package },
       { id: 'table', label: 'Daftar Meja', description: 'Meja dan QR', icon: Sofa },
       { id: 'promos', label: 'Promo & Event', description: 'Diskon dan kampanye', icon: Tag },
@@ -106,6 +109,7 @@ const TITLES: Record<AdminTab, string> = {
   branch: 'Cabang Outlet',
   loyalty: 'Loyalty & Points',
   settings: 'Konfigurasi Sistem',
+  addon: 'Konfigurasi Addon',
 };
 
 function AnimatedCounter({ value }: { value: number }) {
@@ -165,6 +169,7 @@ export default function AdminDashboardPage() {
       'branch',
       'loyalty',
       'settings',
+      'addon',
     ];
     const activeTab = allowed.includes(rawTab as AdminTab) ? (rawTab as AdminTab) : 'dashboard';
     const basePath = branchSlug ? `/${slug}/${branchSlug}/admin` : `/${slug}/admin`;
@@ -280,6 +285,7 @@ export default function AdminDashboardPage() {
       case 'branch': return <BranchManager />;
       case 'loyalty': return <LoyaltyConfig />;
       case 'settings': return <SystemConfig />;
+      case 'addon': return <AddonEditor />;
       default:
         return (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-7">

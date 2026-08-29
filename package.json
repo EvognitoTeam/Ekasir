@@ -46,6 +46,7 @@
     "sweetalert2": "^11.26.24",
     "tailwind-merge": "^2.2.0",
     "ws": "^8.21.3",
+    "xlsx": "^0.18.5",
     "zustand": "^4.5.0"
   },
   "devDependencies": {

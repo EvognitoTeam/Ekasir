@@ -161,8 +161,6 @@ export async function GET(
      *
      * - Jika tidak ada branch_slug:
      *   hanya produk pusat dengan branch_id NULL.
-     *
-     * Ini mencegah produk cabang tampil pada URL pusat.
      */
     const productConditions = [
       eq(
@@ -209,35 +207,50 @@ export async function GET(
         );
 
     /*
-     * Addon category masih berlaku pada level mitra.
+     * 🔴 Filter Grup Addon & Addon berdasarkan Cabang (Sama seperti produk)
      */
+    const addonCategoryConditions = [
+      eq(
+        addonCategories.mitra_id,
+        mitraId,
+      ),
+    ];
+
+    const addonConditions = [
+      eq(
+        addons.mitra_id,
+        mitraId,
+      ),
+      isNull(
+        addons.deletedAt,
+      ),
+    ];
+
+    if (finalBranchId !== null) {
+      addonCategoryConditions.push(eq(addonCategories.branch_id, finalBranchId));
+      addonConditions.push(eq(addons.branch_id, finalBranchId));
+    } else {
+      addonCategoryConditions.push(isNull(addonCategories.branch_id));
+      addonConditions.push(isNull(addons.branch_id));
+    }
+
     const allAddonCategories =
       await db
         .select()
         .from(addonCategories)
         .where(
-          eq(
-            addonCategories.mitra_id,
-            mitraId,
+          and(
+            ...addonCategoryConditions
           ),
         );
 
-    /*
-     * Addon masih berlaku pada level mitra.
-     */
     const allAddons =
       await db
         .select()
         .from(addons)
         .where(
           and(
-            eq(
-              addons.mitra_id,
-              mitraId,
-            ),
-            isNull(
-              addons.deletedAt,
-            ),
+            ...addonConditions
           ),
         );
 
@@ -254,25 +267,36 @@ export async function GET(
           ),
         );
 
+    /*
+     * 🔴 Filter Kategori agar hanya menampilkan yang ada produknya di cabang ini
+     */
+    const activeCategoryIds = new Set(
+      mitraProducts
+        .map(p => p.categories_id)
+        .filter(id => id !== null)
+    );
+
     const formattedCategories =
-      mitraCategories.map(
-        (category) => ({
-          id:
-            String(category.id),
+      mitraCategories
+        .filter(category => activeCategoryIds.has(category.id))
+        .map(
+          (category) => ({
+            id:
+              String(category.id),
 
-          name:
-            category.name,
+            name:
+              category.name,
 
-          slug:
-            category.name
-              .toLowerCase()
-              .trim()
-              .replace(
-                /\s+/g,
-                '-',
-              ),
-        }),
-      );
+            slug:
+              category.name
+                .toLowerCase()
+                .trim()
+                .replace(
+                  /\s+/g,
+                  '-',
+                ),
+          }),
+        );
 
     const formattedProducts =
       mitraProducts.map(
@@ -362,6 +386,13 @@ export async function GET(
                             Number(
                               addon.price,
                             ),
+                            
+                          // 🔴 Kirim Data Stok ke Frontend
+                          stock: 
+                            addon.stock,
+                            
+                          is_track_stock: 
+                            addon.is_track_stock,
                         }),
                       ),
                   };
@@ -441,15 +472,8 @@ export async function GET(
 
       /*
        * Aturan penting:
-       *
-       * Jika URL memiliki cabang:
-       * meja harus berasal dari cabang tersebut.
-       *
-       * Jika URL tidak memiliki cabang:
-       * meja harus memiliki branch_id NULL.
-       *
-       * Jadi tableCode milik cabang tidak akan ditemukan
-       * ketika halaman pusat/tanpa branch diakses.
+       * Jika URL memiliki cabang: meja harus berasal dari cabang tersebut.
+       * Jika URL tidak memiliki cabang: meja harus memiliki branch_id NULL.
        */
       if (finalBranchId !== null) {
         tableConditions.push(
@@ -466,10 +490,6 @@ export async function GET(
         );
       }
 
-      /*
-       * Tambahkan filter deletedAt jika tableList
-       * memiliki kolom deletedAt pada schema.
-       */
       if (
         'deletedAt' in tableList
       ) {
@@ -540,12 +560,6 @@ export async function GET(
       categoriesData:
         formattedCategories,
 
-      /*
-       * Akan NULL bila:
-       * - tableCode tidak ditemukan;
-       * - tableCode berasal dari cabang lain;
-       * - URL tidak memiliki branch tetapi meja memiliki branch_id.
-       */
       tableId,
       tableCode:
         resolvedTableCode,

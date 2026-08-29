@@ -7,7 +7,7 @@ import { jwtVerify } from 'jose';
 import { writeFile } from 'fs/promises';
 import path from 'path';
 import fs from 'fs';
-import sharp from 'sharp'; // 🟢 Sharp sudah di-import
+import sharp from 'sharp';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,14 +48,28 @@ export async function GET(request: Request) {
     const currentMitra = foundMitra[0];
     const finalBranchId = payload.branchId ? Number(payload.branchId) : (reqBranchId ? Number(reqBranchId) : null);
 
+    // Kondisi Produk
     const condsProd = [eq(products.mitra_id, currentMitra.id), isNull(products.deletedAt)];
     if (finalBranchId) condsProd.push(eq(products.branch_id, finalBranchId));
 
+    // 🔴 Kondisi Addon & Kategori Addon (Sesuai Cabang)
+    const condsAddonGroup = [eq(addonCategories.mitra_id, currentMitra.id)];
+    const condsAddonItem = [eq(addons.mitra_id, currentMitra.id), isNull(addons.deletedAt)];
+    
+    if (finalBranchId) {
+      condsAddonGroup.push(eq(addonCategories.branch_id, finalBranchId));
+      condsAddonItem.push(eq(addons.branch_id, finalBranchId));
+    } else {
+      condsAddonGroup.push(isNull(addonCategories.branch_id));
+      condsAddonItem.push(isNull(addons.branch_id));
+    }
+
+    // Eksekusi Query
     const [dbCategories, dbProducts, dbAddonCategories, dbAddons] = await Promise.all([
       db.select().from(categories).where(and(eq(categories.mitra_id, currentMitra.id), isNull(categories.deletedAt))), 
       db.select().from(products).where(and(...condsProd)), 
-      db.select().from(addonCategories).where(eq(addonCategories.mitra_id, currentMitra.id)), 
-      db.select().from(addons).where(and(eq(addons.mitra_id, currentMitra.id), isNull(addons.deletedAt))) 
+      db.select().from(addonCategories).where(and(...condsAddonGroup)), // 🔴 Terapkan filter
+      db.select().from(addons).where(and(...condsAddonItem)) // 🔴 Terapkan filter
     ]);
 
     const mappedItems = dbProducts.map((p) => ({
@@ -67,6 +81,7 @@ export async function GET(request: Request) {
       image: p.image,
       description: p.description,
       stock: p.stock,
+      branch_id: p.branch_id,
       addonGroups:
         typeof p.addon_id === 'string'
           ? (() => { try { return JSON.parse(p.addon_id); } catch { return []; } })()
@@ -214,6 +229,10 @@ export async function PUT(request: Request) {
           if (formData.has('name')) updateData.name = formData.get('name') as string;
           if (formData.has('price')) updateData.price = Number(formData.get('price'));
           if (formData.has('category_id')) updateData.category_id = Number(formData.get('category_id'));
+          
+          // 🔴 TAMBAHAN UNTUK STOK ADDON (EDIT)
+          if (formData.has('stock')) updateData.stock = Number(formData.get('stock'));
+          if (formData.has('is_track_stock')) updateData.is_track_stock = formData.get('is_track_stock') === '1';
 
           const conds = [eq(addons.id, Number(id)), eq(addons.mitra_id, Number(payload.mitraId))];
           await db.update(addons).set(updateData).where(and(...conds));
@@ -277,6 +296,11 @@ export async function POST(request: Request) {
           name: formData.get('name') as string,
           price: String(formData.get('price')),
           category_id: Number(formData.get('category_id')),
+          
+          // 🔴 TAMBAHAN UNTUK STOK ADDON BARU
+          stock: Number(formData.get('stock')) || 0,
+          is_track_stock: formData.get('is_track_stock') === '1',
+
           createdAt: new Date()
         });
         return NextResponse.json({ success: true });
