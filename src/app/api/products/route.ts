@@ -21,92 +21,215 @@ import {
   isNull,
 } from 'drizzle-orm';
 
-export const dynamic = 'force-dynamic';
+export const dynamic =
+  'force-dynamic';
+
+export const runtime =
+  'nodejs';
+
+function jsonError(
+  status: number,
+  message: string,
+  code = 'PRODUCTS_ERROR',
+  details: unknown = null,
+) {
+  return NextResponse.json(
+    {
+      success: false,
+      message,
+      error: {
+        code,
+        details,
+      },
+    },
+    {
+      status,
+    },
+  );
+}
+
+function normalizeString(
+  value: unknown,
+): string {
+  return String(
+    value ?? '',
+  ).trim();
+}
+
+function parseAddonIds(
+  value: unknown,
+): number[] {
+  let parsed:
+    unknown = value;
+
+  if (
+    typeof parsed ===
+    'string'
+  ) {
+    const trimmed =
+      parsed.trim();
+
+    if (!trimmed) {
+      return [];
+    }
+
+    try {
+      parsed =
+        JSON.parse(
+          trimmed,
+        );
+    } catch {
+      return [];
+    }
+  }
+
+  if (
+    !Array.isArray(
+      parsed,
+    )
+  ) {
+    return [];
+  }
+
+  return parsed
+    .map(
+      (value) =>
+        Number(value),
+    )
+    .filter(
+      (value) =>
+        Number.isInteger(
+          value,
+        ) &&
+        value > 0,
+    );
+}
 
 export async function GET(
   request: NextRequest,
 ): Promise<Response> {
+  const {
+    searchParams,
+  } =
+    new URL(
+      request.url,
+    );
+
+  const slug =
+    normalizeString(
+      searchParams.get(
+        'slug',
+      ),
+    );
+
+  const tableCode =
+    normalizeString(
+      searchParams.get(
+        'tableCode',
+      ),
+    );
+
+  const branchSlug =
+    normalizeString(
+      searchParams.get(
+        'branch_slug',
+      ) ??
+      searchParams.get(
+        'branchSlug',
+      ),
+    );
+
+  if (!slug) {
+    return jsonError(
+      400,
+      'Nama kedai tidak valid.',
+      'MITRA_SLUG_REQUIRED',
+    );
+  }
+
+  let step =
+    'INIT';
+
   try {
-    const { searchParams } =
-      new URL(request.url);
-
-    const slug =
-      searchParams
-        .get('slug')
-        ?.trim();
-
-    const tableCode =
-      searchParams
-        .get('tableCode')
-        ?.trim();
-
-    const branchSlug =
-      searchParams
-        .get('branch_slug')
-        ?.trim();
-
-    if (!slug) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            'Nama kedai tidak valid',
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
     /*
-     * Ambil data mitra.
+     * ==================================================
+     * MITRA
+     * ==================================================
+     *
+     * Select kolom yang benar-benar dipakai.
+     * Jangan .select() semua kolom agar endpoint tidak
+     * ikut rusak bila schema.ts punya kolom baru yang
+     * migration database-nya belum dijalankan.
      */
-    const [targetMitra] = await db
-      .select()
-      .from(mitra)
-      .where(
-        and(
-          eq(
-            mitra.mitra_slug,
-            slug,
+    step =
+      'FIND_MITRA';
+
+    const [
+      targetMitra,
+    ] =
+      await db
+        .select({
+          id:
+            mitra.id,
+
+          name:
+            mitra.mitra_name,
+
+          address:
+            mitra.mitra_address,
+
+          welcome:
+            mitra.mitra_welcome,
+        })
+        .from(
+          mitra,
+        )
+        .where(
+          and(
+            eq(
+              mitra.mitra_slug,
+              slug,
+            ),
+            isNull(
+              mitra.deletedAt,
+            ),
           ),
-          isNull(
-            mitra.deletedAt,
-          ),
-        ),
-      )
-      .limit(1);
+        )
+        .limit(1);
 
     if (!targetMitra) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            `Kedai "${slug}" belum terdaftar di sistem kami.`,
-        },
-        {
-          status: 404,
-        },
+      return jsonError(
+        404,
+        `Kedai "${slug}" belum terdaftar di sistem kami.`,
+        'MITRA_NOT_FOUND',
       );
     }
 
     const mitraId =
-      targetMitra.id;
+      Number(
+        targetMitra.id,
+      );
 
     let finalBranchId:
-      | number
-      | null = null;
+      number | null =
+        null;
 
     let branchName:
-      | string
-      | null = null;
+      string | null =
+        null;
 
     /*
-     * Jika URL memiliki branch_slug,
-     * cari dan validasi cabangnya.
+     * ==================================================
+     * BRANCH
+     * ==================================================
      */
     if (branchSlug) {
-      const [targetBranch] =
+      step =
+        'FIND_BRANCH';
+
+      const [
+        targetBranch,
+      ] =
         await db
           .select({
             id:
@@ -115,7 +238,9 @@ export async function GET(
             name:
               branches.name,
           })
-          .from(branches)
+          .from(
+            branches,
+          )
           .where(
             and(
               eq(
@@ -134,34 +259,185 @@ export async function GET(
           .limit(1);
 
       if (!targetBranch) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              'Cabang tidak ditemukan',
-          },
-          {
-            status: 404,
-          },
+        return jsonError(
+          404,
+          'Cabang tidak ditemukan.',
+          'BRANCH_NOT_FOUND',
         );
       }
 
       finalBranchId =
-        targetBranch.id;
+        Number(
+          targetBranch.id,
+        );
 
       branchName =
         targetBranch.name;
     }
 
     /*
-     * Filter produk:
-     *
-     * - Jika ada branch_slug:
-     *   hanya produk cabang tersebut.
-     *
-     * - Jika tidak ada branch_slug:
-     *   hanya produk pusat dengan branch_id NULL.
+     * ==================================================
+     * CATEGORIES
+     * ==================================================
      */
+    step =
+      'LOAD_CATEGORIES';
+
+    const mitraCategories =
+      await db
+        .select({
+          id:
+            categories.id,
+
+          name:
+            categories.name,
+        })
+        .from(
+          categories,
+        )
+        .where(
+          and(
+            eq(
+              categories.mitra_id,
+              mitraId,
+            ),
+            isNull(
+              categories.deletedAt,
+            ),
+          ),
+        );
+
+    /*
+     * ==================================================
+     * ADDON CATEGORY
+     * ==================================================
+     */
+    step =
+      'LOAD_ADDON_CATEGORIES';
+
+    const addonCategoryConditions = [
+      eq(
+        addonCategories.mitra_id,
+        mitraId,
+      ),
+    ];
+
+    if (
+      finalBranchId !==
+      null
+    ) {
+      addonCategoryConditions.push(
+        eq(
+          addonCategories.branch_id,
+          finalBranchId,
+        ),
+      );
+    } else {
+      addonCategoryConditions.push(
+        isNull(
+          addonCategories.branch_id,
+        ),
+      );
+    }
+
+    const allAddonCategories =
+      await db
+        .select({
+          id:
+            addonCategories.id,
+
+          name:
+            addonCategories.name,
+
+          maxSelected:
+            addonCategories.maxSelected,
+
+          isRequired:
+            addonCategories.isRequired,
+        })
+        .from(
+          addonCategories,
+        )
+        .where(
+          and(
+            ...addonCategoryConditions,
+          ),
+        );
+
+    /*
+     * ==================================================
+     * ADDONS
+     * ==================================================
+     */
+    step =
+      'LOAD_ADDONS';
+
+    const addonConditions = [
+      eq(
+        addons.mitra_id,
+        mitraId,
+      ),
+      isNull(
+        addons.deletedAt,
+      ),
+    ];
+
+    if (
+      finalBranchId !==
+      null
+    ) {
+      addonConditions.push(
+        eq(
+          addons.branch_id,
+          finalBranchId,
+        ),
+      );
+    } else {
+      addonConditions.push(
+        isNull(
+          addons.branch_id,
+        ),
+      );
+    }
+
+    const allAddons =
+      await db
+        .select({
+          id:
+            addons.id,
+
+          categoryId:
+            addons.category_id,
+
+          name:
+            addons.name,
+
+          price:
+            addons.price,
+
+          stock:
+            addons.stock,
+
+          isTrackStock:
+            addons.is_track_stock,
+        })
+        .from(
+          addons,
+        )
+        .where(
+          and(
+            ...addonConditions,
+          ),
+        );
+
+    /*
+     * ==================================================
+     * PRODUCTS
+     * ==================================================
+     */
+    step =
+      'LOAD_PRODUCTS';
+
     const productConditions = [
       eq(
         products.mitra_id,
@@ -172,7 +448,10 @@ export async function GET(
       ),
     ];
 
-    if (finalBranchId !== null) {
+    if (
+      finalBranchId !==
+      null
+    ) {
       productConditions.push(
         eq(
           products.branch_id,
@@ -187,80 +466,42 @@ export async function GET(
       );
     }
 
-    /*
-     * Ambil kategori milik mitra.
-     */
-    const mitraCategories =
-      await db
-        .select()
-        .from(categories)
-        .where(
-          and(
-            eq(
-              categories.mitra_id,
-              mitraId,
-            ),
-            isNull(
-              categories.deletedAt,
-            ),
-          ),
-        );
-
-    /*
-     * 🔴 Filter Grup Addon & Addon berdasarkan Cabang (Sama seperti produk)
-     */
-    const addonCategoryConditions = [
-      eq(
-        addonCategories.mitra_id,
-        mitraId,
-      ),
-    ];
-
-    const addonConditions = [
-      eq(
-        addons.mitra_id,
-        mitraId,
-      ),
-      isNull(
-        addons.deletedAt,
-      ),
-    ];
-
-    if (finalBranchId !== null) {
-      addonCategoryConditions.push(eq(addonCategories.branch_id, finalBranchId));
-      addonConditions.push(eq(addons.branch_id, finalBranchId));
-    } else {
-      addonCategoryConditions.push(isNull(addonCategories.branch_id));
-      addonConditions.push(isNull(addons.branch_id));
-    }
-
-    const allAddonCategories =
-      await db
-        .select()
-        .from(addonCategories)
-        .where(
-          and(
-            ...addonCategoryConditions
-          ),
-        );
-
-    const allAddons =
-      await db
-        .select()
-        .from(addons)
-        .where(
-          and(
-            ...addonConditions
-          ),
-        );
-
-    /*
-     * Ambil produk sesuai cabang atau pusat.
-     */
     const mitraProducts =
       await db
-        .select()
-        .from(products)
+        .select({
+          id:
+            products.id,
+
+          categoryId:
+            products.categories_id,
+
+          name:
+            products.name,
+
+          description:
+            products.description,
+
+          image:
+            products.image,
+
+          price:
+            products.price,
+
+          status:
+            products.status,
+
+          stock:
+            products.stock,
+
+          branchId:
+            products.branch_id,
+
+          addonIds:
+            products.addon_id,
+        })
+        .from(
+          products,
+        )
         .where(
           and(
             ...productConditions,
@@ -268,27 +509,56 @@ export async function GET(
         );
 
     /*
-     * 🔴 Filter Kategori agar hanya menampilkan yang ada produknya di cabang ini
+     * ==================================================
+     * FORMAT CATEGORIES
+     * ==================================================
      */
-    const activeCategoryIds = new Set(
-      mitraProducts
-        .map(p => p.categories_id)
-        .filter(id => id !== null)
-    );
+    const activeCategoryIds =
+      new Set(
+        mitraProducts
+          .map(
+            (product) =>
+              product.categoryId,
+          )
+          .filter(
+            (
+              categoryId,
+            ): categoryId is number =>
+              categoryId !==
+              null,
+          )
+          .map(
+            (categoryId) =>
+              Number(
+                categoryId,
+              ),
+          ),
+      );
 
     const formattedCategories =
       mitraCategories
-        .filter(category => activeCategoryIds.has(category.id))
+        .filter(
+          (category) =>
+            activeCategoryIds.has(
+              Number(
+                category.id,
+              ),
+            ),
+        )
         .map(
           (category) => ({
             id:
-              String(category.id),
+              String(
+                category.id,
+              ),
 
             name:
               category.name,
 
             slug:
-              category.name
+              String(
+                category.name,
+              )
                 .toLowerCase()
                 .trim()
                 .replace(
@@ -298,46 +568,18 @@ export async function GET(
           }),
         );
 
+    /*
+     * ==================================================
+     * FORMAT PRODUCTS + ADDONS
+     * ==================================================
+     */
     const formattedProducts =
       mitraProducts.map(
         (product) => {
-          let parsedAddons:
-            unknown =
-            product.addon_id;
-
-          if (
-            typeof parsedAddons ===
-            'string'
-          ) {
-            try {
-              parsedAddons =
-                JSON.parse(
-                  parsedAddons,
-                );
-            } catch {
-              parsedAddons = [];
-            }
-          }
-
           const productAddonIds =
-            Array.isArray(
-              parsedAddons,
-            )
-              ? parsedAddons
-                  .map(
-                    (addonId) =>
-                      Number(
-                        addonId,
-                      ),
-                  )
-                  .filter(
-                    (addonId) =>
-                      Number.isInteger(
-                        addonId,
-                      ) &&
-                      addonId > 0,
-                  )
-              : [];
+            parseAddonIds(
+              product.addonIds,
+            );
 
           const categorizedAddons =
             allAddonCategories
@@ -347,14 +589,16 @@ export async function GET(
                 ) => {
                   const items =
                     allAddons.filter(
-                      (addon) =>
+                      (
+                        addon,
+                      ) =>
                         productAddonIds.includes(
                           Number(
                             addon.id,
                           ),
                         ) &&
                         Number(
-                          addon.category_id,
+                          addon.categoryId,
                         ) ===
                           Number(
                             addonCategory.id,
@@ -373,7 +617,9 @@ export async function GET(
 
                     addons:
                       items.map(
-                        (addon) => ({
+                        (
+                          addon,
+                        ) => ({
                           id:
                             Number(
                               addon.id,
@@ -384,34 +630,39 @@ export async function GET(
 
                           price:
                             Number(
-                              addon.price,
+                              addon.price ??
+                              0,
                             ),
-                            
-                          // 🔴 Kirim Data Stok ke Frontend
-                          stock: 
+
+                          stock:
                             addon.stock,
-                            
-                          is_track_stock: 
-                            addon.is_track_stock,
+
+                          is_track_stock:
+                            addon.isTrackStock,
                         }),
                       ),
                   };
                 },
               )
               .filter(
-                (group) =>
-                  group.addons.length >
+                (
+                  group,
+                ) =>
+                  group.addons
+                    .length >
                   0,
               );
 
           return {
             id:
-              String(product.id),
+              String(
+                product.id,
+              ),
 
             categoryId:
-              product.categories_id
+              product.categoryId
                 ? String(
-                    product.categories_id,
+                    product.categoryId,
                   )
                 : null,
 
@@ -428,17 +679,20 @@ export async function GET(
 
             basePrice:
               Number(
-                product.price,
+                product.price ??
+                0,
               ),
 
             isAvailable:
-              product.status === 1,
+              Number(
+                product.status,
+              ) === 1,
 
             stock:
               product.stock,
 
             branchId:
-              product.branch_id ??
+              product.branchId ??
               null,
 
             categorizedAddons,
@@ -446,36 +700,47 @@ export async function GET(
         },
       );
 
+    /*
+     * ==================================================
+     * TABLE
+     * ==================================================
+     */
     let tableName:
-      | string
-      | null = 'Table Not Found';
+      string | null =
+        'Table Not Found';
 
     let tableId:
-      | number
-      | null = null;
+      number | null =
+        null;
 
     let resolvedTableCode:
-      | string
-      | null = null;
+      string | null =
+        null;
 
     if (tableCode) {
+      step =
+        'FIND_TABLE';
+
       const tableConditions = [
         eq(
           tableList.mitra_id,
           mitraId,
         ),
+
         eq(
           tableList.table_code,
           tableCode,
         ),
+
+        isNull(
+          tableList.deletedAt,
+        ),
       ];
 
-      /*
-       * Aturan penting:
-       * Jika URL memiliki cabang: meja harus berasal dari cabang tersebut.
-       * Jika URL tidak memiliki cabang: meja harus memiliki branch_id NULL.
-       */
-      if (finalBranchId !== null) {
+      if (
+        finalBranchId !==
+        null
+      ) {
         tableConditions.push(
           eq(
             tableList.branch_id,
@@ -490,17 +755,9 @@ export async function GET(
         );
       }
 
-      if (
-        'deletedAt' in tableList
-      ) {
-        tableConditions.push(
-          isNull(
-            tableList.deletedAt,
-          ),
-        );
-      }
-
-      const [foundTable] =
+      const [
+        foundTable,
+      ] =
         await db
           .select({
             id:
@@ -511,11 +768,10 @@ export async function GET(
 
             tableName:
               tableList.table_name,
-
-            branchId:
-              tableList.branch_id,
           })
-          .from(tableList)
+          .from(
+            tableList,
+          )
           .where(
             and(
               ...tableConditions,
@@ -525,7 +781,9 @@ export async function GET(
 
       if (foundTable) {
         tableId =
-          foundTable.id;
+          Number(
+            foundTable.id,
+          );
 
         tableName =
           foundTable.tableName;
@@ -539,14 +797,14 @@ export async function GET(
       success: true,
 
       mitraName:
-        targetMitra.mitra_name,
+        targetMitra.name,
 
       mitraAddress:
-        targetMitra.mitra_address ||
+        targetMitra.address ||
         'Alamat belum diatur',
 
       mitraWelcome:
-        targetMitra.mitra_welcome ||
+        targetMitra.welcome ||
         '',
 
       branchId:
@@ -561,25 +819,43 @@ export async function GET(
         formattedCategories,
 
       tableId,
+
       tableCode:
         resolvedTableCode,
+
       tableName,
     });
   } catch (error) {
     console.error(
-      'Database Error:',
-      error,
+      '[PRODUCTS_GET_ERROR]',
+      {
+        step,
+        error,
+      },
     );
 
-    return NextResponse.json(
-      {
-        success: false,
-        message:
-          'Gagal mengambil data dari server',
-      },
-      {
-        status: 500,
-      },
+    const databaseMessage =
+      error instanceof
+        Error
+        ? error.message
+        : String(
+            error,
+          );
+
+    return jsonError(
+      500,
+      'Gagal mengambil data produk dari server.',
+      'PRODUCTS_GET_FAILED',
+      process.env.NODE_ENV ===
+        'development'
+        ? {
+            step,
+            message:
+              databaseMessage,
+          }
+        : {
+            step,
+          },
     );
   }
 }
