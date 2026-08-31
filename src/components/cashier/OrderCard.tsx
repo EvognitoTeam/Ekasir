@@ -354,7 +354,6 @@ export default function OrderCard({
         height: 'auto',
         alignSelf: 'flex-start',
         breakInside: 'avoid',
-        WebkitColumnBreakInside: 'avoid',
 
         opacity: order.status === 'cancelled' ? 0.7 : 1,
       }}
