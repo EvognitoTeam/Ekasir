@@ -204,6 +204,16 @@ export async function GET(
       );
     }
 
+    if (table.mitraId == null) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: 'Mitra meja tidak ditemukan',
+        },
+        { status: 400 },
+      );
+    }
+
     /**
      * Ambil order aktif terakhir untuk meja.
      *
