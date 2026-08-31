@@ -1,6 +1,6 @@
 {
   "name": "kaloopos",
-  "version": "26.8.31.5",
+  "version": "26.8.31.6",
   "private": true,
   "scripts": {
     "dev": "concurrently -k -n \"NEXT,IOT\" \"npm:dev:next\" \"npm:dev:iot\"",

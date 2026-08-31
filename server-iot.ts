@@ -59,7 +59,9 @@ type DeviceSocket =
   WebSocket & {
     isAlive?: boolean;
     authenticated?: boolean;
-    tableId?: number;
+
+    tableId?: number | null;
+
     mitraId?: number | null;
     hexId?: string;
     serialNumber?: string | null;
@@ -454,7 +456,10 @@ function removeClient(
   ws: DeviceSocket,
 ) {
   if (
-    ws.tableId
+    ws.tableId !==
+      undefined &&
+    ws.tableId !==
+      null
   ) {
     const clients =
       clientsByTable.get(
@@ -937,7 +942,10 @@ async function sendCurrentSnapshot(
 ) {
   if (
     !ws.authenticated ||
-    !ws.tableId
+    ws.tableId ===
+      undefined ||
+    ws.tableId ===
+      null
   ) {
     return;
   }
@@ -1029,14 +1037,25 @@ async function authenticateDevice(
   const secretKey =
     String(
       data.secret_key ??
-      '',
+        '',
     ).trim();
+
+  // ==========================================================
+  // VALIDASI PAYLOAD
+  // ==========================================================
 
   if (
     !hexId ||
     secretKey.length !==
       64
   ) {
+    console.warn(
+      '[IoT] Payload auth tidak valid',
+      {
+        hexId,
+      },
+    );
+
     sendJson(
       ws,
       {
@@ -1047,7 +1066,7 @@ async function authenticateDevice(
           false,
 
         message:
-          'Payload autentikasi tidak valid.',
+          'invalid_auth_payload',
       },
     );
 
@@ -1058,6 +1077,15 @@ async function authenticateDevice(
 
     return;
   }
+
+  // ==========================================================
+  // CARI DEVICE
+  //
+  // PENTING:
+  // table_id TIDAK ikut menjadi syarat authentication.
+  //
+  // Device tetap valid walaupun table_id = NULL.
+  // ==========================================================
 
   const [
     device,
@@ -1103,16 +1131,21 @@ async function authenticateDevice(
           ),
         ),
       )
-      .limit(1);
+      .limit(
+        1,
+      );
 
-  if (
-    !device ||
-    !device.tableId
-  ) {
+  // ==========================================================
+  // DEVICE / CREDENTIAL BENAR-BENAR TIDAK VALID
+  // ==========================================================
+
+  if (!device) {
     console.warn(
       '[IoT] Auth gagal',
       {
         hexId,
+        reason:
+          'invalid_credentials_or_device_status',
       },
     );
 
@@ -1138,9 +1171,47 @@ async function authenticateDevice(
     return;
   }
 
-  /**
-   * Jika device yang sama reconnect,
-   * socket lama ditutup agar satu HEX tidak dobel.
+  // ==========================================================
+  // DEVICE VALID
+  // ==========================================================
+
+  /*
+   * Jika socket ini sebelumnya sudah mempunyai tableId,
+   * keluarkan dulu dari clientsByTable.
+   *
+   * Berguna jika device di-reassign dari Table A -> Table B
+   * lalu melakukan auth ulang pada socket yang sama.
+   */
+  if (
+    ws.tableId !==
+      undefined &&
+    ws.tableId !==
+      null
+  ) {
+    const oldClients =
+      clientsByTable.get(
+        ws.tableId,
+      );
+
+    if (oldClients) {
+      oldClients.delete(
+        ws,
+      );
+
+      if (
+        oldClients.size ===
+        0
+      ) {
+        clientsByTable.delete(
+          ws.tableId,
+        );
+      }
+    }
+  }
+
+  /*
+   * Jika HEX yang sama connect menggunakan socket baru,
+   * tutup socket lama.
    */
   const previousSocket =
     clientsByHex.get(
@@ -1158,13 +1229,19 @@ async function authenticateDevice(
     );
   }
 
+  // ==========================================================
+  // SET IDENTITY SOCKET
+  // ==========================================================
+
   ws.authenticated =
     true;
 
-  ws.tableId =
-    Number(
-      device.tableId,
-    );
+  ws.hexId =
+    hexId;
+
+  ws.serialNumber =
+    device.serialNumber ??
+    null;
 
   ws.mitraId =
     device.mitraId ===
@@ -1174,17 +1251,106 @@ async function authenticateDevice(
           device.mitraId,
         );
 
-  ws.hexId =
-    hexId;
+  /*
+   * tableId sengaja boleh NULL.
+   */
+  ws.tableId =
+    device.tableId ===
+      null
+      ? null
+      : Number(
+          device.tableId,
+        );
 
-  ws.serialNumber =
-    device.serialNumber ??
-    null;
-
+  /*
+   * Bahkan device yang belum assigned tetap masuk clientsByHex.
+   *
+   * Ini penting supaya:
+   * - device-reconnect bisa menemukan device
+   * - status online device tetap diketahui
+   */
   clientsByHex.set(
     hexId,
     ws,
   );
+
+  // ==========================================================
+  // DEVICE BELUM DI-ASSIGN
+  // ==========================================================
+
+  if (
+    ws.tableId ===
+      null
+  ) {
+    console.log(
+      '[IoT] Device authenticated, belum di-assign',
+      {
+        hexId:
+          ws.hexId,
+
+        serial:
+          ws.serialNumber,
+
+        mitraId:
+          ws.mitraId,
+
+        tableId:
+          null,
+      },
+    );
+
+    sendJson(
+      ws,
+      {
+        type:
+          'auth.result',
+
+        success:
+          true,
+
+        /*
+         * Firmware memakai ini untuk menentukan
+         * layar DEVICE BELUM DI-ASSIGN.
+         */
+        assigned:
+          false,
+
+        hex_id:
+          ws.hexId,
+
+        /*
+         * Yang ditampilkan pada layar ESP32.
+         */
+        serial_number:
+          ws.serialNumber,
+
+        table_id:
+          null,
+
+        heartbeat_seconds:
+          Math.floor(
+            HEARTBEAT_MS /
+              1000,
+          ),
+
+        message:
+          'device_unassigned',
+      },
+    );
+
+    /*
+     * Jangan close socket.
+     * Device sudah authenticated.
+     *
+     * Firmware boleh melakukan auth ulang beberapa detik kemudian
+     * untuk mengecek apakah assignment sudah berubah.
+     */
+    return;
+  }
+
+  // ==========================================================
+  // DEVICE SUDAH DI-ASSIGN
+  // ==========================================================
 
   addTableClient(
     ws.tableId,
@@ -1217,8 +1383,14 @@ async function authenticateDevice(
       success:
         true,
 
+      assigned:
+        true,
+
       hex_id:
         ws.hexId,
+
+      serial_number:
+        ws.serialNumber,
 
       table_id:
         ws.tableId,
@@ -1226,11 +1398,17 @@ async function authenticateDevice(
       heartbeat_seconds:
         Math.floor(
           HEARTBEAT_MS /
-          1000,
+            1000,
         ),
     },
   );
 
+  /*
+   * Tetap kirim snapshot langsung untuk compatibility
+   * dengan firmware lama.
+   *
+   * Firmware baru juga boleh kirim action: "sync".
+   */
   await sendCurrentSnapshot(
     ws,
   );
