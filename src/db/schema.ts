@@ -714,7 +714,7 @@ export const tableDevice = mysqlTable("iot_devices", {
   hex_id: varchar("hex_id", { length: 50 }), // MAC Address ESP32
   serial_number: varchar("serial_number", { length: 50 }),
   secret_key: varchar("secret_key", { length: 64 }),
-  status: mysqlEnum("status", ['active', 'inactive']).default('active'),
+  status: mysqlEnum("status", ['active', 'inactive','maintenance','banned']).default('active'),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow(),
 });
