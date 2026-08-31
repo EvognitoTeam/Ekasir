@@ -3364,8 +3364,6 @@ export default function CashierApp() {
                         style={{
                           breakInside:
                             "avoid",
-                          WebkitColumnBreakInside:
-                            "avoid",
                         }}
                       >
                         <OrderCard
