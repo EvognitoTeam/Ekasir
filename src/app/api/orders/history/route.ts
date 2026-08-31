@@ -9,6 +9,10 @@ import {
   reverseOrder,
   type ReverseOrderResult,
 } from '@/lib/orders/reverseOrder';
+import {
+  queueTableIoT,
+  queueTablePagerIoT,
+} from '@/lib/iot/publish';
 import { db } from '@/db';
 import {
   coupon,
@@ -25,7 +29,6 @@ import {
   gte,
   inArray,
   isNull,
-  ne,
   sql,
   type SQL,
 } from 'drizzle-orm';
@@ -224,7 +227,7 @@ function isValidCashierTransition(
   const transitions: Record<OrderStatus, readonly OrderStatus[]> = {
     pending: ['confirmed', 'cancelled'],
     confirmed: ['cancelled'],
-    preparing: ['cancelled'],
+    preparing: ['ready', 'cancelled'],
     ready: ['completed', 'cancelled'],
     completed: [],
     cancelled: [],
@@ -1974,6 +1977,7 @@ export async function PUT(
       getPayment?: unknown;
       cashChange?: unknown;
       cancelReason?: unknown;
+      soundPager?: unknown;
     };
 
     try {
@@ -1986,6 +1990,7 @@ export async function PUT(
           getPayment?: unknown;
           cashChange?: unknown;
           cancelReason?: unknown;
+          soundPager?: unknown;
         };
     } catch {
       return jsonError(
@@ -2109,12 +2114,24 @@ export async function PUT(
       ReverseOrderResult | null =
         null;
 
-    const tableNotificationRef: {
+    const tableIoTSyncRef: {
       current:
         | {
             tableId: number;
-            status: 'available';
             orderCode: string;
+            reason: string;
+          }
+        | null;
+    } = {
+      current: null,
+    };
+
+    const tablePagerCommandRef: {
+      current:
+        | {
+            tableId: number;
+            active: boolean;
+            reason: string;
           }
         | null;
     } = {
@@ -2178,6 +2195,22 @@ export async function PUT(
             'Order tidak ditemukan saat transaksi dikunci.',
             'ORDER_NOT_FOUND',
           );
+        }
+
+        /*
+         * IoT tidak menerima state buatan dari route ini.
+         * Kita hanya mengingat meja yang perlu di-sync. Setelah transaksi
+         * commit, gateway 3010 akan membaca ulang DB dan mengirim full snapshot.
+         */
+        if (lockedOrder.table_number) {
+          tableIoTSyncRef.current = {
+            tableId:
+              lockedOrder.table_number,
+            orderCode:
+              lockedOrder.order_code,
+            reason:
+              'cashier-order-updated',
+          };
         }
 
         const now =
@@ -2312,16 +2345,26 @@ export async function PUT(
           }
 
           if (
-            reversalResult.tableReleased &&
             reversalResult.tableId
           ) {
-            tableNotificationRef.current = {
+            tableIoTSyncRef.current = {
               tableId:
                 reversalResult.tableId,
-              status:
-                'available',
               orderCode:
                 reversalResult.orderCode,
+              reason:
+                reversalResult.tableReleased
+                  ? 'cashier-order-cancelled-table-released'
+                  : 'cashier-order-cancelled',
+            };
+
+            tablePagerCommandRef.current = {
+              tableId:
+                reversalResult.tableId,
+              active:
+                false,
+              reason:
+                'cashier-order-cancelled',
             };
           }
 
@@ -2509,6 +2552,55 @@ export async function PUT(
               now;
           }
 
+          /*
+           * Pager dipisahkan dari status order.
+           *
+           * Untuk READY:
+           * - soundPager = true  -> pager ON
+           * - soundPager = false -> pager OFF
+           *
+           * Bila caller lama tidak mengirim soundPager,
+           * pertahankan behaviour lama: pager ON.
+           */
+          if (
+            requestedStatus ===
+              'ready' &&
+            lockedOrder.table_number
+          ) {
+            const shouldSoundPager =
+              body.soundPager ===
+                undefined
+                ? true
+                : body.soundPager ===
+                  true;
+
+            tablePagerCommandRef.current = {
+              tableId:
+                lockedOrder.table_number,
+              active:
+                shouldSoundPager,
+              reason:
+                shouldSoundPager
+                  ? 'cashier-ready-with-pager'
+                  : 'cashier-ready-silent',
+            };
+          }
+
+          if (
+            requestedStatus ===
+              'completed' &&
+            lockedOrder.table_number
+          ) {
+            tablePagerCommandRef.current = {
+              tableId:
+                lockedOrder.table_number,
+              active:
+                false,
+              reason:
+                'cashier-order-completed',
+            };
+          }
+
         }
 
         /*
@@ -2639,108 +2731,47 @@ export async function PUT(
           );
 
         /*
-         * Cashier/front adalah pihak yang menutup order.
-         * Saat completed/cancelled, meja boleh kembali available hanya jika
-         * tidak ada order aktif lain pada meja yang sama.
+         * Order COMPLETED tidak otomatis me-release meja.
+         *
+         * Source of truth status meja adalah table_list.status:
+         * 1 = available
+         * 2 = occupied
+         * 3 = reserved
+         *
+         * Jadi ready -> completed hanya menutup lifecycle order.
+         * Jika table_list.status masih 2, IoT harus tetap menampilkan
+         * OCCUPIED sampai endpoint/service meja mengubah status menjadi 1.
          */
         if (
           requestedStatus === 'completed' &&
           lockedOrder.table_number
         ) {
-          const otherActiveConditions: SQL[] = [
-            eq(
-              orders.mitra_id,
-              lockedOrder.mitra_id,
-            ),
-            eq(
-              orders.table_number,
+          tableIoTSyncRef.current = {
+            tableId:
               lockedOrder.table_number,
-            ),
-            ne(
-              orders.id,
-              lockedOrder.id,
-            ),
-            inArray(
-              orders.status,
-              [
-                'pending',
-                'confirmed',
-                'preparing',
-                'ready',
-              ],
-            ),
-            isNull(
-              orders.deletedAt,
-            ),
-          ];
+            orderCode:
+              lockedOrder.order_code,
+            reason:
+              'cashier-order-completed',
+          };
+        }
 
-          otherActiveConditions.push(
-            lockedOrder.branch_id === null
-              ? isNull(
-                  orders.branch_id,
-                )
-              : eq(
-                  orders.branch_id,
-                  lockedOrder.branch_id,
-                ),
-          );
-
-          const [otherActiveOrder] =
-            await tx
-              .select({
-                id: orders.id,
-              })
-              .from(orders)
-              .where(
-                and(
-                  ...otherActiveConditions,
-                ),
-              )
-              .limit(1);
-
-          if (!otherActiveOrder) {
-            const tableConditions: SQL[] = [
-              eq(
-                tableList.id,
-                lockedOrder.table_number,
-              ),
-              eq(
-                tableList.mitra_id,
-                lockedOrder.mitra_id,
-              ),
-              isNull(
-                tableList.deletedAt,
-              ),
-            ];
-
-            tableConditions.push(
-              lockedOrder.branch_id === null
-                ? isNull(
-                    tableList.branch_id,
-                  )
-                : eq(
-                    tableList.branch_id,
-                    lockedOrder.branch_id,
-                  ),
-            );
-
-            await tx
-              .update(tableList)
-              .set({
-                status: 1,
-                updatedAt: now,
-              })
-              .where(
-                and(
-                  ...tableConditions,
-                ),
-              );
-
-            tableNotificationRef.current = {
-              tableId: lockedOrder.table_number,
-              status: 'available',
-              orderCode: lockedOrder.order_code,
-            };
+        if (
+          tableIoTSyncRef.current &&
+          tableIoTSyncRef.current.reason ===
+            'cashier-order-updated'
+        ) {
+          if (
+            requestedStatus !== null
+          ) {
+            tableIoTSyncRef.current.reason =
+              `cashier-status:${requestedStatus}`;
+          } else if (
+            requestedPaymentStatus !== null ||
+            body.cashChange !== undefined
+          ) {
+            tableIoTSyncRef.current.reason =
+              `cashier-payment:${finalPaymentStatus}`;
           }
         }
 
@@ -2755,39 +2786,40 @@ export async function PUT(
       },
     );
 
-    const tableNotification =
-      tableNotificationRef.current;
+    /*
+     * Jalankan setelah DB transaction commit.
+     *
+     * Next.js tidak perlu mengetahui apakah ESP32 sedang online.
+     * Gateway 3010 akan membaca state terbaru dari DB lalu mengirim snapshot
+     * ke device yang terhubung. Bila gateway/device sedang offline, operasi
+     * kasir tetap berhasil dan device akan self-heal saat reconnect.
+     */
+    const tableIoTSync =
+      tableIoTSyncRef.current;
+
+    const tablePagerCommand =
+      tablePagerCommandRef.current;
 
     if (
-      tableNotification &&
-      global.iotClients &&
-      global.iotClients.has(
-        tableNotification.tableId,
-      )
+      tablePagerCommand
     ) {
-      fetch(
-        'http://localhost:3009/api/internal/push-iot',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type':
-              'application/json',
-          },
-          body: JSON.stringify({
-            tableId:
-              tableNotification.tableId,
-            status:
-              tableNotification.status,
-            order_code:
-              tableNotification.orderCode,
-          }),
-        },
-      ).catch((error) => {
-        console.error(
-          '[ORDER_TABLE_IOT_RELEASE_ERROR]',
-          error,
-        );
-      });
+      /*
+       * table-pager endpoint langsung membangun snapshot terbaru setelah
+       * DB commit, sehingga READY + pilihan bunyi/tidak bunyi sinkron.
+       */
+      queueTablePagerIoT(
+        tablePagerCommand.tableId,
+        tablePagerCommand.active,
+        tablePagerCommand.reason,
+        'order_ready',
+      );
+    } else if (
+      tableIoTSync
+    ) {
+      queueTableIoT(
+        tableIoTSync.tableId,
+        tableIoTSync.reason,
+      );
     }
 
     return NextResponse.json({

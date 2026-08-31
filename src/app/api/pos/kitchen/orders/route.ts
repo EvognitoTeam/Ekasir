@@ -14,6 +14,7 @@ import {
   products,
 } from '@/db/schema';
 import { requirePosAuth } from '@/lib/auth/posAuth';
+import { queueTableIoT } from '@/lib/iot/publish';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -26,8 +27,7 @@ type KitchenStatus =
   | 'cancelled';
 
 type KitchenTargetStatus =
-  | 'preparing'
-  | 'ready';
+  | 'preparing';
 
 type KitchenOrderItem = {
   id: number;
@@ -84,8 +84,7 @@ function normalizeTargetStatus(value: unknown): KitchenTargetStatus | null {
   const status = normalizeString(value).toLowerCase();
 
   if (
-    status === 'preparing' ||
-    status === 'ready'
+    status === 'preparing'
   ) {
     return status;
   }
@@ -138,7 +137,7 @@ function isValidKitchenTransition(
   const transitions: Record<KitchenStatus, readonly KitchenTargetStatus[]> = {
     pending: [],
     confirmed: ['preparing'],
-    preparing: ['ready'],
+    preparing: [],
     ready: [],
     cancelled: [],
   };
@@ -152,8 +151,6 @@ function getExpectedNextStatus(
   switch (currentStatus) {
     case 'confirmed':
       return 'preparing';
-    case 'preparing':
-      return 'ready';
     default:
       return null;
   }
@@ -315,7 +312,9 @@ export async function GET(): Promise<Response> {
  *
  * Kitchen hanya menangani lifecycle dapur:
  *
- * confirmed -> preparing -> ready -> completed
+ * confirmed -> preparing
+ *
+ * Status ready dipindahkan ke Cashier/front-of-house.
  *
  * Status "confirmed" sengaja TIDAK dibuat dari endpoint Kitchen ini.
  * Pada codebase sekarang, first-confirmation memiliki side-effect lain
@@ -377,7 +376,6 @@ export async function PUT(request: Request): Promise<Response> {
       {
         allowedStatuses: [
           'preparing',
-          'ready',
         ],
       },
     );
@@ -413,6 +411,7 @@ export async function PUT(request: Request): Promise<Response> {
         id: orders.id,
         status: orders.status,
         branchId: orders.branch_id,
+        tableId: orders.table_number,
       })
       .from(orders)
       .where(and(...targetConditions))
@@ -442,6 +441,13 @@ export async function PUT(request: Request): Promise<Response> {
     // Idempotent replay. Jika browser mengulang PUT yang sama,
     // jangan menulis timestamp baru.
     if (currentStatus === nextStatus) {
+      if (targetOrder.tableId !== null) {
+        queueTableIoT(
+          targetOrder.tableId,
+          `kitchen-idempotent:${nextStatus}`,
+        );
+      }
+
       return NextResponse.json({
         success: true,
         reused: true,
@@ -479,11 +485,6 @@ export async function PUT(request: Request): Promise<Response> {
       updateData.preparingAt = now;
     }
 
-    if (nextStatus === 'ready') {
-      updateData.readyAt = now;
-    }
-
-
     // Compare-and-swap pada current status mencegah dua request bersamaan
     // melakukan transition berbeda dari state lama yang sama.
     const updateConditions = [
@@ -505,6 +506,25 @@ export async function PUT(request: Request): Promise<Response> {
         409,
         'Status pesanan berubah oleh perangkat lain. Silakan muat ulang data Kitchen.',
         'KITCHEN_STATUS_CONFLICT',
+      );
+    }
+
+    /*
+     * IoT trigger dilakukan setelah DB berhasil berubah.
+     *
+     * Gateway 3010 akan membaca ulang table + active order dari DB
+     * lalu mengirim full snapshot ke ESP32.
+     *
+     * preparing:
+     * - display berubah ke PREPARING
+     *
+     * Ready tidak boleh dibuat oleh Kitchen.
+     * Pager baru aktif ketika Cashier mengubah preparing -> ready.
+     */
+    if (targetOrder.tableId !== null) {
+      queueTableIoT(
+        targetOrder.tableId,
+        `kitchen-status:${nextStatus}`,
       );
     }
 

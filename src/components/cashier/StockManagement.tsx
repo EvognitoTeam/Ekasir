@@ -1,14 +1,137 @@
 import { useState, useEffect } from 'react';
 import { useInventoryStore } from '@/store/inventory.store';
 import { useAuthStore } from '@/store/auth.store';
-import { Search, Plus, Edit3, Save, Package, TrendingDown, Clock, Trash2, Receipt } from 'lucide-react';
+import {
+  Search,
+  Plus,
+  Edit3,
+  Save,
+  Package,
+  TrendingDown,
+  Clock,
+  Trash2,
+  Receipt,
+  Building2,
+} from 'lucide-react';
 import { motion } from 'framer-motion';
 import { formatPrice } from '@/utils/formatters';
 
-export default function StockManagement() {
-  const { materials, expenses, initializeDefaultMaterials, updateMaterialStock, addRestockPurchase, recordExpense, deleteExpense } = useInventoryStore();
-  const { username } = useAuthStore();
-  
+interface StockManagementProps {
+  /**
+   * Branch dari session Cashier:
+   * null   = Main / Default
+   * number = branch tertentu
+   */
+  branchId?: number | string | null;
+  branchName?: string | null;
+}
+
+const normalizeBranchId = (
+  value: unknown,
+): number | null => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === '' ||
+    String(value).trim().toLowerCase() === 'main'
+  ) {
+    return null;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isInteger(parsed) &&
+    parsed > 0
+    ? parsed
+    : null;
+};
+
+const readBranchId = (
+  value: unknown,
+): number | null => {
+  if (
+    !value ||
+    typeof value !== 'object'
+  ) {
+    return null;
+  }
+
+  const record =
+    value as Record<string, unknown>;
+
+  return normalizeBranchId(
+    record.branch_id ??
+      record.branchId ??
+      null,
+  );
+};
+
+const belongsToBranch = (
+  value: unknown,
+  branchId: number | null,
+): boolean =>
+  readBranchId(value) ===
+  branchId;
+
+export default function StockManagement({
+  branchId: branchIdProp,
+  branchName: branchNameProp,
+}: StockManagementProps) {
+  const {
+    materials,
+    expenses,
+    initializeDefaultMaterials,
+    updateMaterialStock,
+    addRestockPurchase,
+    recordExpense,
+    deleteExpense,
+  } = useInventoryStore();
+
+  const authState =
+    useAuthStore() as unknown as Record<
+      string,
+      unknown
+    >;
+
+  const username =
+    String(
+      authState.username ??
+        'owner',
+    );
+
+  /*
+   * Source branch:
+   * 1. prop dari session Cashier
+   * 2. fallback auth.store
+   * 3. null = Main / Default
+   */
+  const activeBranchId =
+    normalizeBranchId(
+      branchIdProp !== undefined
+        ? branchIdProp
+        : (
+            authState.branchId ??
+            authState.branch_id ??
+            null
+          ),
+    );
+
+  const activeBranchName =
+    String(
+      branchNameProp ||
+        authState.branchName ||
+        authState.branch_name ||
+        '',
+    ).trim();
+
+  const branchLabel =
+    activeBranchId === null
+      ? 'Main / Default'
+      : (
+          activeBranchName ||
+          `Branch #${activeBranchId}`
+        );
+
   const [activeTab, setActiveTab] = useState<'materials' | 'expenses'>('materials');
   const [search, setSearch] = useState('');
   
@@ -29,15 +152,68 @@ export default function StockManagement() {
     initializeDefaultMaterials();
   }, [initializeDefaultMaterials]);
 
-  const filteredMaterials = materials.filter(m => 
-    m.name.toLowerCase().includes(search.toLowerCase()) || 
-    m.category.toLowerCase().includes(search.toLowerCase())
-  );
+  /*
+   * STRICT branch scope:
+   *
+   * activeBranchId === null
+   * -> hanya branch_id NULL
+   *
+   * activeBranchId === 5
+   * -> hanya branch_id 5
+   */
+  const branchMaterials =
+    materials.filter(
+      (
+        material,
+      ) =>
+        belongsToBranch(
+          material,
+          activeBranchId,
+        ),
+    );
+
+  const branchExpenses =
+    expenses.filter(
+      (
+        expense,
+      ) =>
+        belongsToBranch(
+          expense,
+          activeBranchId,
+        ),
+    );
+
+  const normalizedSearch =
+    search
+      .trim()
+      .toLowerCase();
+
+  const filteredMaterials =
+    branchMaterials.filter(
+      (
+        material,
+      ) =>
+        material.name
+          .toLowerCase()
+          .includes(
+            normalizedSearch,
+          ) ||
+        material.category
+          .toLowerCase()
+          .includes(
+            normalizedSearch,
+          ),
+    );
 
   const handleSaveStock = (id: string) => {
     const val = parseFloat(tempStock);
     if (!isNaN(val) && val >= 0) {
-      updateMaterialStock(id, val, username || 'owner', 'Manual stock adjustment');
+      updateMaterialStock(
+        id,
+        val,
+        username || 'owner',
+        `Manual stock adjustment · ${branchLabel}`,
+      );
     }
     setEditingStockId(null);
   };
@@ -52,15 +228,36 @@ export default function StockManagement() {
       const qty = parseFloat(purchaseQty);
       if (isNaN(qty) || qty <= 0) return;
       
-      addRestockPurchase(selectedMaterialId, qty, cost, username || 'owner', supplier);
+      addRestockPurchase(
+        selectedMaterialId,
+        qty,
+        cost,
+        username || 'owner',
+        supplier,
+      );
     } else {
       if (!purchaseDesc) return;
       recordExpense({
-        type: purchaseType,
-        description: purchaseDesc,
-        amount: cost,
-        actor: username || 'owner'
-      });
+        type:
+          purchaseType,
+        description:
+          purchaseDesc,
+        amount:
+          cost,
+        actor:
+          username ||
+          'owner',
+
+        /*
+         * Pastikan expense baru ikut branch aktif.
+         * "as any" menjaga compatibility bila type store lama
+         * belum mendeklarasikan field branch.
+         */
+        branch_id:
+          activeBranchId,
+        branchId:
+          activeBranchId,
+      } as any);
     }
 
     // Reset Form
@@ -78,8 +275,20 @@ export default function StockManagement() {
       {/* Header & Tabs */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
-           <h2 className="text-3xl font-display text-stone-900 leading-tight">Inventory & Expenses</h2>
-           <p className="text-[10px] font-label uppercase tracking-widest text-stone-400 mt-1">Manage Raw Materials & Operational Costs</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-3xl font-display text-stone-900 leading-tight">
+              Inventory & Expenses
+            </h2>
+
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-emerald-700">
+              <Building2 className="h-3.5 w-3.5" />
+              {branchLabel}
+            </span>
+          </div>
+
+          <p className="text-[10px] font-label uppercase tracking-widest text-stone-400 mt-1">
+            Stok & pengeluaran sesuai branch kasir yang sedang login
+          </p>
         </div>
 
         <div className="flex items-center bg-stone-100 p-1 rounded-full w-fit">
@@ -123,7 +332,7 @@ export default function StockManagement() {
           ) : (
             <div className="text-sm font-sans text-stone-500 flex items-center gap-2">
               <Receipt className="w-5 h-5 text-stone-400" />
-              All recorded operational expenses and restocks.
+              Pengeluaran untuk {branchLabel}
             </div>
           )}
 
@@ -172,8 +381,10 @@ export default function StockManagement() {
                       className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--color-primary)]"
                     >
                       <option value="">-- Pilih Bahan --</option>
-                      {materials.map(m => (
-                        <option key={m.id} value={m.id}>{m.name} ({m.unit})</option>
+                      {branchMaterials.map(m => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} ({m.unit})
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -239,6 +450,17 @@ export default function StockManagement() {
 
         {/* Tab Content: Materials */}
         {activeTab === 'materials' && (
+          filteredMaterials.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-stone-300 bg-white p-12 text-center">
+              <Package className="mx-auto h-10 w-10 text-stone-300" />
+              <p className="mt-4 font-display text-lg text-stone-700">
+                Tidak ada stok untuk {branchLabel}
+              </p>
+              <p className="mt-1 text-xs text-stone-400">
+                Stok dari branch lain tidak ditampilkan pada kasir ini.
+              </p>
+            </div>
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filteredMaterials.map(material => {
               const isLow = material.stock <= material.lowStockThreshold;
@@ -256,7 +478,15 @@ export default function StockManagement() {
                       )}
                     </div>
                     <h4 className="text-lg font-display text-stone-800 leading-tight">{material.name}</h4>
-                    <p className="text-[10px] font-label uppercase tracking-widest text-stone-400 mt-1">{material.category}</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <p className="text-[10px] font-label uppercase tracking-widest text-stone-400">
+                        {material.category}
+                      </p>
+
+                      <span className="rounded-md bg-stone-100 px-2 py-0.5 text-[8px] font-black uppercase tracking-wider text-stone-500">
+                        {branchLabel}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="mt-6 pt-4 border-t border-stone-100 flex justify-between items-end">
@@ -303,12 +533,13 @@ export default function StockManagement() {
               );
             })}
           </div>
+          )
         )}
 
         {/* Tab Content: Expenses */}
         {activeTab === 'expenses' && (
           <div className="bg-white rounded-2xl border border-stone-100 shadow-sm overflow-hidden">
-             {expenses.length === 0 ? (
+             {branchExpenses.length === 0 ? (
                <div className="p-12 text-center text-stone-400">
                  <Receipt className="w-12 h-12 mx-auto mb-4 opacity-20" />
                  <p className="font-display text-lg text-stone-600">Belum ada catatan pengeluaran.</p>
@@ -326,7 +557,7 @@ export default function StockManagement() {
                    </tr>
                  </thead>
                  <tbody>
-                   {expenses.map(expense => (
+                   {branchExpenses.map(expense => (
                      <tr key={expense.id} className="border-b border-stone-50 last:border-0 hover:bg-stone-50/50 transition-colors text-sm font-sans group">
                        <td className="py-4 px-6 text-stone-500">
                          {new Date(expense.timestamp).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}

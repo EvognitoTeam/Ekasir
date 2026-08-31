@@ -346,7 +346,17 @@ export default function OrderCard({
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        opacity: order.status === 'cancelled' ? 0.7 : 1, 
+
+        /*
+         * Tinggi card mengikuti isi.
+         * Penting untuk masonry layout agar tidak ada ruang kosong.
+         */
+        height: 'auto',
+        alignSelf: 'flex-start',
+        breakInside: 'avoid',
+        WebkitColumnBreakInside: 'avoid',
+
+        opacity: order.status === 'cancelled' ? 0.7 : 1,
       }}
     >
       {showPrintPopup && (
@@ -480,7 +490,7 @@ export default function OrderCard({
 
       <div style={{ height: '4px', background: isUrgent ? '#EF4444' : cfg.dot, borderRadius: '16px 16px 0 0' }} />
 
-      <div style={{ padding: '12px 16px 10px', background: cfg.bg, borderBottom: `1px solid ${cfg.border}` }}>
+      <div style={{ padding: '11px 14px 9px', background: cfg.bg, borderBottom: `1px solid ${cfg.border}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             {isTakeaway ? (
@@ -584,7 +594,7 @@ export default function OrderCard({
         <div style={{
           background: '#FEF2F2',
           borderBottom: '1px solid #FCA5A5',
-          padding: '9px 16px',
+          padding: '8px 14px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -604,7 +614,18 @@ export default function OrderCard({
         </div>
       )}
 
-      <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '10px', background: '#ffffff', flex: 1 }}>
+      <div
+        style={{
+          padding: '11px 14px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          background: '#ffffff',
+
+          // Jangan pakai flex: 1 — tinggi card harus mengikuti jumlah item.
+          flex: '0 0 auto',
+        }}
+      >
         {(order.items || []).map((cartItem, idx) => {
           const searchId = cartItem.menuItemId || String(cartItem.product_id);
           const product = menuItems.find(m => String(m.id) === searchId);
@@ -653,9 +674,9 @@ export default function OrderCard({
           }
 
           return (
-            <div key={idx} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+            <div key={idx} style={{ display: 'flex', gap: '9px', alignItems: 'flex-start' }}>
               <div style={{
-                minWidth: '24px', height: '24px', borderRadius: '7px',
+                minWidth: '22px', height: '22px', borderRadius: '7px',
                 background: '#f0ede9', border: '1px solid #e5e2dd',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: '11px', fontWeight: 800, color: '#0E5C37', fontFamily: 'monospace'
@@ -687,7 +708,7 @@ export default function OrderCard({
       </div>
 
       {role === 'cashier' && order.status !== 'cancelled' && (
-        <div style={{ padding: '0 16px 12px', background: '#ffffff' }}>
+        <div style={{ padding: '0 14px 10px', background: '#ffffff' }}>
           {isEditingNote ? (
             <div style={{ display: 'flex', gap: '6px' }}>
               <input 
@@ -731,7 +752,7 @@ export default function OrderCard({
       )}
 
       <div style={{ borderTop: '1px solid #f0ede9', background: '#fafaf9' }}>
-        <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f0ede9' }}>
+        <div style={{ padding: '8px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f0ede9' }}>
           <div>
             <p style={{ fontSize: '9px', color: '#9CA3AF', fontFamily: 'var(--font-label)', letterSpacing: '0.08em', margin: 0 }}>TOTAL BAYAR</p>
             <p style={{ fontSize: '15px', fontWeight: 800, color: '#0E5C37', margin: 0, letterSpacing: '-0.01em', textDecoration: order.status === 'cancelled' ? 'line-through' : 'none' }}>
@@ -753,7 +774,7 @@ export default function OrderCard({
           </div>
         </div>
 
-        <div style={{ padding: '10px 12px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div style={{ padding: '9px 12px 11px', display: 'flex', gap: '8px', alignItems: 'center' }}>
           <button
             onClick={handleOpenPrintPopup}
             title="Pilih Jenis Cetak"
@@ -885,18 +906,33 @@ export default function OrderCard({
 
                 {order.status === 'preparing' && (
                   <button
-                    disabled
-                    onClick={() => onUpdateStatus(String(order.id), 'ready')}
+                    onClick={() =>
+                      onUpdateStatus(
+                        String(order.id),
+                        'ready',
+                      )
+                    }
                     style={{
-                      width: '100%', padding: '11px 16px', borderRadius: '10px',
-                      background: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
-                      color: '#fff', fontSize: '12px', fontWeight: 800,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                      border: 'none', cursor: 'not-allowed',
-                      boxShadow: '0 4px 14px rgba(37,99,235,0.3)',
+                      width: '100%',
+                      padding: '11px 16px',
+                      borderRadius: '10px',
+                      background:
+                        'linear-gradient(135deg, #2563EB, #1D4ED8)',
+                      color: '#fff',
+                      fontSize: '12px',
+                      fontWeight: 800,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      boxShadow:
+                        '0 4px 14px rgba(37,99,235,0.3)',
                     }}
                   >
-                    <Sparkles size={15} /> (Hanya Kitchen yang bisa menggunakan tombol ini!!)
+                    <Sparkles size={15} />
+                    Tandai Siap Disajikan
                   </button>
                 )}
 

@@ -16,6 +16,8 @@ import {
   users,
 } from '@/db/schema';
 
+import { queueTableIoT } from '@/lib/iot/publish';
+
 import {
   and,
   desc,
@@ -675,6 +677,13 @@ async function compensateRejectedQrisOrder(
           .where(and(...tableConditions));
       }
     });
+
+    if (tableId !== null) {
+      queueTableIoT(
+        tableId,
+        'checkout-qris-compensated',
+      );
+    }
   } catch (compensationError) {
     console.error('[QRIS_COMPENSATION_ERROR]', {
       orderId,
@@ -1160,6 +1169,7 @@ export async function POST(request: Request): Promise<Response> {
         paymentMethod: orders.payment_method,
         paymentStatus: orders.payment_status,
         status: orders.status,
+        tableId: orders.table_number,
         totalAfterDiscount: orders.totalAfterDiscount,
         qrUrl: orders.qr_url,
         qrString: orders.qr_string,
@@ -1197,6 +1207,13 @@ export async function POST(request: Request): Promise<Response> {
           409,
           'Idempotency key sudah digunakan pada scope cabang yang berbeda.',
           'IDEMPOTENCY_SCOPE_CONFLICT',
+        );
+      }
+
+      if (existingOrder.tableId !== null) {
+        queueTableIoT(
+          existingOrder.tableId,
+          'checkout-idempotent-replay',
         );
       }
 
@@ -1631,7 +1648,7 @@ export async function POST(request: Request): Promise<Response> {
           and(
             eq(users.id, customerUserId),
             eq(users.mitra_id, mitraId),
-            eq(users.role, 'User'),
+            // eq(users.role, 'User'),
             isNull(users.deletedAt),
           ),
         )
@@ -2056,30 +2073,18 @@ export async function POST(request: Request): Promise<Response> {
       };
     });
 
+    /*
+     * Setelah transaction commit, minta IoT Gateway membaca ulang state
+     * meja/order dari DB lalu push full snapshot ke ESP32.
+     */
+    if (transactionResult.finalTableId !== null) {
+      queueTableIoT(
+        transactionResult.finalTableId,
+        `checkout-created:${paymentMethod}`,
+      );
+    }
+
     if (paymentMethod === 'cash') {
-      const tableIdToNotify = transactionResult.finalTableId;
-
-      if (
-        tableIdToNotify &&
-        global.iotClients &&
-        global.iotClients.has(tableIdToNotify)
-      ) {
-        fetch('http://localhost:3009/api/internal/push-iot', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            tableId: tableIdToNotify,
-            status: 'occupied',
-            order_code: transactionResult.code,
-            customer_name: customerName,
-          }),
-        }).catch((error) =>
-          console.error('Gagal memicu IoT push:', error),
-        );
-      }
-
       return NextResponse.json(
         {
           success: true,
@@ -2259,6 +2264,13 @@ export async function POST(request: Request): Promise<Response> {
           isNull(orders.deletedAt),
         ),
       );
+
+    if (transactionResult.finalTableId !== null) {
+      queueTableIoT(
+        transactionResult.finalTableId,
+        'checkout-qris-ready',
+      );
+    }
 
     return NextResponse.json(
       {

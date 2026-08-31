@@ -142,7 +142,7 @@ export default function CashierApp() {
   const [isLoadingInitial, setIsLoadingInitial] = useState(true);
   const [tables, setTables] = useState<any[]>([]);
 
-  const [activeTab, setActiveTab] = useState<"pos" | "stock" | "reservation" | "pending" | "preparing" | "ready" | "completed">("pending");
+  const [activeTab, setActiveTab] = useState<"pos" | "tables" | "stock" | "reservation" | "pending" | "preparing" | "ready" | "completed">("pending");
   const [notification, setNotification] = useState<string | null>(null);
   const [undoAction, setUndoAction] = useState<{
     orderId: string;
@@ -174,6 +174,14 @@ export default function CashierApp() {
   // States untuk tab Daftar Reservasi
   const [reservationSearch, setReservationSearch] = useState("");
   const [reservations, setReservations] = useState<any[]>([]);
+
+  // States untuk tab Daftar Meja
+  const [tableSearch, setTableSearch] = useState("");
+  const [isLoadingTables, setIsLoadingTables] = useState(false);
+  const [releasingTableId, setReleasingTableId] = useState<number | null>(null);
+  const [pagingTableId, setPagingTableId] = useState<number | null>(null);
+  const [updatingTableStatusId, setUpdatingTableStatusId] = useState<number | null>(null);
+  const [managingDeviceTableId, setManagingDeviceTableId] = useState<number | null>(null);
   
   const [showAddReservationModal, setShowAddReservationModal] = useState(false);
   const [isSubmittingReservation, setIsSubmittingReservation] = useState(false);
@@ -562,6 +570,697 @@ export default function CashierApp() {
     }
   }, [slug, isAuthenticated]);
 
+  const fetchTables = useCallback(async (): Promise<any[]> => {
+    if (!slug || !isAuthenticated) return [];
+
+    setIsLoadingTables(true);
+
+    try {
+      const sessionStr = localStorage.getItem(`evo_cashier_session_${slug}`);
+      const sessionObj = sessionStr ? JSON.parse(sessionStr) : {};
+      const activeBranchId = sessionObj.branchId || "";
+
+      const response = await fetch(
+        `/api/pos/tables?slug=${encodeURIComponent(slug)}${
+          activeBranchId
+            ? `&branch_id=${encodeURIComponent(String(activeBranchId))}`
+            : ""
+        }`,
+        {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        },
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Gagal mengambil daftar meja");
+      }
+
+      const nextTables =
+        Array.isArray(
+          result.data,
+        )
+          ? result.data
+          : [];
+
+      setTables(
+        nextTables,
+      );
+
+      return nextTables;
+    } catch (error) {
+      console.error("[CASHIER_TABLES_FETCH_ERROR]", error);
+
+      Toast.fire({
+        icon: "error",
+        title: error instanceof Error ? error.message : "Gagal memuat daftar meja",
+        topLayer: true,
+      });
+
+      return [];
+    } finally {
+      setIsLoadingTables(false);
+    }
+  }, [slug, isAuthenticated]);
+
+  const handleReleaseTable = async (table: any) => {
+    const tableId = Number(table.id);
+
+    if (!Number.isInteger(tableId) || tableId <= 0) return;
+
+    const tableName = String(
+      table.table_name ||
+        table.tableName ||
+        table.table_code ||
+        table.tableCode ||
+        `Meja ${tableId}`,
+    );
+
+    const confirmation = await Swal.fire({
+      title: "Kosongkan Meja?",
+      text: `${tableName} akan diubah menjadi AVAILABLE.`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonColor: "#0E5C37",
+      cancelButtonColor: "#9CA3AF",
+      confirmButtonText: "Ya, Meja Sudah Kosong",
+      cancelButtonText: "Batal",
+      reverseButtons: true,
+    });
+
+    if (!confirmation.isConfirmed) return;
+
+    setReleasingTableId(tableId);
+
+    try {
+      const response = await fetch(
+        `/api/pos/tables?slug=${encodeURIComponent(slug)}`,
+        {
+          method: "PUT",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id: tableId,
+            action: "release",
+          }),
+        },
+      );
+
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok || !result?.success) {
+        throw new Error(
+          result?.message || `Gagal mengosongkan meja (${response.status})`,
+        );
+      }
+
+      Toast.fire({
+        icon: "success",
+        title: `${tableName} sekarang tersedia`,
+        topLayer: true,
+      });
+
+      await fetchTables();
+    } catch (error) {
+      console.error("[CASHIER_TABLE_RELEASE_ERROR]", error);
+
+      Toast.fire({
+        icon: "error",
+        title: error instanceof Error ? error.message : "Gagal mengosongkan meja",
+        topLayer: true,
+      });
+
+      await fetchTables();
+    } finally {
+      setReleasingTableId(null);
+    }
+  };
+
+  const handleManualTableStatus =
+    async (
+      table: any,
+    ) => {
+      const tableId =
+        Number(
+          table.id,
+        );
+
+      const currentStatus =
+        Number(
+          table.status ??
+          table.table_status ??
+          1,
+        );
+
+      if (
+        !Number.isInteger(
+          tableId,
+        ) ||
+        tableId <= 0
+      ) {
+        return;
+      }
+
+      if (
+        currentStatus ===
+        3
+      ) {
+        Toast.fire({
+          icon:
+            "info",
+          title:
+            "Meja RESERVED dikelola melalui menu Reservasi",
+          topLayer:
+            true,
+        });
+
+        return;
+      }
+
+      const tableName =
+        String(
+          table.table_name ||
+          table.tableName ||
+          `Meja ${tableId}`,
+        );
+
+      const result =
+        await Swal.fire({
+          title:
+            `Ubah Status ${tableName}`,
+          text:
+            "Pilih status fisik meja.",
+          input:
+            "select",
+          inputOptions: {
+            "1":
+              "AVAILABLE — meja kosong",
+            "2":
+              "OCCUPIED — meja sedang digunakan",
+            "0":
+              "DISABLED — meja dinonaktifkan",
+          },
+          inputValue:
+            String(
+              currentStatus,
+            ),
+          showCancelButton:
+            true,
+          confirmButtonColor:
+            "#0E5C37",
+          cancelButtonColor:
+            "#9CA3AF",
+          confirmButtonText:
+            "Simpan Status",
+          cancelButtonText:
+            "Batal",
+          inputValidator:
+            (
+              value,
+            ) => {
+              if (
+                ![
+                  "0",
+                  "1",
+                  "2",
+                ].includes(
+                  String(
+                    value,
+                  ),
+                )
+              ) {
+                return "Pilih status meja";
+              }
+
+              return null;
+            },
+        });
+
+      if (
+        !result.isConfirmed
+      ) {
+        return;
+      }
+
+      const nextStatus =
+        Number(
+          result.value,
+        );
+
+      setUpdatingTableStatusId(
+        tableId,
+      );
+
+      try {
+        /*
+         * OCCUPIED -> AVAILABLE tetap memakai action release,
+         * supaya backend melakukan validasi order aktif.
+         */
+        const action =
+          currentStatus ===
+            2 &&
+          nextStatus ===
+            1
+            ? "release"
+            : "set-status";
+
+        const response =
+          await fetch(
+            `/api/pos/tables?slug=${encodeURIComponent(slug)}`,
+            {
+              method:
+                "PUT",
+              credentials:
+                "include",
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+              body:
+                JSON.stringify({
+                  id:
+                    tableId,
+                  action,
+                  status:
+                    nextStatus,
+                }),
+            },
+          );
+
+        const responseData =
+          await response
+            .json()
+            .catch(
+              () => null,
+            );
+
+        if (
+          !response.ok ||
+          !responseData?.success
+        ) {
+          throw new Error(
+            responseData?.message ||
+              "Gagal mengubah status meja",
+          );
+        }
+
+        Toast.fire({
+          icon:
+            "success",
+          title:
+            responseData.message ||
+            "Status meja diperbarui",
+          topLayer:
+            true,
+        });
+
+        await fetchTables();
+      } catch (error) {
+        console.error(
+          "[CASHIER_TABLE_STATUS_ERROR]",
+          error,
+        );
+
+        Toast.fire({
+          icon:
+            "error",
+          title:
+            error instanceof Error
+              ? error.message
+              : "Gagal mengubah status meja",
+          topLayer:
+            true,
+        });
+
+        await fetchTables();
+      } finally {
+        setUpdatingTableStatusId(
+          null,
+        );
+      }
+    };
+
+  const handleManageTableDevice =
+    async (
+      table: any,
+    ) => {
+      const tableId =
+        Number(
+          table.id,
+        );
+
+      if (
+        !Number.isInteger(
+          tableId,
+        ) ||
+        tableId <= 0
+      ) {
+        return;
+      }
+
+      const tableName =
+        String(
+          table.table_name ||
+          table.tableName ||
+          `Meja ${tableId}`,
+        );
+
+      const currentSerial =
+        String(
+          table.iot_device_serial ||
+          "",
+        );
+
+      const result =
+        await Swal.fire({
+          title:
+            currentSerial
+              ? `Kelola Device ${tableName}`
+              : `Pasang Device ${tableName}`,
+          html:
+            currentSerial
+              ? `<div style="font-size:13px;color:#78716c;margin-bottom:10px">Device aktif saat ini:<br><b style="color:#292524">${currentSerial}</b></div>`
+              : `<div style="font-size:13px;color:#78716c;margin-bottom:10px">Masukkan serial number device yang sudah terdaftar.</div>`,
+          input:
+            "text",
+          inputValue:
+            currentSerial,
+          inputPlaceholder:
+            "Contoh: KALOO-000123",
+          showCancelButton:
+            true,
+          showDenyButton:
+            Boolean(
+              currentSerial,
+            ),
+          confirmButtonColor:
+            "#0E5C37",
+          denyButtonColor:
+            "#DC2626",
+          cancelButtonColor:
+            "#9CA3AF",
+          confirmButtonText:
+            currentSerial
+              ? "Simpan / Ganti Device"
+              : "Pasang Device",
+          denyButtonText:
+            "Lepas Device",
+          cancelButtonText:
+            "Batal",
+          inputValidator:
+            (
+              value,
+            ) => {
+              const serial =
+                String(
+                  value ||
+                  "",
+                ).trim();
+
+              if (!serial) {
+                return "Serial number wajib diisi";
+              }
+
+              if (
+                serial.length >
+                50
+              ) {
+                return "Serial number maksimal 50 karakter";
+              }
+
+              return null;
+            },
+        });
+
+      if (
+        result.isDismissed
+      ) {
+        return;
+      }
+
+      setManagingDeviceTableId(
+        tableId,
+      );
+
+      try {
+        if (
+          result.isDenied
+        ) {
+          const response =
+            await fetch(
+              `/api/pos/tables?slug=${encodeURIComponent(slug)}`,
+              {
+                method:
+                  "PUT",
+                credentials:
+                  "include",
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                },
+                body:
+                  JSON.stringify({
+                    id:
+                      tableId,
+                    action:
+                      "device-unbind",
+                  }),
+              },
+            );
+
+          const responseData =
+            await response
+              .json()
+              .catch(
+                () => null,
+              );
+
+          if (
+            !response.ok ||
+            !responseData?.success
+          ) {
+            throw new Error(
+              responseData?.message ||
+                "Gagal melepas device",
+            );
+          }
+
+          Toast.fire({
+            icon:
+              "success",
+            title:
+              "Device berhasil dilepas",
+            topLayer:
+              true,
+          });
+
+          await fetchTables();
+
+          return;
+        }
+
+        if (
+          result.isConfirmed
+        ) {
+          const response =
+            await fetch(
+              `/api/pos/tables?slug=${encodeURIComponent(slug)}`,
+              {
+                method:
+                  "PUT",
+                credentials:
+                  "include",
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                },
+                body:
+                  JSON.stringify({
+                    id:
+                      tableId,
+                    action:
+                      "device-bind",
+                    serialNumber:
+                      String(
+                        result.value ||
+                        "",
+                      )
+                        .trim()
+                        .toUpperCase(),
+                  }),
+              },
+            );
+
+          const responseData =
+            await response
+              .json()
+              .catch(
+                () => null,
+              );
+
+          if (
+            !response.ok ||
+            !responseData?.success
+          ) {
+            throw new Error(
+              responseData?.message ||
+                "Gagal memasang device",
+            );
+          }
+
+          Toast.fire({
+            icon:
+              "success",
+            title:
+              responseData.message ||
+              "Device berhasil dipasang",
+            topLayer:
+              true,
+          });
+
+          /*
+           * Device reconnect interval firmware sekitar beberapa detik.
+           * Polling Daftar Meja akan mengubah OFFLINE -> ONLINE otomatis.
+           */
+          await fetchTables();
+        }
+      } catch (error) {
+        console.error(
+          "[CASHIER_DEVICE_MANAGE_ERROR]",
+          error,
+        );
+
+        Toast.fire({
+          icon:
+            "error",
+          title:
+            error instanceof Error
+              ? error.message
+              : "Gagal mengelola device",
+          topLayer:
+            true,
+        });
+
+        await fetchTables();
+      } finally {
+        setManagingDeviceTableId(
+          null,
+        );
+      }
+    };
+
+  const handleToggleTablePager =
+    async (
+      table: any,
+    ) => {
+      const tableId =
+        Number(
+          table.id,
+        );
+
+      if (
+        !Number.isInteger(
+          tableId,
+        ) ||
+        tableId <= 0 ||
+        !table.iot_online
+      ) {
+        return;
+      }
+
+      const nextPagerActive =
+        !Boolean(
+          table.iot_pager_active,
+        );
+
+      setPagingTableId(
+        tableId,
+      );
+
+      try {
+        const response =
+          await fetch(
+            `/api/pos/tables?slug=${encodeURIComponent(slug)}`,
+            {
+              method:
+                "PUT",
+              credentials:
+                "include",
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+              body:
+                JSON.stringify({
+                  id:
+                    tableId,
+                  action:
+                    "pager",
+                  pagerActive:
+                    nextPagerActive,
+                }),
+            },
+          );
+
+        const result =
+          await response
+            .json()
+            .catch(
+              () => null,
+            );
+
+        if (
+          !response.ok ||
+          !result?.success
+        ) {
+          throw new Error(
+            result?.message ||
+              "Gagal mengubah pager",
+          );
+        }
+
+        Toast.fire({
+          icon:
+            "success",
+          title:
+            nextPagerActive
+              ? "Pager dinyalakan"
+              : "Pager dimatikan",
+          topLayer:
+            true,
+        });
+
+        await fetchTables();
+      } catch (error) {
+        console.error(
+          "[CASHIER_MANUAL_PAGER_ERROR]",
+          error,
+        );
+
+        Toast.fire({
+          icon:
+            "error",
+          title:
+            error instanceof Error
+              ? error.message
+              : "Gagal mengubah pager",
+          topLayer:
+            true,
+        });
+
+        await fetchTables();
+      } finally {
+        setPagingTableId(
+          null,
+        );
+      }
+    };
+
   const fetchReservations = useCallback(async () => {
     if (!slug || !isAuthenticated || activeTab !== "reservation") return;
     try {
@@ -582,15 +1281,37 @@ export default function CashierApp() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
+
     fetchOrders();
-    if (activeTab === "reservation") fetchReservations();
-    
-    const interval = setInterval(() => { 
-      fetchOrders(); 
-      if (activeTab === "reservation") fetchReservations();
+
+    if (activeTab === "reservation") {
+      fetchReservations();
+    }
+
+    if (activeTab === "tables") {
+      fetchTables();
+    }
+
+    const interval = setInterval(() => {
+      fetchOrders();
+
+      if (activeTab === "reservation") {
+        fetchReservations();
+      }
+
+      if (activeTab === "tables") {
+        fetchTables();
+      }
     }, 5000);
+
     return () => clearInterval(interval);
-  }, [fetchOrders, fetchReservations, isAuthenticated, activeTab]);
+  }, [
+    fetchOrders,
+    fetchReservations,
+    fetchTables,
+    isAuthenticated,
+    activeTab,
+  ]);
 
   const handleUpdateStock = async (
     itemId: number | string, 
@@ -656,41 +1377,163 @@ export default function CashierApp() {
     }
   };
 
-  const handleUpdateReservationStatus = async (resId: string | number, newStatus: string) => {
-    const isCancel = newStatus === 'canceled' || newStatus === 'no_show';
-    const actionText = newStatus === 'confirmed' ? 'mengonfirmasi' : newStatus === 'completed' ? 'menandai HADIR' : newStatus === 'canceled' ? 'Membatalkan' : 'menandai TIDAK HADIR';
+  const handleUpdateReservationStatus = async (
+    resId: string | number,
+    newStatus: string,
+  ) => {
+    const isCancel =
+      newStatus ===
+        "canceled" ||
+      newStatus ===
+        "no_show";
 
-    const confirm = await Swal.fire({
-      title: 'Apakah Anda Yakin?',
-      text: `Anda akan ${actionText} reservasi ini.`,
-      icon: isCancel ? 'warning' : 'question',
-      showCancelButton: true,
-      confirmButtonColor: isCancel ? '#DC2626' : '#0E5C37',
-      cancelButtonColor: '#9CA3AF',
-      confirmButtonText: 'Ya, Lanjutkan',
-      cancelButtonText: 'Batal',
-      reverseButtons: true,
-    });
+    const actionText =
+      newStatus ===
+      "confirmed"
+        ? "mengonfirmasi"
+        : newStatus ===
+            "completed"
+          ? "menandai HADIR"
+          : newStatus ===
+              "canceled"
+            ? "membatalkan"
+            : "menandai TIDAK HADIR";
 
-    if (!confirm.isConfirmed) return;
-
-    setReservations(prev => prev.map(r => String(r.id) === String(resId) ? { ...r, status: newStatus } : r));
-
-    try {
-      const res = await fetch(`/api/pos/reservations?slug=${slug}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: Number(resId), status: newStatus })
+    const confirm =
+      await Swal.fire({
+        title:
+          "Apakah Anda Yakin?",
+        text:
+          `Anda akan ${actionText} reservasi ini.`,
+        icon:
+          isCancel
+            ? "warning"
+            : "question",
+        showCancelButton:
+          true,
+        confirmButtonColor:
+          isCancel
+            ? "#DC2626"
+            : "#0E5C37",
+        cancelButtonColor:
+          "#9CA3AF",
+        confirmButtonText:
+          "Ya, Lanjutkan",
+        cancelButtonText:
+          "Batal",
+        reverseButtons:
+          true,
       });
 
-      const result = await res.json();
-      if (!res.ok || !result.success) throw new Error(result.message);
+    if (
+      !confirm.isConfirmed
+    ) {
+      return;
+    }
 
-      Toast.fire({ icon: 'success', title: 'Status Reservasi Diperbarui', topLayer: true });
+    setReservations(
+      (
+        previous,
+      ) =>
+        previous.map(
+          (
+            reservation,
+          ) =>
+            String(
+              reservation.id,
+            ) ===
+            String(
+              resId,
+            )
+              ? {
+                  ...reservation,
+                  status:
+                    newStatus,
+                }
+              : reservation,
+        ),
+    );
+
+    try {
+      const response =
+        await fetch(
+          `/api/pos/reservations?slug=${encodeURIComponent(slug)}`,
+          {
+            method:
+              "PUT",
+            credentials:
+              "include",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body:
+              JSON.stringify({
+                id:
+                  Number(
+                    resId,
+                  ),
+                status:
+                  newStatus,
+              }),
+          },
+        );
+
+      const result =
+        await response.json();
+
+      if (
+        !response.ok ||
+        !result.success
+      ) {
+        throw new Error(
+          result.message ||
+            "Gagal memperbarui reservasi",
+        );
+      }
+
+      /*
+       * Backend reservation sekarang sudah:
+       * - update reservations.status
+       * - update table_list.status
+       * - queueTableIoT() setelah commit
+       *
+       * Client hanya refresh state.
+       */
+      Toast.fire({
+        icon:
+          "success",
+        title:
+          "Status Reservasi Diperbarui",
+        topLayer:
+          true,
+      });
+
+      await Promise.all([
+        fetchReservations(),
+        fetchTables(),
+      ]);
     } catch (error) {
-      console.error("Gagal update reservasi:", error);
-      Toast.fire({ icon: 'error', title: 'Gagal memperbarui reservasi', topLayer: true });
-      fetchReservations(); 
+      console.error(
+        "Gagal update reservasi:",
+        error,
+      );
+
+      Toast.fire({
+        icon:
+          "error",
+        title:
+          error instanceof Error
+            ? error.message
+            : "Gagal memperbarui reservasi",
+        topLayer:
+          true,
+      });
+
+      await Promise.all([
+        fetchReservations(),
+        fetchTables(),
+      ]);
     }
   };
 
@@ -698,6 +1541,15 @@ export default function CashierApp() {
     e.preventDefault();
     if (!newResForm.name || !newResForm.date || !newResForm.startTime || !newResForm.endTime) {
       Toast.fire({ icon: 'warning', title: 'Semua informasi waktu wajib diisi', topLayer: true });
+      return;
+    }
+
+    if (newResForm.tableIds.length === 0) {
+      Toast.fire({
+        icon: 'warning',
+        title: 'Pilih minimal satu meja untuk reservasi',
+        topLayer: true,
+      });
       return;
     }
 
@@ -726,10 +1578,39 @@ export default function CashierApp() {
       const result = await res.json();
       if (!res.ok || !result.success) throw new Error(result.message || "Gagal menyimpan reservasi");
 
-      Toast.fire({ icon: 'success', title: 'Reservasi Manual Berhasil Dibuat', topLayer: true });
+      /*
+       * Backend POST reservation sudah atomically:
+       * - insert reservation
+       * - insert reservationTableList
+       * - set table_list.status = 3 untuk manual confirmed
+       * - queueTableIoT() setelah commit
+       */
+      Toast.fire({
+        icon:
+          'success',
+        title:
+          'Reservasi dibuat & meja menjadi RESERVED',
+        topLayer:
+          true,
+      });
+
       setShowAddReservationModal(false);
-      setNewResForm({ name: '', phone: '', date: new Date().toISOString().split('T')[0], startTime: '', endTime: '', pax: 1, tableIds: [], notes: '' });
-      fetchReservations();
+
+      setNewResForm({
+        name: '',
+        phone: '',
+        date: new Date().toISOString().split('T')[0],
+        startTime: '',
+        endTime: '',
+        pax: 1,
+        tableIds: [],
+        notes: '',
+      });
+
+      await Promise.all([
+        fetchReservations(),
+        fetchTables(),
+      ]);
     } catch (error: any) {
       console.error("Add reservation error:", error);
       Toast.fire({ icon: 'error', title: error.message || 'Gagal membuat reservasi', topLayer: true });
@@ -829,83 +1710,439 @@ export default function CashierApp() {
     orderId: string,
     newStatus: Order["status"],
     newPaymentStatus?: Order["paymentStatus"],
-    extraData?: any,
-  ) => {
-    try {
-      setOrders((prev) =>
-        prev.map((o) =>
-          String(o.id) === orderId
-            ? { ...o, status: newStatus, paymentStatus: newPaymentStatus || o.paymentStatus, ...extraData }
-            : o,
-        ),
+    extraData?: Record<string, unknown>,
+  ): Promise<boolean> => {
+    const previousOrder =
+      orders.find(
+        (order) =>
+          String(order.id) ===
+          String(orderId),
       );
-      await fetch(`/api/orders/history?slug=${slug}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+
+    if (!previousOrder) {
+      Toast.fire({
+        icon: "error",
+        title: "Pesanan tidak ditemukan",
+        topLayer: true,
+      });
+
+      return false;
+    }
+
+    // Optimistic UI, tetapi rollback jika PUT gagal.
+    setOrders((current) =>
+      current.map((order) =>
+        String(order.id) ===
+        String(orderId)
+          ? {
+              ...order,
+              status: newStatus,
+              paymentStatus:
+                newPaymentStatus ??
+                order.paymentStatus,
+              ...(extraData ?? {}),
+            }
+          : order,
+      ),
+    );
+
+    try {
+      console.log(
+        "[CASHIER_PUT_REQUEST]",
+        {
           orderId,
           status: newStatus,
-          paymentStatus: newPaymentStatus,
-          ...extraData,
-        }),
+          paymentStatus:
+            newPaymentStatus,
+          extraData:
+            extraData ?? null,
+        },
+      );
+
+      const response =
+        await fetch(
+          `/api/orders/history?slug=${encodeURIComponent(slug)}`,
+          {
+            method: "PUT",
+            credentials:
+              "same-origin",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              orderId:
+                Number(orderId),
+              status:
+                newStatus,
+              ...(newPaymentStatus !==
+              undefined
+                ? {
+                    paymentStatus:
+                      newPaymentStatus,
+                  }
+                : {}),
+              ...(extraData ?? {}),
+            }),
+          },
+        );
+
+      const result =
+        await response
+          .json()
+          .catch(() => null);
+
+      console.log(
+        "[CASHIER_PUT_RESPONSE]",
+        {
+          status:
+            response.status,
+          ok:
+            response.ok,
+          result,
+        },
+      );
+
+      if (
+        !response.ok ||
+        !result?.success
+      ) {
+        throw new Error(
+          result?.message ||
+            `PUT gagal (${response.status})`,
+        );
+      }
+
+      await fetchOrders();
+
+      return true;
+    } catch (error) {
+      console.error(
+        "[CASHIER_PUT_ERROR]",
+        error,
+      );
+
+      setOrders((current) =>
+        current.map((order) =>
+          String(order.id) ===
+          String(orderId)
+            ? previousOrder
+            : order,
+        ),
+      );
+
+      Toast.fire({
+        icon: "error",
+        title:
+          error instanceof Error
+            ? error.message
+            : "Gagal memperbarui pesanan",
+        topLayer: true,
       });
-    } catch (e) {
-      console.error("Gagal update status:", e);
+
+      return false;
     }
   };
 
-  const updateOrderStatus = (
+  const updateOrderStatus = async (
     orderId: string,
     newStatus: Order["status"],
     newPaymentStatus?: Order["paymentStatus"],
-    skipUndo: boolean = false
+    skipUndo: boolean = false,
   ) => {
-    const cur = orders.find((o) => String(o.id) === String(orderId));
-    if (!cur) return;
+    const currentOrder =
+      orders.find(
+        (order) =>
+          String(order.id) ===
+          String(orderId),
+      );
 
-    if (newStatus === "confirmed" && cur.paymentMethod === "cash" && !cur.getPayment) {
-      setCashPaymentPopup(cur);
-      setReceivedAmount("");
+    if (!currentOrder) {
       return;
     }
 
-    if (undoAction?.timeoutId) clearTimeout(undoAction.timeoutId);
-    executeUpdate(orderId, newStatus, newPaymentStatus);
-    
-    if (!skipUndo) {
-      const timeoutId = setTimeout(() => setUndoAction(null), 4000);
-      setUndoAction({
+    const paymentMethod =
+      String(
+        currentOrder.paymentMethod ||
+          (currentOrder as any)
+            .payment_method ||
+          "",
+      )
+        .trim()
+        .toLowerCase();
+
+    if (
+      newStatus ===
+        "confirmed" &&
+      paymentMethod ===
+        "cash" &&
+      !currentOrder.getPayment
+    ) {
+      setCashPaymentPopup(
+        currentOrder,
+      );
+
+      setReceivedAmount(
+        "",
+      );
+
+      return;
+    }
+
+    /*
+     * preparing -> ready:
+     * Cashier memilih apakah pager meja ikut dibunyikan.
+     */
+    if (
+      newStatus ===
+      "ready"
+    ) {
+      const rawTableId =
+        (currentOrder as any)
+          .table_number ??
+        (currentOrder as any)
+          .tableNumber ??
+        (currentOrder as any)
+          .table_id ??
+        (currentOrder as any)
+          .tableId;
+
+      const tableId =
+        Number(
+          rawTableId ??
+          0,
+        );
+
+      /*
+       * Ambil status device terbaru tepat sebelum dialog supaya pilihan
+       * "Bunyikan Pager" tidak bergantung data lama dari initial fetch.
+       */
+      const freshTables =
+        await fetchTables();
+
+      const table =
+        freshTables.find(
+          (
+            item,
+          ) =>
+            Number(
+              item.id,
+            ) ===
+            tableId,
+        ) ??
+        tables.find(
+          (
+            item,
+          ) =>
+            Number(
+              item.id,
+            ) ===
+            tableId,
+        );
+
+      const tableName =
+        String(
+          table?.table_name ||
+          table?.tableName ||
+          `Meja ${tableId || "-"}`,
+        );
+
+      const deviceOnline =
+        Boolean(
+          table?.iot_online,
+        );
+
+      let soundPager =
+        false;
+
+      if (
+        tableId > 0 &&
+        deviceOnline
+      ) {
+        const result =
+          await Swal.fire({
+            icon:
+              "question",
+            title:
+              "Tandai Siap Disajikan?",
+            html:
+              `<b>${tableName}</b><br><span style="font-size:13px;color:#78716c">Pilih apakah pager meja juga dibunyikan.</span>`,
+            showCancelButton:
+              true,
+            showDenyButton:
+              true,
+            confirmButtonColor:
+              "#2563EB",
+            denyButtonColor:
+              "#57534E",
+            cancelButtonColor:
+              "#A8A29E",
+            confirmButtonText:
+              "Siap + Bunyikan Pager",
+            denyButtonText:
+              "Siap Tanpa Bunyi",
+            cancelButtonText:
+              "Batal",
+            reverseButtons:
+              false,
+          });
+
+        if (
+          result.isDismissed
+        ) {
+          return;
+        }
+
+        soundPager =
+          result.isConfirmed;
+      } else {
+        const result =
+          await Swal.fire({
+            icon:
+              "info",
+            title:
+              "Tandai Siap Disajikan?",
+            text:
+              tableId > 0
+                ? `${tableName} tidak memiliki device IoT yang sedang online. Order akan menjadi Ready tanpa bunyi pager.`
+                : "Order tidak terhubung ke meja fisik. Order akan menjadi Ready tanpa bunyi pager.",
+            showCancelButton:
+              true,
+            confirmButtonColor:
+              "#2563EB",
+            cancelButtonColor:
+              "#A8A29E",
+            confirmButtonText:
+              "Ya, Tandai Ready",
+            cancelButtonText:
+              "Batal",
+          });
+
+        if (
+          !result.isConfirmed
+        ) {
+          return;
+        }
+
+        soundPager =
+          false;
+      }
+
+      await executeUpdate(
         orderId,
-        oldStatus: cur.status,
-        oldPaymentStatus: cur.paymentStatus,
-        timeoutId,
-      });
+        newStatus,
+        newPaymentStatus,
+        {
+          soundPager,
+        },
+      );
+
+      return;
+    }
+
+    if (
+      undoAction?.timeoutId
+    ) {
+      clearTimeout(
+        undoAction.timeoutId,
+      );
+    }
+
+    await executeUpdate(
+      orderId,
+      newStatus,
+      newPaymentStatus,
+    );
+
+    if (!skipUndo) {
+      setUndoAction(
+        null,
+      );
     }
   };
 
-  const handleConfirmCashPayment = () => {
-    if (!cashPaymentPopup) return;
-
-    const totalBill = Number(
-      cashPaymentPopup.totalAfterDiscount ||
-        cashPaymentPopup.total_after_discount ||
-        cashPaymentPopup.totalPrice ||
-        cashPaymentPopup.total_price ||
-        0,
-    );
-    const received = Number(receivedAmount.replace(/\D/g, ""));
-
-    if (received < totalBill) {
-      Toast.fire({ icon: "error", title: "Nominal uang kurang!", topLayer: true });
+  const handleConfirmCashPayment = async () => {
+    if (!cashPaymentPopup) {
       return;
     }
 
-    const change = received - totalBill;
+    const totalBill =
+      Number(
+        cashPaymentPopup
+          .totalAfterDiscount ||
+          cashPaymentPopup
+            .total_after_discount ||
+          cashPaymentPopup
+            .totalPrice ||
+          cashPaymentPopup
+            .total_price ||
+          0,
+      );
 
-    updateOrderStatus(String(cashPaymentPopup.id), "confirmed", "1");
+    const received =
+      Number(
+        receivedAmount.replace(
+          /\D/g,
+          "",
+        ),
+      );
 
-    Toast.fire({ icon: "success", title: `Lunas! Kembalian: ${formatPrice(change)}`, topLayer: true });
-    setCashPaymentPopup(null);
+    if (
+      !Number.isFinite(received) ||
+      received < totalBill
+    ) {
+      Toast.fire({
+        icon: "error",
+        title:
+          "Nominal uang kurang!",
+        topLayer: true,
+      });
+
+      return;
+    }
+
+    const change =
+      received -
+      totalBill;
+
+    /*
+     * Jangan panggil updateOrderStatus() di sini.
+     * Kalau dipanggil lagi, order masih belum punya getPayment,
+     * sehingga modal cash dibuka lagi dan PUT tidak pernah terjadi.
+     */
+    const success =
+      await executeUpdate(
+        String(
+          cashPaymentPopup.id,
+        ),
+        "confirmed",
+        "2" as Order["paymentStatus"],
+        {
+          getPayment:
+            received,
+          cashChange:
+            change,
+        },
+      );
+
+    if (!success) {
+      return;
+    }
+
+    Toast.fire({
+      icon: "success",
+      title:
+        `Lunas! Kembalian: ${formatPrice(change)}`,
+      topLayer: true,
+    });
+
+    setCashPaymentPopup(
+      null,
+    );
+
+    setReceivedAmount(
+      "",
+    );
   };
 
   const updateOrderNote = async (orderId: string, note: string) => {
@@ -989,10 +2226,24 @@ export default function CashierApp() {
   };
 
   const handleUndo = () => {
-    if (!undoAction) return;
-    clearTimeout(undoAction.timeoutId);
-    executeUpdate(undoAction.orderId, undoAction.oldStatus, undoAction.oldPaymentStatus);
-    setUndoAction(null);
+    if (
+      undoAction?.timeoutId
+    ) {
+      clearTimeout(
+        undoAction.timeoutId,
+      );
+    }
+
+    setUndoAction(
+      null,
+    );
+
+    Toast.fire({
+      icon: "info",
+      title:
+        "Status transaksi kasir tidak dapat di-undo.",
+      topLayer: true,
+    });
   };
 
   const pendingCount = useMemo(() => orders.filter((o) => o.status === "pending").length, [orders]);
@@ -1053,6 +2304,49 @@ export default function CashierApp() {
     return groups;
   }, [filteredStockItems, categories]);
 
+
+  const filteredTables = useMemo(() => {
+    const term = tableSearch.trim().toLowerCase();
+
+    return tables
+      .filter((table) => {
+        if (!term) return true;
+
+        const searchable = [
+          table.table_name,
+          table.tableName,
+          table.table_code,
+          table.tableCode,
+          table.id,
+        ]
+          .filter((value) => value !== null && value !== undefined)
+          .join(" ")
+          .toLowerCase();
+
+        return searchable.includes(term);
+      })
+      .sort((a, b) => Number(a.id) - Number(b.id));
+  }, [tables, tableSearch]);
+
+  const tableCounts = useMemo(() => {
+    const counts = {
+      available: 0,
+      occupied: 0,
+      reserved: 0,
+      disabled: 0,
+    };
+
+    for (const table of tables) {
+      const status = Number(table.status ?? table.table_status ?? 1);
+
+      if (status === 1) counts.available += 1;
+      else if (status === 2) counts.occupied += 1;
+      else if (status === 3) counts.reserved += 1;
+      else counts.disabled += 1;
+    }
+
+    return counts;
+  }, [tables]);
 
   const filteredReservations = useMemo(() => {
     return reservations.filter(res => {
@@ -1167,13 +2461,14 @@ export default function CashierApp() {
   }
 
   const TABS = [
-    { id: "pos", label: "Buat Pesanan", icon: Plus, count: 0 }, 
+    { id: "pos", label: "Buat Pesanan", icon: Plus, count: 0 },
     { id: "pending", label: "Pesanan Baru", icon: BellRing, count: pendingCount },
     { id: "preparing", label: "Proses Dapur", icon: ChefHat, count: preparingCount },
     { id: "ready", label: "Siap Saji", icon: CheckCircle, count: readyCount },
     { id: "completed", label: "Riwayat", icon: Clock, count: completedCount },
     { id: "reservation", label: "Daftar Reservasi", icon: CalendarDays, count: 0 }, 
     { id: "stock", label: "Kelola Stok", icon: Package, count: 0 },
+    { id: "tables", label: "Daftar Meja", icon: Armchair, count: tables.length },
   ];
 
   const popupTotalBill = cashPaymentPopup ? Number(cashPaymentPopup.totalAfterDiscount || cashPaymentPopup.total_after_discount || cashPaymentPopup.totalPrice || cashPaymentPopup.total_price || 0) : 0;
@@ -1199,7 +2494,15 @@ export default function CashierApp() {
 
           <nav className="p-4 space-y-2">
             {TABS.map((tab) => {
-              if ((tab.id === "pos" || tab.id === "stock" || tab.id === "reservation") && role !== "cashier") return null;
+              if (
+                (
+                  tab.id === "pos" ||
+                  tab.id === "tables" ||
+                  tab.id === "stock" ||
+                  tab.id === "reservation"
+                ) &&
+                role !== "cashier"
+              ) return null;
 
               const active = activeTab === tab.id;
               const Icon = tab.icon;
@@ -1278,6 +2581,361 @@ export default function CashierApp() {
               }}
             />
           </div>
+        ) : activeTab === "tables" ? (
+          <div className="flex-1 flex flex-col h-full bg-white overflow-hidden">
+            <header className="px-8 py-5 border-b border-stone-200 bg-white flex-shrink-0 z-10">
+              <div className="flex items-center justify-between gap-6">
+                <div>
+                  <h2 className="text-2xl font-black text-stone-800 font-display leading-tight">
+                    Daftar Meja
+                  </h2>
+                  <p className="text-sm font-medium text-stone-500 mt-1">
+                    Pantau meja dan kosongkan meja setelah pelanggan benar-benar meninggalkan meja.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={tableSearch}
+                      onChange={(e) => setTableSearch(e.target.value)}
+                      placeholder="Cari meja..."
+                      className="pl-10 pr-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600/20 text-sm font-medium text-stone-800 w-56"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => void fetchTables()}
+                    disabled={isLoadingTables}
+                    className="flex h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white px-4 text-xs font-black text-stone-600 hover:bg-stone-50 disabled:opacity-50 transition"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${isLoadingTables ? "animate-spin" : ""}`} />
+                    Refresh
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 gap-3 mt-5">
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Available</p>
+                  <p className="mt-1 text-2xl font-black text-emerald-800">{tableCounts.available}</p>
+                </div>
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-red-600">Occupied</p>
+                  <p className="mt-1 text-2xl font-black text-red-800">{tableCounts.occupied}</p>
+                </div>
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Reserved</p>
+                  <p className="mt-1 text-2xl font-black text-amber-800">{tableCounts.reserved}</p>
+                </div>
+                <div className="rounded-2xl border border-stone-200 bg-stone-100 px-4 py-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-stone-500">Disabled</p>
+                  <p className="mt-1 text-2xl font-black text-stone-700">{tableCounts.disabled}</p>
+                </div>
+              </div>
+            </header>
+
+            <div className="flex-1 overflow-y-auto p-8 bg-stone-50/50">
+              {isLoadingTables && tables.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-stone-400">
+                  <Loader2 className="w-9 h-9 animate-spin text-emerald-700 mb-4" />
+                  <p className="text-sm font-bold">Memuat daftar meja...</p>
+                </div>
+              ) : filteredTables.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-stone-400">
+                  <div className="w-20 h-20 rounded-3xl border-2 border-dashed border-stone-200 bg-white flex items-center justify-center mb-5">
+                    <Armchair className="w-9 h-9 text-stone-300" />
+                  </div>
+                  <p className="font-black text-stone-600">Meja tidak ditemukan</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5">
+                  {filteredTables.map((table) => {
+                    const status = Number(table.status ?? table.table_status ?? 1);
+
+                    const tableName = String(
+                      table.table_name ||
+                        table.tableName ||
+                        table.table_code ||
+                        table.tableCode ||
+                        `Meja ${table.id}`,
+                    );
+
+                    const tableCode = String(table.table_code || table.tableCode || "");
+                    const capacity = table.capacity ?? table.pax ?? table.seat_capacity ?? null;
+
+                    const statusInfo =
+                      status === 1
+                        ? {
+                            label: "AVAILABLE",
+                            title: "Tersedia",
+                            card: "border-emerald-200 bg-emerald-50",
+                            badge: "bg-emerald-600 text-white",
+                            icon: "text-emerald-700",
+                          }
+                        : status === 2
+                          ? {
+                              label: "OCCUPIED",
+                              title: "Sedang Digunakan",
+                              card: "border-red-200 bg-red-50",
+                              badge: "bg-red-600 text-white",
+                              icon: "text-red-700",
+                            }
+                          : status === 3
+                            ? {
+                                label: "RESERVED",
+                                title: "Reservasi",
+                                card: "border-amber-200 bg-amber-50",
+                                badge: "bg-amber-500 text-white",
+                                icon: "text-amber-700",
+                              }
+                            : {
+                                label: "DISABLED",
+                                title: "Nonaktif",
+                                card: "border-stone-200 bg-stone-100",
+                                badge: "bg-stone-500 text-white",
+                                icon: "text-stone-500",
+                              };
+
+                    return (
+                      <div key={table.id} className={`rounded-3xl border-2 p-5 shadow-sm ${statusInfo.card}`}>
+                        <div className="flex items-start justify-between gap-4">
+                          <div className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm ${statusInfo.icon}`}>
+                            <Armchair className="h-6 w-6" />
+                          </div>
+
+                          <div className="flex flex-col items-end gap-2">
+                            <span className={`rounded-lg px-3 py-1 text-[9px] font-black tracking-[0.15em] ${statusInfo.badge}`}>
+                              {statusInfo.label}
+                            </span>
+
+                            {!table.iot_registered ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-[9px] font-black tracking-wider text-stone-400">
+                                BELUM ADA DEVICE
+                              </span>
+                            ) : table.iot_device_status === "maintenance" ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-lg border border-orange-200 bg-white px-2.5 py-1 text-[9px] font-black tracking-wider text-orange-700">
+                                <span className="h-2 w-2 rounded-full bg-orange-500" />
+                                MAINTENANCE
+                              </span>
+                            ) : table.iot_device_status === "banned" ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[9px] font-black tracking-wider text-red-700">
+                                <span className="h-2 w-2 rounded-full bg-red-500" />
+                                BANNED
+                              </span>
+                            ) : table.iot_device_status === "inactive" ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-[9px] font-black tracking-wider text-stone-600">
+                                <span className="h-2 w-2 rounded-full bg-stone-400" />
+                                DEVICE INACTIVE
+                              </span>
+                            ) : table.iot_online ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-2.5 py-1 text-[9px] font-black tracking-wider text-emerald-700">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                                IOT ONLINE
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-white px-2.5 py-1 text-[9px] font-black tracking-wider text-amber-700">
+                                <span className="h-2 w-2 rounded-full bg-amber-400" />
+                                IOT OFFLINE
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="mt-5">
+                          <p className="text-2xl font-black text-stone-900">{tableName}</p>
+                          <p className="mt-1 text-xs font-bold text-stone-500">{statusInfo.title}</p>
+                        </div>
+
+                        <div className="mt-5 grid grid-cols-2 gap-2">
+                          <div className="rounded-xl border border-white/80 bg-white/70 px-3 py-2">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-stone-400">Kode</p>
+                            <p className="mt-1 text-xs font-black text-stone-700">{tableCode || "-"}</p>
+                          </div>
+
+                          <div className="rounded-xl border border-white/80 bg-white/70 px-3 py-2">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-stone-400">Kapasitas</p>
+                            <p className="mt-1 text-xs font-black text-stone-700">{capacity ? `${capacity} Pax` : "-"}</p>
+                          </div>
+                        </div>
+
+                        <div className="mt-2 rounded-xl border border-white/80 bg-white/70 px-3 py-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-[9px] font-black uppercase tracking-widest text-stone-400">
+                                Device ID
+                              </p>
+                              <p className="mt-1 truncate font-mono text-[11px] font-black text-stone-700">
+                                {table.iot_device_serial || "Belum dipasang"}
+                              </p>
+
+                              {table.iot_device_status && (
+                                <p className="mt-1 text-[9px] font-black uppercase tracking-wider text-stone-400">
+                                  Status alat: {String(table.iot_device_status)}
+                                </p>
+                              )}
+                            </div>
+
+                            <Bluetooth className={`h-4 w-4 flex-shrink-0 ${
+                              table.iot_device_status === "banned"
+                                ? "text-red-500"
+                                : table.iot_device_status === "maintenance"
+                                  ? "text-orange-500"
+                                  : table.iot_online
+                                    ? "text-emerald-600"
+                                    : table.iot_registered
+                                      ? "text-stone-500"
+                                      : "text-stone-300"
+                            }`} />
+                          </div>
+                        </div>
+
+                        <div className="mt-5 grid grid-cols-2 gap-2">
+                          {status !== 3 && (
+                            <button
+                              type="button"
+                              disabled={
+                                updatingTableStatusId ===
+                                Number(
+                                  table.id,
+                                )
+                              }
+                              onClick={() =>
+                                void handleManualTableStatus(
+                                  table,
+                                )
+                              }
+                              className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-3 text-xs font-black text-stone-700 transition hover:bg-stone-50 disabled:opacity-50"
+                            >
+                              {updatingTableStatusId ===
+                              Number(
+                                table.id,
+                              ) ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Settings2 className="h-4 w-4" />
+                              )}
+                              Ubah Status
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            disabled={
+                              managingDeviceTableId ===
+                              Number(
+                                table.id,
+                              )
+                            }
+                            onClick={() =>
+                              void handleManageTableDevice(
+                                table,
+                              )
+                            }
+                            className={`flex min-h-11 items-center justify-center gap-2 rounded-xl border bg-white px-3 text-xs font-black transition disabled:opacity-50 ${
+                              status === 3
+                                ? "col-span-2"
+                                : ""
+                            } ${
+                              table.iot_registered
+                                ? "border-blue-200 text-blue-700 hover:bg-blue-50"
+                                : "border-stone-300 text-stone-700 hover:bg-stone-50"
+                            }`}
+                          >
+                            {managingDeviceTableId ===
+                            Number(
+                              table.id,
+                            ) ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Bluetooth className="h-4 w-4" />
+                            )}
+
+                            {table.iot_registered
+                              ? "Kelola Device"
+                              : "Pasang Device"}
+                          </button>
+                        </div>
+
+                        {table.iot_online && (
+                          <button
+                            type="button"
+                            disabled={
+                              pagingTableId ===
+                              Number(
+                                table.id,
+                              )
+                            }
+                            onClick={() =>
+                              void handleToggleTablePager(
+                                table,
+                              )
+                            }
+                            className={`mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-black text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                              table.iot_pager_active
+                                ? "bg-red-600 hover:bg-red-700"
+                                : "bg-blue-600 hover:bg-blue-700"
+                            }`}
+                          >
+                            {pagingTableId ===
+                            Number(
+                              table.id,
+                            ) ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <BellRing className="h-4 w-4" />
+                            )}
+
+                            {table.iot_pager_active
+                              ? "Matikan Pager"
+                              : "Panggil Pager"}
+                          </button>
+                        )}
+
+                        {status === 2 && (
+                          <button
+                            type="button"
+                            disabled={releasingTableId === Number(table.id)}
+                            onClick={() => void handleReleaseTable(table)}
+                            className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-black text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {releasingTableId === Number(table.id) ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="h-4 w-4" />
+                            )}
+                            Kosongkan Meja
+                          </button>
+                        )}
+
+                        {status === 3 && (
+                          <div className="mt-5 rounded-xl border border-amber-200 bg-white/70 px-4 py-3 text-center text-xs font-bold text-amber-700">
+                            Kelola melalui menu Reservasi
+                          </div>
+                        )}
+
+                        {status === 1 && (
+                          <div className="mt-5 rounded-xl border border-emerald-200 bg-white/70 px-4 py-3 text-center text-xs font-bold text-emerald-700">
+                            Siap digunakan pelanggan
+                          </div>
+                        )}
+
+                        {status === 0 && (
+                          <div className="mt-5 rounded-xl border border-stone-200 bg-white/70 px-4 py-3 text-center text-xs font-bold text-stone-500">
+                            Meja sedang dinonaktifkan
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
         ) : activeTab === "stock" ? (
           <div className="flex-1 flex flex-col h-full bg-white overflow-hidden">
             
@@ -1657,25 +3315,70 @@ export default function CashierApp() {
                   )}
                 </div>
               ) : (
-                // 🔴 CSS GRID 3 KOLOM DENGAN ITEMS-START (Mencegah Card Melar dan Urutan Tetap Benar)
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-                  <AnimatePresence mode="popLayout">
+                /*
+                 * Masonry-style columns.
+                 *
+                 * CSS Grid biasa membuat tinggi setiap row mengikuti card
+                 * tertinggi. Akibatnya card pendek meninggalkan ruang kosong.
+                 *
+                 * CSS columns membuat setiap card langsung menyambung ke card
+                 * berikutnya sehingga area layar jauh lebih padat.
+                 */
+                <div
+                  className="
+                    columns-1
+                    md:columns-2
+                    xl:columns-3
+                    gap-5
+                    [column-fill:balance]
+                  "
+                >
+                  <AnimatePresence>
                     {filteredOrders.map((order) => (
                       <motion.div
-                        layout
                         key={order.id}
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        transition={{ duration: 0.2 }}
-                        className="w-full"
+                        initial={{
+                          opacity: 0,
+                          y: 10,
+                          scale: 0.98,
+                        }}
+                        animate={{
+                          opacity: 1,
+                          y: 0,
+                          scale: 1,
+                        }}
+                        exit={{
+                          opacity: 0,
+                          scale: 0.97,
+                        }}
+                        transition={{
+                          duration: 0.18,
+                        }}
+                        className="
+                          mb-5
+                          inline-block
+                          w-full
+                          break-inside-avoid
+                          align-top
+                        "
+                        style={{
+                          breakInside:
+                            "avoid",
+                          WebkitColumnBreakInside:
+                            "avoid",
+                        }}
                       >
                         <OrderCard
                           order={order}
                           onUpdateStatus={updateOrderStatus}
                           onUpdateNote={updateOrderNote}
                           onPrintOrder={handlePrintOrder}
-                          role={role === "kitchen" ? "kitchen" : "cashier"}
+                          role={
+                            role ===
+                            "kitchen"
+                              ? "kitchen"
+                              : "cashier"
+                          }
                         />
                       </motion.div>
                     ))}
@@ -1688,7 +3391,7 @@ export default function CashierApp() {
       </main>
 
       {/* RIGHT PANEL */}
-      {role === "cashier" && activeTab !== "pos" && activeTab !== "stock" && activeTab !== "reservation" && (
+      {role === "cashier" && activeTab !== "pos" && activeTab !== "tables" && activeTab !== "stock" && activeTab !== "reservation" && (
         <aside className="w-80 bg-white border-l border-stone-200 flex flex-col z-20 flex-shrink-0 shadow-sm">
           <div className="h-20 flex items-center px-6 border-b border-stone-100">
             <h3 className="text-base font-black text-stone-800">Ringkasan Hari Ini</h3>

@@ -3,13 +3,13 @@
   "version": "26.8.29.1",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "concurrently -k -n \"NEXT,IOT\" \"npm:dev:next\" \"npm:dev:iot\"",
     "build": "next build",
     "start": "next start -p 3008",
     "startmain": "next start -p 3007",
-    "startiot": "cross-env NODE_ENV=production node server.js",
-    "deviot": "tsx --env-file=.env server-iot.ts",
-    "dev:all": "concurrently --kill-others \"npm run dev\" \"npm run deviot\"",
+    "start:iot": "node --env-file=.env --import tsx server-iot.ts",
+    "dev:next": "next dev",
+    "dev:iot": "node --env-file=.env --watch --import tsx server-iot.ts",
     "lint": "eslint"
   },
   "dependencies": {
@@ -24,6 +24,7 @@
     "clsx": "^2.1.0",
     "cross-env": "^10.1.0",
     "date-fns": "^4.1.0",
+    "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "framer-motion": "^11.0.0",
     "html2canvas": "^1.4.1",
@@ -45,6 +46,7 @@
     "sharp": "^0.34.5",
     "sweetalert2": "^11.26.24",
     "tailwind-merge": "^2.2.0",
+    "tsx": "^4.23.12",
     "ws": "^8.21.3",
     "xlsx": "^0.18.5",
     "zustand": "^4.5.0"

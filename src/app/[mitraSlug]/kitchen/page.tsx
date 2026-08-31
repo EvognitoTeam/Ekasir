@@ -787,11 +787,50 @@ export default function KitchenDisplay() {
         orderId: string,
         newStatus: Order['status'],
       ): Promise<void> => {
-        const previousOrders = orders;
+        /*
+         * Kitchen hanya boleh confirmed -> preparing.
+         * Ready adalah aksi Cashier/front-of-house.
+         *
+         * Guard ini menjaga UI lama/KitchenTicket lama agar tidak
+         * mengirim PUT ready walaupun tombolnya masih sempat terlihat.
+         */
+        if (
+          newStatus !== 'preparing'
+        ) {
+          Toast.fire({
+            icon: 'info',
+            title:
+              'Status Ready dilakukan dari Kasir.',
+          });
 
+          return;
+        }
+
+        const previousOrder =
+          orders.find(
+            (order) =>
+              String(order.id) ===
+              String(orderId),
+          );
+
+        if (!previousOrder) {
+          Toast.fire({
+            icon: 'error',
+            title:
+              'Pesanan tidak ditemukan.',
+          });
+
+          return;
+        }
+
+        /*
+         * Optimistic update hanya untuk tiket yang dipilih.
+         * Jika request gagal, rollback juga hanya tiket tersebut.
+         */
         setOrders((currentOrders) =>
           currentOrders.map((order) =>
-            String(order.id) === orderId
+            String(order.id) ===
+            String(orderId)
               ? {
                   ...order,
                   status: newStatus,
@@ -801,52 +840,98 @@ export default function KitchenDisplay() {
         );
 
         try {
+          console.log(
+            '[KITCHEN_PUT_REQUEST]',
+            {
+              orderId,
+              status:
+                newStatus,
+              slug,
+            },
+          );
+
           const response = await fetch(
             '/api/pos/kitchen/orders',
             {
               method: 'PUT',
 
               headers: {
-                Accept: 'application/json',
+                Accept:
+                  'application/json',
                 'Content-Type':
                   'application/json',
               },
 
-              credentials: 'include',
+              credentials:
+                'include',
+
+              cache:
+                'no-store',
 
               body: JSON.stringify({
-                orderId,
-                status: newStatus,
+                orderId:
+                  Number(orderId),
+                status:
+                  newStatus,
                 slug,
               }),
             },
           );
 
           const result =
-            (await response.json()) as {
-              success?: boolean;
-              message?: string;
-            };
+            (await response
+              .json()
+              .catch(() => null)) as {
+                success?: boolean;
+                message?: string;
+                data?: {
+                  orderId?: number;
+                  previousStatus?: string;
+                  status?: string;
+                };
+              } | null;
+
+          console.log(
+            '[KITCHEN_PUT_RESPONSE]',
+            {
+              httpStatus:
+                response.status,
+              ok:
+                response.ok,
+              result,
+            },
+          );
 
           if (
             !response.ok ||
-            !result.success
+            !result?.success
           ) {
             throw new Error(
-              result.message ??
+              result?.message ??
                 'Gagal memperbarui status pesanan.',
             );
           }
+
+          /*
+           * Ambil state authoritative dari DB.
+           * Ini penting karena route juga mengisi preparingAt / readyAt
+           * dan memicu IoT gateway setelah update berhasil.
+           */
+          await fetchOrders(true);
         } catch (error) {
           console.error(
-            'Gagal memperbarui status kitchen:',
+            '[KITCHEN_PUT_ERROR]',
             error,
           );
 
-          /*
-           * Rollback optimistic update.
-           */
-          setOrders(previousOrders);
+          setOrders((currentOrders) =>
+            currentOrders.map((order) =>
+              String(order.id) ===
+              String(orderId)
+                ? previousOrder
+                : order,
+            ),
+          );
 
           Toast.fire({
             icon: 'error',
