@@ -18,7 +18,10 @@ package-lock.json
 /src/components/erp/
 /src/app/api/erp/
 /src/lib/erp/
-
+# =========================
+# KALOO IOT FIRMWARE
+# =========================
+/firmware
 # testing
 /coverage
 /src/app/tools
