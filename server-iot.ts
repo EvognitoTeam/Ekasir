@@ -33,7 +33,7 @@ import {
 const PORT =
   Number(
     process.env.IOT_PORT ??
-    3010,
+    3011,
   );
 
 const HOST =
