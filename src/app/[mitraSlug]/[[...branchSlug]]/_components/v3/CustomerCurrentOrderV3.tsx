@@ -10,6 +10,7 @@ import {
   Clock3,
   PackageCheck,
   QrCode,
+  Loader2
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useOrderStore } from '@/store/order.store';
