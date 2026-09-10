@@ -970,7 +970,7 @@ export default function AdminLayout({
           >
             <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-black/10 bg-[#f7f7f4]">
               <Image
-                src="/logo.png"
+                src={KALOO_BRAND.logo}
                 alt="KALOO POS"
                 fill
                 priority
