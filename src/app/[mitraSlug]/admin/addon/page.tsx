@@ -33,6 +33,10 @@ import {
   X,
 } from "lucide-react";
 
+import type {
+  LucideIcon,
+} from 'lucide-react';
+
 import {
   useLanguageStore,
 } from "@/store/language.store";
@@ -1165,10 +1169,7 @@ function Metric({
   value,
   dark = false,
 }: {
-  icon: React.ComponentType<{
-    size?: number;
-    className?: string;
-  }>;
+  icon: LucideIcon;
   label: string;
   value: string;
   dark?: boolean;
