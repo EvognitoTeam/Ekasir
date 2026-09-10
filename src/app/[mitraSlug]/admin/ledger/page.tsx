@@ -2440,12 +2440,11 @@ export default function AdminLedgerPage() {
                                             []
                                           ).find(
                                             (
-                                              menuItem:
-                                                AnyRecord,
+                                              menuItem,
                                             ) =>
                                               String(
                                                 readField(
-                                                  menuItem,
+                                                  menuItem as unknown as AnyRecord,
                                                   [
                                                     "id",
                                                   ],
