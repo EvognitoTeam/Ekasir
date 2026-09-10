@@ -1,8 +1,10 @@
+import { APP_VERSION } from "@/lib/appVersion";
+
 export const KALOO_BRAND = {
   name: "KALOO",
   productName: "KALOO POS",
   descriptor: "Restaurant Operating System",
-  logo: "/logo.png",
+  logo: `/logo.png?v=${APP_VERSION}`,
 
   colors: {
     background: "#f7f7f5",

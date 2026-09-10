@@ -32,6 +32,7 @@ import { FaInstagram, FaWhatsapp } from 'react-icons/fa6';
 import { KALOO_BRAND } from '@/config/brand';
 import { isAddonEnabled } from '@/config/addons';
 import { useLanguageStore, type Locale } from '@/store/language.store';
+import { APP_VERSION } from "@/lib/appVersion";
 
 type PlatformFeeResult = {
   transactionValue: number;
@@ -329,7 +330,7 @@ export default function LandingPageClient() {
           <Link href="/" className="group flex items-center gap-3" aria-label="KALOO POS">
             <div className="relative h-12 w-12 overflow-hidden rounded-xl border border-black/10 bg-white">
               <Image
-                src="/logo.png"
+                src={KALOO_BRAND.logo}
                 alt={`${KALOO_BRAND.name} Logo`}
                 fill
                 priority
@@ -778,7 +779,7 @@ export default function LandingPageClient() {
         <div className="mx-auto flex max-w-7xl flex-col gap-8 px-5 py-10 sm:px-6 md:flex-row md:items-end md:justify-between lg:px-8">
           <div className="flex items-center gap-4">
             <div className="relative h-14 w-14 overflow-hidden rounded-xl border border-black/10 bg-white">
-              <Image src="/logo.png" alt={KALOO_BRAND.name} fill sizes="56px" className="object-contain p-1.5" />
+              <Image src={KALOO_BRAND.logo} alt={KALOO_BRAND.name} fill sizes="56px" className="object-contain p-1.5" />
             </div>
             <div>
               <p className="text-lg font-extrabold tracking-[0.18em]">{KALOO_BRAND.name}</p>
@@ -822,7 +823,7 @@ export default function LandingPageClient() {
 
             <div className="mb-7 flex items-center gap-4">
               <div className="relative h-14 w-14 overflow-hidden rounded-xl border border-black/10 bg-white">
-                <Image src="/logo.png" alt={KALOO_BRAND.name} fill sizes="56px" className="object-contain p-1.5" />
+                <Image src={KALOO_BRAND.logo} alt={KALOO_BRAND.name} fill sizes="56px" className="object-contain p-1.5" />
               </div>
               <div>
                 <p className="text-[10px] font-extrabold uppercase tracking-[0.22em] text-black/35">KALOO POS</p>
