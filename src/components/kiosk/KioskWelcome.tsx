@@ -3,6 +3,7 @@
 import {
   ArrowUpRight,
   Sparkles,
+  Store,
   Utensils,
 } from 'lucide-react';
 
@@ -13,7 +14,10 @@ import Image from 'next/image';
 type Props = {
   storeName: string;
   tagline?: string;
-  logoUrl?: string | null;
+  /**
+   * Sumber gambar memakai kolom `mitra.banner`.
+   */
+  banner?: string | null;
   onStart: () => void;
   onOpenSettings?: () => void; 
 };
@@ -21,7 +25,7 @@ type Props = {
 export default function KioskWelcome({
   storeName,
   tagline = 'Pesan cepat, ambil nyaman, nikmati tanpa antre lama.',
-  logoUrl,
+  banner,
   onStart,
   onOpenSettings,
 }: Props) {
@@ -29,6 +33,14 @@ export default function KioskWelcome({
   // --- Logic untuk Secret Button ---
   const [clickCount, setClickCount] = useState(0);
   const clickTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (clickTimeout.current) {
+        clearTimeout(clickTimeout.current);
+      }
+    };
+  }, []);
 
   const handleSecretClick = () => {
     // Hitung nilai baru terlebih dahulu di luar setState
@@ -51,13 +63,27 @@ export default function KioskWelcome({
     }, 2000);
   };
 
-  // --- State untuk URL gambar (mengakomodasi fallback error) ---
-  const [imgSource, setImgSource] = useState(logoUrl || '/logo.png');
+  /*
+   * Kolom gambar tenant di database adalah `mitra.banner`.
+   *
+   * Jika banner kosong / null / gagal dimuat, jangan fallback ke /logo.png.
+   * Tampilkan icon Store default agar tidak memakai branding tenant lain.
+   */
+  const normalizedBanner =
+    typeof banner === 'string'
+      ? banner.trim()
+      : '';
 
-  // Perbarui state jika prop logoUrl berubah
+  const [bannerFailed, setBannerFailed] =
+    useState(false);
+
   useEffect(() => {
-    setImgSource(logoUrl || '/logo.png');
-  }, [logoUrl]);
+    setBannerFailed(false);
+  }, [normalizedBanner]);
+
+  const hasBanner =
+    Boolean(normalizedBanner) &&
+    !bannerFailed;
 
   return (
     <section className="relative min-h-[100dvh] overflow-hidden bg-[#f4f1e8] text-[#171717]">
@@ -72,14 +98,15 @@ export default function KioskWelcome({
             {/* --- 1. Logo Header (Kecil) --- */}
             {/* Kontainer luar tetap menentukan ukuran fisik kotak (h-12 w-12) */}
             <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl border-2 border-[#171717] bg-white shadow-[4px_4px_0_#171717] sm:h-14 sm:w-14">
-              <Image
-                src={imgSource}
-                alt={storeName}
-                width={80} 
-                height={80}
-                className="h-full w-auto object-contain p-1.5"
-                onError={() => setImgSource('/logo.png')}
-              />
+
+                <Image
+                  src="/logo.png"
+                  alt={storeName}
+                  width={80}
+                  height={80}
+                  className="h-full w-full object-contain p-1.5"
+                  onError={() => setBannerFailed(true)}
+                />
             </div>
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.24em] text-neutral-500" onClick={handleSecretClick}>
@@ -145,18 +172,27 @@ export default function KioskWelcome({
               {/* Ganti fill dengan width/height eksplisit */}
               {/* Kita set ukuran intrinsik yang cukup besar (asumsi persegi, misal 500x500),
                   Next.js akan menggunakan ini untuk optimasi aspect ratio. */}
-              <Image
-                src={imgSource}
-                alt={storeName}
-                width={500}
-                height={500}
-                // CSS: 'h-full w-full' memastikan gambar mengisi seluruh sisa ruang di dalam padding kotak putih,
-                // 'object-contain' memastikan gambar besar ini tidak gepeng dan pas di dalam kotak.
-                className="h-full w-full object-contain"
-                // Priority ditambahkan karena ini gambar utama di area "above the fold"
-                priority
-                onError={() => setImgSource('/logo.png')}
-              />
+              {hasBanner ? (
+                <Image
+                  src={normalizedBanner}
+                  alt={storeName}
+                  width={500}
+                  height={500}
+                  className="h-full w-full object-contain"
+                  priority
+                  onError={() => setBannerFailed(true)}
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center">
+                  <div className="flex h-40 w-40 items-center justify-center rounded-[2.5rem] bg-[#f4f1e8] sm:h-48 sm:w-48">
+                    <Store
+                      aria-hidden="true"
+                      className="h-20 w-20 text-[#171717] sm:h-24 sm:w-24"
+                      strokeWidth={1.75}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </motion.div>
         </main>

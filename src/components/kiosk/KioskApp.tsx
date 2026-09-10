@@ -41,6 +41,11 @@ type BootstrapResponse = {
   data?: {
     store: {
       name: string;
+      banner?: string | null;
+      /**
+       * Legacy API compatibility only.
+       * Database source-of-truth tetap mitra.banner.
+       */
       logoUrl?: string | null;
       tagline?: string | null;
       mitraId: number;
@@ -205,7 +210,7 @@ export default function KioskApp({
     useState({
       name:
         DEFAULT_STORE_NAME,
-      logoUrl:
+      banner:
         null as string | null,
       tagline:
         null as string | null,
@@ -425,7 +430,9 @@ export default function KioskApp({
           name:
             result.data.store
               .name,
-          logoUrl:
+          banner:
+            result.data.store
+              .banner ??
             result.data.store
               .logoUrl ??
             null,
@@ -1302,8 +1309,8 @@ export default function KioskApp({
           storeName={
             store.name
           }
-          logoUrl={
-            store.logoUrl
+          banner={
+            store.banner
           }
           tagline={
             store.tagline ??

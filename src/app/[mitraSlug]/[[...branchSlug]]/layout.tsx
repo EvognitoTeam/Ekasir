@@ -1,14 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata } from 'next';
 import { getMitraBySlug } from '@/lib/mitra';
-import PwaRegister
-  from '@/components/pwa/PwaRegister';
 
-// 🔴 1. Tambahkan 'branchSlug' ke dalam tipe params.
-// Karena kita menggunakan [[...branchSlug]], tipenya adalah array opsional (string[])
 type Props = {
-  params: Promise<{ 
+  params: Promise<{
     mitraSlug: string;
-    branchSlug?: string[]; 
+    branchSlug?: string[];
   }>;
   children: React.ReactNode;
 };
@@ -16,24 +12,22 @@ type Props = {
 export async function generateMetadata({
   params,
 }: Props): Promise<Metadata> {
-  // 🔴 2. Await seluruh params terlebih dahulu untuk mencegah error hydration/server
-  const resolvedParams = await params;
-  const slug = resolvedParams.mitraSlug;
+  const { mitraSlug } = await params;
 
   try {
-    const mitra = await getMitraBySlug(slug);
+    const mitra = await getMitraBySlug(mitraSlug);
 
     if (mitra) {
+      const description =
+        mitra.mitra_welcome ||
+        `Official digital menu and ordering system for ${mitra.mitra_name}`;
+
       return {
         title: `${mitra.mitra_name} - KALOO POS`,
-        description:
-          mitra.mitra_welcome ||
-          `Official digital menu and ordering system for ${mitra.mitra_name}`,
+        description,
         openGraph: {
           title: `${mitra.mitra_name} - KALOO POS`,
-          description:
-            mitra.mitra_welcome ||
-            `Official digital menu and ordering system for ${mitra.mitra_name}`,
+          description,
         },
       };
     }
@@ -46,17 +40,8 @@ export async function generateMetadata({
   };
 }
 
-export default function MitraLayout({
+export default function MitraBranchLayout({
   children,
 }: Props) {
-  return (
-    <>
-      {/* Stylesheet untuk Rich Text (React Quill) */}
-      <link
-        rel="stylesheet" href="https://unpkg.com/react-quill@1.3.3/dist/quill.snow.css"
-      />
-      <PwaRegister />
-      {children}
-    </>
-  );
+  return children;
 }

@@ -22,23 +22,67 @@ export const runtime = 'nodejs';
 
 /**
  * ==========================================================
+ * SETTINGS SCOPE
+ * ==========================================================
+ *
+ * KALOO menggunakan dua scope konfigurasi:
+ *
+ * GLOBAL:
+ * settings.branch_id IS NULL
+ *
+ * Berlaku untuk seluruh mitra:
+ * - taxRate
+ * - serviceRate
+ * - isTaxIncluded
+ * - faq
+ * - profil mitra
+ * - rekening payout
+ *
+ *
+ * OUTLET:
+ * settings.branch_id = branch id
+ *
+ * Khusus outlet:
+ * - wifiSSID
+ * - wifiPassword
+ * - facility
+ *
+ *
+ * Untuk outlet PUSAT:
+ * WiFi + facility tetap menggunakan row branch_id IS NULL.
+ *
+ * Artinya row pusat menyimpan:
+ * - canonical global settings
+ * - local settings milik outlet pusat
+ *
+ * Sedangkan row branch hanya canonical untuk:
+ * - WiFi
+ * - facility
+ *
+ * tax/service/faq pada row branch TIDAK digunakan oleh GET sebagai
+ * sumber global.
+ */
+
+/**
+ * ==========================================================
  * JWT
  * ==========================================================
  *
- * GET settings dapat dipanggil customer/public.
+ * GET settings tetap PUBLIC karena dipakai customer.
  *
- * Karena itu kita tidak bisa menggunakan requirePosAuth()
- * untuk GET.
+ * JWT pada GET hanya digunakan untuk:
+ * - mendeteksi session
+ * - menentukan branch staff POS jika staff terikat branch
  *
- * JWT di GET hanya digunakan untuk mendeteksi apakah
- * request berasal dari user yang sudah login.
- *
- * PUT tetap menggunakan requirePosAuth().
+ * PUT wajib Owner melalui requirePosAuth().
  */
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
+if (
+  !JWT_SECRET &&
+  process.env.NODE_ENV === 'production'
+) {
   throw new Error(
     'JWT_SECRET wajib dikonfigurasi di production.',
   );
@@ -65,6 +109,11 @@ type OptionalAuthPayload = JWTPayload & {
   slug?: string;
   email?: string;
 };
+
+type SettingsWriteScope =
+  | 'global'
+  | 'outlet'
+  | 'legacy';
 
 /**
  * ==========================================================
@@ -118,6 +167,14 @@ function normalizeNullableString(
     : null;
 }
 
+function normalizeRole(
+  value: unknown,
+): string {
+  return normalizeString(
+    value,
+  ).toLowerCase();
+}
+
 function toPositiveInteger(
   value: unknown,
 ): number | null {
@@ -146,14 +203,6 @@ function toPositiveInteger(
  * ==========================================================
  * RATE
  * ==========================================================
- *
- * Digunakan untuk:
- *
- * taxRate
- * serviceRate
- *
- * Range:
- * 0 - 100
  */
 
 function parseRate(
@@ -218,32 +267,27 @@ function parseTaxIncluded(
  * ==========================================================
  * OPTIONAL JWT
  * ==========================================================
- *
- * Digunakan hanya untuk GET.
- *
- * Jika tidak ada token:
- * dianggap guest.
- *
- * Jika token invalid:
- * dianggap guest.
- *
- * GET settings tetap dapat berjalan.
  */
 
 async function getOptionalAuthPayload(): Promise<OptionalAuthPayload | null> {
   try {
-    const cookieStore = await cookies();
+    const cookieStore =
+      await cookies();
 
-    const token = cookieStore.get('ekasir_session')?.value;
+    const token =
+      cookieStore.get(
+        'ekasir_session',
+      )?.value;
 
     if (!token) {
       return null;
     }
 
-    const verified = await jwtVerify(
-      token,
-      SECRET_KEY,
-    );
+    const verified =
+      await jwtVerify(
+        token,
+        SECRET_KEY,
+      );
 
     return verified.payload as OptionalAuthPayload;
   } catch {
@@ -253,40 +297,17 @@ async function getOptionalAuthPayload(): Promise<OptionalAuthPayload | null> {
 
 /**
  * ==========================================================
- * SETTINGS SCOPE CONDITION
+ * SETTINGS CONDITION
  * ==========================================================
- *
- * Ini penting.
- *
- * Sebelumnya jika branchId = NULL:
- *
- * WHERE mitra_id = ?
- * LIMIT 1
- *
- * bisa mengambil setting cabang secara acak.
- *
- *
- * Sekarang:
- *
- * PUSAT:
- *
- * WHERE
- * mitra_id = ?
- * AND branch_id IS NULL
- *
- *
- * CABANG:
- *
- * WHERE
- * mitra_id = ?
- * AND branch_id = ?
  */
 
 function getSettingsCondition(
   mitraId: number,
   branchId: number | null,
 ) {
-  if (branchId === null) {
+  if (
+    branchId === null
+  ) {
     return and(
       eq(
         settings.mitraId,
@@ -314,89 +335,62 @@ function getSettingsCondition(
 
 /**
  * ==========================================================
- * GET SETTINGS WITH FALLBACK
+ * EXACT SETTINGS
  * ==========================================================
  *
- * Jika branch:
+ * Tidak memakai fallback.
  *
- * 1. cari setting cabang
+ * GLOBAL:
+ * exact branch_id IS NULL.
  *
- * jika tidak ada:
+ * OUTLET:
+ * exact branch_id outlet.
  *
- * 2. gunakan setting pusat
+ * Ini penting untuk WiFi/fasilitas.
+ *
+ * Jika cabang belum dikonfigurasi,
+ * WiFi/fasilitas cabang harus kosong,
+ * BUKAN diam-diam memakai WiFi outlet pusat.
  */
 
-async function findSettings(
+async function findExactSettings(
   mitraId: number,
   branchId: number | null,
 ) {
-
-  /**
-   * ========================================================
-   * SETTING CABANG
-   * ========================================================
-   */
-
-  if (branchId !== null) {
-    const [branchSettings] =
-      await db
-        .select()
-        .from(settings)
-
-        .where(
-          getSettingsCondition(
-            mitraId,
-            branchId,
-          ),
-        )
-
-        .limit(1);
-
-    if (branchSettings) {
-      return branchSettings;
-    }
-  }
-
-  /**
-   * ========================================================
-   * SETTING PUSAT
-   * ========================================================
-   */
-
-  const [globalSettings] =
+  const [
+    result,
+  ] =
     await db
       .select()
-      .from(settings)
-
+      .from(
+        settings,
+      )
       .where(
         getSettingsCondition(
           mitraId,
-          null,
+          branchId,
         ),
       )
+      .limit(
+        1,
+      );
 
-      .limit(1);
-
-  return globalSettings ?? null;
+  return result ?? null;
 }
 
 /**
  * ==========================================================
- * VALIDATE BRANCH
+ * ACTIVE BRANCH
  * ==========================================================
- *
- * Memastikan branch:
- *
- * - ada
- * - milik mitra
- * - belum soft delete
  */
 
 async function findActiveBranch(
   mitraId: number,
   branchId: number,
 ) {
-  const [branch] =
+  const [
+    branch,
+  ] =
     await db
       .select({
         id:
@@ -408,9 +402,9 @@ async function findActiveBranch(
         name:
           branches.name,
       })
-
-      .from(branches)
-
+      .from(
+        branches,
+      )
       .where(
         and(
           eq(
@@ -428,8 +422,72 @@ async function findActiveBranch(
           ),
         ),
       )
+      .limit(
+        1,
+      );
 
-      .limit(1);
+  return branch ?? null;
+}
+
+
+/**
+ * ==========================================================
+ * ACTIVE BRANCH BY SLUG
+ * ==========================================================
+ *
+ * Dipakai oleh customer/public route.
+ *
+ * Frontend customer mengenal:
+ *
+ * /[mitraSlug]/[branchSlug]/...
+ *
+ * sehingga tidak perlu mengetahui numeric branch_id.
+ */
+
+async function findActiveBranchBySlug(
+  mitraId: number,
+  branchSlug: string,
+) {
+  const [
+    branch,
+  ] =
+    await db
+      .select({
+        id:
+          branches.id,
+
+        mitraId:
+          branches.mitra_id,
+
+        name:
+          branches.name,
+
+        branchSlug:
+          branches.branch_slug,
+      })
+      .from(
+        branches,
+      )
+      .where(
+        and(
+          eq(
+            branches.mitra_id,
+            mitraId,
+          ),
+
+          eq(
+            branches.branch_slug,
+            branchSlug,
+          ),
+
+          isNull(
+            branches.deletedAt,
+          ),
+        ),
+      )
+      .limit(
+        1,
+      );
 
   return branch ?? null;
 }
@@ -439,38 +497,46 @@ async function findActiveBranch(
  * GET
  * ==========================================================
  *
- * PUBLIC ENDPOINT
+ * PUBLIC.
+ *
+ * GLOBAL field selalu dibaca dari:
+ *
+ * settings.branch_id IS NULL
+ *
+ *
+ * OUTLET field dibaca dari:
+ *
+ * branch_id yang sedang dipilih.
+ *
  *
  * Contoh:
  *
  * /api/settings?slug=kopisenja
  *
+ * => global + WiFi/fasilitas pusat
+ *
+ *
  * /api/settings?slug=kopisenja&branch_id=10
  *
- *
- * Tidak membutuhkan login.
+ * => global + WiFi/fasilitas branch 10
  */
 
 export async function GET(
   request: Request,
 ) {
   try {
-
-    /**
-     * ======================================================
-     * REQUEST
-     * ======================================================
-     */
-
     const {
       searchParams,
-    } = new URL(
-      request.url,
-    );
+    } =
+      new URL(
+        request.url,
+      );
 
     const slug =
       normalizeString(
-        searchParams.get('slug'),
+        searchParams.get(
+          'slug',
+        ),
       );
 
     const branchIdRaw =
@@ -478,47 +544,40 @@ export async function GET(
         'branch_id',
       );
 
-    /**
-     * ======================================================
-     * VALIDASI SLUG
-     * ======================================================
-     */
+    const branchSlug =
+      normalizeString(
+        searchParams.get(
+          'branch_slug',
+        ),
+      );
 
     if (!slug) {
       return jsonError(
         400,
-
         'Slug diperlukan.',
-
         'SETTINGS_SLUG_REQUIRED',
       );
     }
 
-    /**
-     * ======================================================
-     * VALIDASI BRANCH ID
-     * ======================================================
-     */
-
     let requestedBranchId:
-      number | null = null;
+      number | null =
+        null;
 
     if (
       branchIdRaw !== null &&
       branchIdRaw !== ''
     ) {
-
       requestedBranchId =
         toPositiveInteger(
           branchIdRaw,
         );
 
-      if (!requestedBranchId) {
+      if (
+        !requestedBranchId
+      ) {
         return jsonError(
           400,
-
           'Branch ID tidak valid.',
-
           'SETTINGS_BRANCH_ID_INVALID',
         );
       }
@@ -526,15 +585,18 @@ export async function GET(
 
     /**
      * ======================================================
-     * CARI MITRA
+     * MITRA
      * ======================================================
      */
 
-    const [mitraData] =
+    const [
+      mitraData,
+    ] =
       await db
         .select()
-        .from(mitra)
-
+        .from(
+          mitra,
+        )
         .where(
           and(
             eq(
@@ -547,17 +609,54 @@ export async function GET(
             ),
           ),
         )
+        .limit(
+          1,
+        );
 
-        .limit(1);
-
-    if (!mitraData) {
+    if (
+      !mitraData
+    ) {
       return jsonError(
         404,
-
         'Mitra tidak ditemukan.',
-
         'SETTINGS_MITRA_NOT_FOUND',
       );
+    }
+
+    /**
+     * ======================================================
+     * RESOLVE PUBLIC BRANCH SLUG
+     * ======================================================
+     *
+     * Customer frontend mengirim branch_slug.
+     *
+     * Jika branch_id juga dikirim, branch_id menjadi prioritas
+     * untuk backward compatibility.
+     */
+
+    if (
+      requestedBranchId ===
+        null &&
+      branchSlug
+    ) {
+      const selectedBranch =
+        await findActiveBranchBySlug(
+          mitraData.id,
+          branchSlug,
+        );
+
+      if (
+        !selectedBranch
+      ) {
+        return jsonError(
+          404,
+          'Cabang tidak ditemukan.',
+          'SETTINGS_BRANCH_NOT_FOUND',
+        );
+      }
+
+      requestedBranchId =
+        selectedBranch.id;
     }
 
     /**
@@ -575,71 +674,60 @@ export async function GET(
     let finalBranchId =
       requestedBranchId;
 
-    /**
-     * Token dianggap terkait dengan toko ini
-     * hanya jika:
-     *
-     * mitraId sama
-     *
-     * ATAU
-     *
-     * slug sama.
-     */
-
-    if (payload) {
-
+    if (
+      payload
+    ) {
       const tokenMitraId =
         toPositiveInteger(
           payload.mitraId,
         );
 
       const sameMitra =
-        (
-          tokenMitraId ===
-          mitraData.id
-        ) ||
+        tokenMitraId ===
+          mitraData.id ||
         (
           typeof payload.slug ===
             'string' &&
-          payload.slug === slug
+          payload.slug ===
+            slug
         );
 
-      if (sameMitra) {
-
+      if (
+        sameMitra
+      ) {
         isAuthenticated =
           true;
 
-        /**
-         * ==================================================
-         * STAFF BRANCH
-         * ==================================================
-         *
-         * Hanya staff POS yang branchId token-nya
-         * diprioritaskan.
-         *
-         * User/customer tetap menggunakan branch_id
-         * dari request.
-         */
-
         const role =
-          typeof payload.role ===
-            'string'
-            ? payload.role
-            : '';
+          normalizeRole(
+            payload.role,
+          );
 
         const isPosStaff =
-          role === 'Owner' ||
-          role === 'Cashier' ||
-          role === 'Kitchen';
+          role ===
+            'owner' ||
+          role ===
+            'cashier' ||
+          role ===
+            'kitchen';
 
-        if (isPosStaff) {
-
+        /**
+         * Staff yang TERIKAT branch tetap dipaksa ke branch session.
+         *
+         * Owner pusat branchId NULL tetap boleh memilih branch
+         * menggunakan branch_id query.
+         */
+        if (
+          isPosStaff
+        ) {
           const tokenBranchId =
             toPositiveInteger(
               payload.branchId,
             );
 
-          if (tokenBranchId) {
+          if (
+            tokenBranchId
+          ) {
             finalBranchId =
               tokenBranchId;
           }
@@ -649,27 +737,26 @@ export async function GET(
 
     /**
      * ======================================================
-     * VALIDASI BRANCH
+     * VALIDATE OUTLET
      * ======================================================
-     *
-     * Jika branch dipilih,
-     * pastikan benar-benar milik mitra.
      */
 
-    if (finalBranchId !== null) {
-
+    if (
+      finalBranchId !==
+      null
+    ) {
       const selectedBranch =
         await findActiveBranch(
           mitraData.id,
           finalBranchId,
         );
 
-      if (!selectedBranch) {
+      if (
+        !selectedBranch
+      ) {
         return jsonError(
           404,
-
           'Cabang tidak ditemukan.',
-
           'SETTINGS_BRANCH_NOT_FOUND',
         );
       }
@@ -677,34 +764,48 @@ export async function GET(
 
     /**
      * ======================================================
-     * SETTINGS
+     * READ BOTH SCOPES
      * ======================================================
      *
-     * Branch setting
+     * Global selalu exact main row.
      *
-     * ↓ jika tidak ada
-     *
-     * Global setting
+     * Outlet:
+     * - Pusat => main row
+     * - Cabang => exact branch row
      */
 
-    const dbSettings =
-      await findSettings(
-        mitraData.id,
-        finalBranchId,
-      );
+    const [
+      globalSettings,
+      outletSettings,
+    ] =
+      await Promise.all([
+        findExactSettings(
+          mitraData.id,
+          null,
+        ),
+
+        finalBranchId ===
+          null
+          ? findExactSettings(
+              mitraData.id,
+              null,
+            )
+          : findExactSettings(
+              mitraData.id,
+              finalBranchId,
+            ),
+      ]);
 
     /**
      * ======================================================
-     * PUBLIC DATA
+     * RESPONSE
      * ======================================================
-     *
-     * Saya pertahankan field yang sebelumnya
-     * sudah dikirim oleh API Anda agar frontend
-     * tidak rusak.
      */
 
     const publicData = {
-
+      /**
+       * GLOBAL - MITRA
+       */
       cafeName:
         mitraData.mitra_name ||
         '',
@@ -733,51 +834,83 @@ export async function GET(
         mitraData.nama_rek ||
         '',
 
+      platformFeeRate:
+        mitraData.cashout ??
+        null,
+
+      /**
+       * GLOBAL - SETTINGS
+       *
+       * Tidak pernah dibaca dari row branch.
+       *
+       * Jika row global belum ada, jangan mengarang nilai default
+       * untuk frontend. UI akan menampilkan field kosong sampai
+       * konfigurasi benar-benar tersimpan di database.
+       */
       taxRate:
-        dbSettings?.taxRate ??
-        0,
+        globalSettings
+          ? globalSettings.taxRate
+          : null,
 
       serviceRate:
-        dbSettings?.serviceRate ??
-        0,
+        globalSettings
+          ? globalSettings.serviceRate
+          : null,
 
       isTaxIncluded:
-        dbSettings?.isTaxIncluded ??
-        0,
+        globalSettings
+          ? globalSettings.isTaxIncluded
+          : null,
 
+      faq:
+        globalSettings?.faq ??
+        [],
+
+      globalConfigured:
+        Boolean(
+          globalSettings,
+        ),
+
+      /**
+       * OUTLET
+       *
+       * Tidak memakai fallback.
+       */
       wifiSSID:
-        dbSettings?.wifiSSID ||
+        outletSettings?.wifiSSID ||
         '',
 
       wifiPassword:
-        dbSettings?.wifiPassword ||
+        outletSettings?.wifiPassword ||
         '',
 
       facilities:
-        dbSettings?.facility ||
+        outletSettings?.facility ??
         [],
-
-      faq:
-        dbSettings?.faq ||
-        [],
-
-      platformFeeRate:
-        mitraData.cashout ??
-        0,
 
       /**
-       * Berguna supaya frontend tahu
-       * setting branch mana yang akhirnya digunakan.
+       * Backward compatibility untuk customer component lama
+       * yang masih membaca data.facility.
+       */
+      facility:
+        outletSettings?.facility ??
+        [],
+
+      /**
+       * Metadata scope.
        */
       branchId:
         finalBranchId,
-    };
 
-    /**
-     * ======================================================
-     * PRIVATE SESSION DATA
-     * ======================================================
-     */
+      branchSlug:
+        branchSlug ||
+        null,
+
+      outletConfigured:
+        Boolean(
+          outletSettings,
+        ),
+    };
 
     const privateData =
       isAuthenticated
@@ -796,12 +929,6 @@ export async function GET(
           }
         : {};
 
-    /**
-     * ======================================================
-     * RESPONSE
-     * ======================================================
-     */
-
     return NextResponse.json({
       success: true,
 
@@ -812,9 +939,9 @@ export async function GET(
         ...privateData,
       },
     });
-
-  } catch (error) {
-
+  } catch (
+    error
+  ) {
     console.error(
       '[GET_SETTINGS_ERROR]',
       error,
@@ -822,9 +949,7 @@ export async function GET(
 
     return jsonError(
       500,
-
       'Terjadi kesalahan saat mengambil pengaturan.',
-
       'SETTINGS_FETCH_FAILED',
     );
   }
@@ -835,39 +960,48 @@ export async function GET(
  * PUT
  * ==========================================================
  *
- * HANYA OWNER.
+ * BODY BARU:
+ *
+ * GLOBAL
+ * {
+ *   scope: "global",
+ *   taxRate,
+ *   serviceRate,
+ *   is_tax_included,
+ *   cafeName,
+ *   mitraAddress,
+ *   mitraWelcome,
+ *   bankName,
+ *   bankNumber,
+ *   bankOwner,
+ *   faq
+ * }
+ *
+ *
+ * OUTLET
+ * {
+ *   scope: "outlet",
+ *   branch_id: null | number,
+ *   wifiSSID,
+ *   wifiPassword,
+ *   facilities
+ * }
  *
  *
  * OWNER PUSAT:
- *
- * branchId = null
- *
- * Bisa:
- *
- * - update setting pusat
- * - memilih branch_id untuk update setting cabang
- * - update data global mitra
+ * - boleh GLOBAL
+ * - boleh OUTLET mana pun
  *
  *
  * OWNER CABANG:
- *
- * branchId terisi
- *
- * Bisa:
- *
- * - update settings cabangnya sendiri
- *
- * Tidak bisa:
- *
- * - memilih branch lain
- * - mengubah data global mitra
+ * - TIDAK boleh GLOBAL
+ * - hanya OUTLET cabang session sendiri
  */
 
 export async function PUT(
   request: Request,
 ) {
   try {
-
     /**
      * ======================================================
      * AUTH
@@ -881,13 +1015,16 @@ export async function PUT(
         ],
       });
 
-    if (!auth.ok) {
+    if (
+      !auth.ok
+    ) {
       return auth.response;
     }
 
     const {
       session,
-    } = auth;
+    } =
+      auth;
 
     /**
      * ======================================================
@@ -897,34 +1034,25 @@ export async function PUT(
 
     const {
       searchParams,
-    } = new URL(
-      request.url,
-    );
+    } =
+      new URL(
+        request.url,
+      );
 
     const slug =
       normalizeString(
-        searchParams.get('slug'),
+        searchParams.get(
+          'slug',
+        ),
       );
 
     if (!slug) {
       return jsonError(
         400,
-
         'Slug diperlukan.',
-
         'SETTINGS_SLUG_REQUIRED',
       );
     }
-
-    /**
-     * ======================================================
-     * TENANT PROTECTION
-     * ======================================================
-     *
-     * slug URL hanya untuk validasi.
-     *
-     * mitraId asli selalu berasal dari session.
-     */
 
     if (
       slug !==
@@ -932,9 +1060,7 @@ export async function PUT(
     ) {
       return jsonError(
         403,
-
         'Akses ditolak. Slug toko tidak sesuai dengan sesi Anda.',
-
         'SETTINGS_MITRA_MISMATCH',
       );
     }
@@ -948,184 +1074,50 @@ export async function PUT(
     const body =
       await request.json();
 
-    /**
-     * RATE
-     */
-
-    const taxRate =
-      parseRate(
-        body?.taxRate,
-      );
-
-    const serviceRate =
-      parseRate(
-        body?.serviceRate,
-      );
-
-    const isTaxIncluded =
-      parseTaxIncluded(
-        body?.is_tax_included ??
-        body?.isTaxIncluded,
-      );
-
-    /**
-     * ======================================================
-     * VALIDASI RATE
-     * ======================================================
-     */
-
-    if (taxRate === null) {
-      return jsonError(
-        400,
-
-        'Tax rate harus berupa angka antara 0 sampai 100.',
-
-        'SETTINGS_TAX_RATE_INVALID',
-      );
-    }
-
-    if (serviceRate === null) {
-      return jsonError(
-        400,
-
-        'Service rate harus berupa angka antara 0 sampai 100.',
-
-        'SETTINGS_SERVICE_RATE_INVALID',
-      );
-    }
-
-    if (isTaxIncluded === null) {
-      return jsonError(
-        400,
-
-        'Nilai tax included tidak valid.',
-
-        'SETTINGS_TAX_INCLUDED_INVALID',
-      );
-    }
-
-    /**
-     * ======================================================
-     * ARRAY
-     * ======================================================
-     */
-
-    if (
-      body?.facilities !== undefined &&
-      !Array.isArray(
-        body.facilities,
-      )
-    ) {
-      return jsonError(
-        400,
-
-        'Facilities harus berupa array.',
-
-        'SETTINGS_FACILITIES_INVALID',
-      );
-    }
-
-    if (
-      body?.faq !== undefined &&
-      !Array.isArray(
-        body.faq,
-      )
-    ) {
-      return jsonError(
-        400,
-
-        'FAQ harus berupa array.',
-
-        'SETTINGS_FAQ_INVALID',
-      );
-    }
-
-    const facilities =
-      Array.isArray(
-        body?.facilities,
-      )
-        ? body.facilities
-        : [];
-
-    const faq =
-      Array.isArray(
-        body?.faq,
-      )
-        ? body.faq
-        : [];
-
-    /**
-     * ======================================================
-     * STRING
-     * ======================================================
-     */
-
-    const wifiSSID =
-      normalizeNullableString(
-        body?.wifiSSID,
-      );
-
-    const wifiPassword =
-      normalizeNullableString(
-        body?.wifiPassword,
-      );
-
-    const bankName =
-      normalizeNullableString(
-        body?.bankName,
-      );
-
-    const bankNumber =
-      normalizeNullableString(
-        body?.bankNumber,
-      );
-
-    const bankOwner =
-      normalizeNullableString(
-        body?.bankOwner,
-      );
-
-    const cafeName =
+    const rawScope =
       normalizeString(
-        body?.cafeName,
-      );
+        body?.scope,
+      ).toLowerCase();
 
-    const mitraAddress =
-      normalizeString(
-        body?.mitraAddress,
-      );
-
-    const mitraWelcome =
-      normalizeString(
-        body?.mitraWelcome,
-      );
+    let writeScope:
+      SettingsWriteScope =
+        rawScope ===
+          'global'
+          ? 'global'
+          : rawScope ===
+              'outlet'
+            ? 'outlet'
+            : 'legacy';
 
     /**
      * ======================================================
-     * BRANCH REQUEST
+     * REQUESTED BRANCH
      * ======================================================
      */
 
     let requestedBranchId:
-      number | null = null;
+      number | null =
+        null;
 
     if (
-      body?.branch_id !== null &&
-      body?.branch_id !== undefined &&
-      body?.branch_id !== ''
+      body?.branch_id !==
+        null &&
+      body?.branch_id !==
+        undefined &&
+      body?.branch_id !==
+        ''
     ) {
-
       requestedBranchId =
         toPositiveInteger(
           body.branch_id,
         );
 
-      if (!requestedBranchId) {
+      if (
+        !requestedBranchId
+      ) {
         return jsonError(
           400,
-
           'Branch ID tidak valid.',
-
           'SETTINGS_BRANCH_ID_INVALID',
         );
       }
@@ -1133,62 +1125,46 @@ export async function PUT(
 
     /**
      * ======================================================
-     * FINAL BRANCH
+     * LEGACY COMPATIBILITY
      * ======================================================
      *
-     * Owner cabang:
+     * Client lama belum mengirim body.scope.
      *
-     * ALWAYS gunakan branch dari session.
+     * - Owner cabang -> dianggap OUTLET
+     * - Owner pusat + branch_id -> dianggap OUTLET
+     * - Owner pusat tanpa branch_id -> dianggap GLOBAL
      *
-     *
-     * Owner pusat:
-     *
-     * boleh menggunakan branch_id dari UI.
+     * Dengan demikian client lama tidak dapat lagi mengubah
+     * tax/service global dari request branch.
      */
 
-    const finalBranchId =
-      session.branchId !== null
-        ? session.branchId
-        : requestedBranchId;
-
-    /**
-     * ======================================================
-     * VALIDASI BRANCH OWNERSHIP
-     * ======================================================
-     */
-
-    if (finalBranchId !== null) {
-
-      const selectedBranch =
-        await findActiveBranch(
-          session.mitraId,
-          finalBranchId,
-        );
-
-      if (!selectedBranch) {
-        return jsonError(
-          404,
-
-          'Cabang tidak ditemukan atau bukan milik toko Anda.',
-
-          'SETTINGS_BRANCH_NOT_FOUND',
-        );
-      }
+    if (
+      writeScope ===
+      'legacy'
+    ) {
+      writeScope =
+        session.branchId !==
+          null ||
+        requestedBranchId !==
+          null
+          ? 'outlet'
+          : 'global';
     }
 
     /**
      * ======================================================
-     * CARI MITRA BERDASARKAN SESSION
+     * MITRA FROM SESSION
      * ======================================================
-     *
-     * Bukan berdasarkan slug client.
      */
 
-    const [mitraData] =
+    const [
+      mitraData,
+    ] =
       await db
         .select()
-        .from(mitra)
-
+        .from(
+          mitra,
+        )
         .where(
           and(
             eq(
@@ -1201,69 +1177,159 @@ export async function PUT(
             ),
           ),
         )
+        .limit(
+          1,
+        );
 
-        .limit(1);
-
-    if (!mitraData) {
+    if (
+      !mitraData
+    ) {
       return jsonError(
         404,
-
         'Mitra tidak ditemukan.',
-
         'SETTINGS_MITRA_NOT_FOUND',
       );
     }
 
     /**
      * ======================================================
-     * EXACT SETTINGS SCOPE
+     * GLOBAL WRITE
      * ======================================================
      */
 
-    const settingsCondition =
-      getSettingsCondition(
-        session.mitraId,
-        finalBranchId,
-      );
+    if (
+      writeScope ===
+      'global'
+    ) {
+      /**
+       * Owner branch tidak boleh mengubah global.
+       */
+      if (
+        session.branchId !==
+        null
+      ) {
+        return jsonError(
+          403,
+          'Owner cabang tidak dapat mengubah konfigurasi global.',
+          'SETTINGS_GLOBAL_FORBIDDEN',
+        );
+      }
 
-    /**
-     * ======================================================
-     * DATABASE TRANSACTION
-     * ======================================================
-     *
-     * Update global mitra dan settings berada
-     * dalam transaksi yang sama.
-     */
+      const taxRate =
+        parseRate(
+          body?.taxRate,
+        );
 
-    await db.transaction(
-      async (tx) => {
+      const serviceRate =
+        parseRate(
+          body?.serviceRate,
+        );
 
-        /**
-         * ==================================================
-         * GLOBAL MITRA DATA
-         * ==================================================
-         *
-         * Hanya Owner pusat:
-         *
-         * branch_id = NULL
-         *
-         * yang boleh mengubah:
-         *
-         * - nama cafe
-         * - alamat mitra
-         * - welcome
-         * - rekening
-         */
+      const isTaxIncluded =
+        parseTaxIncluded(
+          body?.is_tax_included ??
+            body?.isTaxIncluded,
+        );
 
-        if (
-          session.branchId === null
-        ) {
+      if (
+        taxRate ===
+        null
+      ) {
+        return jsonError(
+          400,
+          'Tax rate harus berupa angka antara 0 sampai 100.',
+          'SETTINGS_TAX_RATE_INVALID',
+        );
+      }
 
+      if (
+        serviceRate ===
+        null
+      ) {
+        return jsonError(
+          400,
+          'Service rate harus berupa angka antara 0 sampai 100.',
+          'SETTINGS_SERVICE_RATE_INVALID',
+        );
+      }
+
+      if (
+        isTaxIncluded ===
+        null
+      ) {
+        return jsonError(
+          400,
+          'Nilai tax included tidak valid.',
+          'SETTINGS_TAX_INCLUDED_INVALID',
+        );
+      }
+
+      if (
+        body?.faq !==
+          undefined &&
+        !Array.isArray(
+          body.faq,
+        )
+      ) {
+        return jsonError(
+          400,
+          'FAQ harus berupa array.',
+          'SETTINGS_FAQ_INVALID',
+        );
+      }
+
+      const faq =
+        Array.isArray(
+          body?.faq,
+        )
+          ? body.faq
+          : [];
+
+      const bankName =
+        normalizeNullableString(
+          body?.bankName,
+        );
+
+      const bankNumber =
+        normalizeNullableString(
+          body?.bankNumber,
+        );
+
+      const bankOwner =
+        normalizeNullableString(
+          body?.bankOwner,
+        );
+
+      const cafeName =
+        normalizeString(
+          body?.cafeName,
+        );
+
+      const mitraAddress =
+        normalizeString(
+          body?.mitraAddress,
+        );
+
+      const mitraWelcome =
+        normalizeString(
+          body?.mitraWelcome,
+        );
+
+      const now =
+        getWIBDate();
+
+      await db.transaction(
+        async (
+          tx,
+        ) => {
+          /**
+           * GLOBAL MITRA DATA
+           */
           await tx
-            .update(mitra)
-
+            .update(
+              mitra,
+            )
             .set({
-
               bank_name:
                 bankName,
 
@@ -1276,10 +1342,10 @@ export async function PUT(
                   : null,
 
               rek_added_at:
-                getWIBDate(),
+                now,
 
               updatedAt:
-                getWIBDate(),
+                now,
 
               mitra_name:
                 cafeName ||
@@ -1293,7 +1359,6 @@ export async function PUT(
                 mitraWelcome ||
                 mitraData.mitra_welcome,
             })
-
             .where(
               and(
                 eq(
@@ -1306,53 +1371,236 @@ export async function PUT(
                 ),
               ),
             );
-        }
 
-        /**
-         * ==================================================
-         * CARI SETTINGS EXACT SCOPE
-         * ==================================================
-         */
+          /**
+           * MAIN / GLOBAL SETTINGS ROW
+           */
+          const [
+            existingGlobal,
+          ] =
+            await tx
+              .select({
+                id:
+                  settings.id,
+              })
+              .from(
+                settings,
+              )
+              .where(
+                getSettingsCondition(
+                  session.mitraId,
+                  null,
+                ),
+              )
+              .limit(
+                1,
+              );
 
-        const [existingSettings] =
+          if (
+            existingGlobal
+          ) {
+            /**
+             * PENTING:
+             *
+             * WiFi dan facility TIDAK disentuh.
+             */
+            await tx
+              .update(
+                settings,
+              )
+              .set({
+                taxRate,
+
+                serviceRate,
+
+                isTaxIncluded,
+
+                faq,
+
+                updatedAt:
+                  now,
+              })
+              .where(
+                getSettingsCondition(
+                  session.mitraId,
+                  null,
+                ),
+              );
+          } else {
+            /**
+             * Row pusat belum ada.
+             *
+             * Buat row canonical global.
+             * Local settings pusat masih kosong.
+             */
+            await tx
+              .insert(
+                settings,
+              )
+              .values({
+                mitraId:
+                  session.mitraId,
+
+                branch_id:
+                  null,
+
+                taxRate,
+
+                serviceRate,
+
+                isTaxIncluded,
+
+                faq,
+
+                wifiSSID:
+                  null,
+
+                wifiPassword:
+                  null,
+
+                facility:
+                  [],
+
+                createdAt:
+                  now,
+
+                updatedAt:
+                  now,
+              });
+          }
+        },
+      );
+
+      return NextResponse.json({
+        success: true,
+
+        message:
+          'Konfigurasi global berhasil diperbarui.',
+
+        data: {
+          scope:
+            'global',
+
+          branchId:
+            null,
+        },
+      });
+    }
+
+    /**
+     * ======================================================
+     * OUTLET WRITE
+     * ======================================================
+     *
+     * HANYA:
+     * - wifiSSID
+     * - wifiPassword
+     * - facilities
+     */
+
+    const finalBranchId =
+      session.branchId !==
+        null
+        ? session.branchId
+        : requestedBranchId;
+
+    if (
+      finalBranchId !==
+      null
+    ) {
+      const selectedBranch =
+        await findActiveBranch(
+          session.mitraId,
+          finalBranchId,
+        );
+
+      if (
+        !selectedBranch
+      ) {
+        return jsonError(
+          404,
+          'Cabang tidak ditemukan atau bukan milik toko Anda.',
+          'SETTINGS_BRANCH_NOT_FOUND',
+        );
+      }
+    }
+
+    if (
+      body?.facilities !==
+        undefined &&
+      !Array.isArray(
+        body.facilities,
+      )
+    ) {
+      return jsonError(
+        400,
+        'Facilities harus berupa array.',
+        'SETTINGS_FACILITIES_INVALID',
+      );
+    }
+
+    const facilities =
+      Array.isArray(
+        body?.facilities,
+      )
+        ? body.facilities
+        : [];
+
+    const wifiSSID =
+      normalizeNullableString(
+        body?.wifiSSID,
+      );
+
+    const wifiPassword =
+      normalizeNullableString(
+        body?.wifiPassword,
+      );
+
+    const now =
+      getWIBDate();
+
+    await db.transaction(
+      async (
+        tx,
+      ) => {
+        const outletCondition =
+          getSettingsCondition(
+            session.mitraId,
+            finalBranchId,
+          );
+
+        const [
+          existingOutlet,
+        ] =
           await tx
             .select({
               id:
                 settings.id,
             })
-
-            .from(settings)
-
-            .where(
-              settingsCondition,
+            .from(
+              settings,
             )
+            .where(
+              outletCondition,
+            )
+            .limit(
+              1,
+            );
 
-            .limit(1);
-
-        /**
-         * ==================================================
-         * INSERT
-         * ==================================================
-         */
-
-        if (!existingSettings) {
-
+        if (
+          existingOutlet
+        ) {
+          /**
+           * PENTING:
+           *
+           * tax/service/isTaxIncluded/faq
+           * TIDAK disentuh.
+           */
           await tx
-            .insert(settings)
-
-            .values({
-              mitraId:
-                session.mitraId,
-
-              branch_id:
-                finalBranchId,
-
-              taxRate,
-
-              serviceRate,
-
-              isTaxIncluded,
-
+            .update(
+              settings,
+            )
+            .set({
               wifiSSID,
 
               wifiPassword,
@@ -1360,33 +1608,80 @@ export async function PUT(
               facility:
                 facilities,
 
-              faq,
-
-              createdAt:
-                getWIBDate(),
-
               updatedAt:
-                getWIBDate(),
-            });
+                now,
+            })
+            .where(
+              outletCondition,
+            );
 
           return;
         }
 
         /**
          * ==================================================
-         * UPDATE
+         * INSERT NEW BRANCH ROW
          * ==================================================
+         *
+         * Karena schema settings lama mungkin mewajibkan
+         * taxRate/serviceRate/isTaxIncluded/faq pada setiap row,
+         * branch row baru mengambil snapshot dari global row.
+         *
+         * Snapshot ini BUKAN sumber canonical.
+         *
+         * GET selalu membaca global field dari row pusat.
          */
 
+        const [
+          globalSettings,
+        ] =
+          await tx
+            .select()
+            .from(
+              settings,
+            )
+            .where(
+              getSettingsCondition(
+                session.mitraId,
+                null,
+              ),
+            )
+            .limit(
+              1,
+            );
+
         await tx
-          .update(settings)
+          .insert(
+            settings,
+          )
+          .values({
+            mitraId:
+              session.mitraId,
 
-          .set({
-            taxRate,
+            branch_id:
+              finalBranchId,
 
-            serviceRate,
+            taxRate:
+              Number(
+                globalSettings?.taxRate ??
+                  0,
+              ),
 
-            isTaxIncluded,
+            serviceRate:
+              Number(
+                globalSettings?.serviceRate ??
+                  0,
+              ),
+
+            isTaxIncluded:
+              Number(
+                globalSettings?.isTaxIncluded ??
+                  0,
+              ),
+
+            faq:
+              globalSettings?.faq ??
+              [],
 
             wifiSSID,
 
@@ -1395,44 +1690,35 @@ export async function PUT(
             facility:
               facilities,
 
-            faq,
+            createdAt:
+              now,
 
             updatedAt:
-              getWIBDate(),
-          })
-
-          .where(
-            settingsCondition,
-          );
+              now,
+          });
       },
     );
-
-    /**
-     * ======================================================
-     * RESPONSE
-     * ======================================================
-     */
 
     return NextResponse.json({
       success: true,
 
       message:
-        'Pengaturan berhasil diperbarui.',
+        finalBranchId ===
+          null
+          ? 'WiFi dan fasilitas outlet pusat berhasil diperbarui.'
+          : 'WiFi dan fasilitas cabang berhasil diperbarui.',
 
       data: {
-
         scope:
-          finalBranchId === null
-            ? 'global'
-            : 'branch',
+          'outlet',
 
         branchId:
           finalBranchId,
       },
     });
-
-  } catch (error) {
-
+  } catch (
+    error
+  ) {
     console.error(
       '[PUT_SETTINGS_ERROR]',
       error,
@@ -1440,9 +1726,7 @@ export async function PUT(
 
     return jsonError(
       500,
-
       'Terjadi kesalahan saat menyimpan pengaturan.',
-
       'SETTINGS_UPDATE_FAILED',
     );
   }

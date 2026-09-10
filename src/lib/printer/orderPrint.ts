@@ -56,6 +56,9 @@ type ReceiptSettings = {
     boolean;
   headerText?:
     string;
+  /** Label salinan fisik. Original kosong, cetakan kedua COPY #1, dst. */
+  copyLabel?:
+    string;
   footerText?:
     string;
   thankYouText?:
@@ -1381,6 +1384,23 @@ async function buildKitchenTicket(
     string[] =
       [];
 
+  if (
+    settings.copyLabel
+  ) {
+    lines.push(
+      center(
+        settings.copyLabel.toUpperCase(),
+        width
+      )
+    );
+
+    lines.push(
+      separator(
+        width
+      )
+    );
+  }
+
   lines.push(
     center(
       'ORDER DAPUR',
@@ -1629,6 +1649,23 @@ async function buildCustomerReceipt(
   const lines:
     string[] =
       [];
+
+  if (
+    settings.copyLabel
+  ) {
+    lines.push(
+      center(
+        settings.copyLabel.toUpperCase(),
+        width
+      )
+    );
+
+    lines.push(
+      separator(
+        width
+      )
+    );
+  }
 
   if (
     settings.headerText

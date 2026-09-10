@@ -52,12 +52,14 @@ type BluetoothNavigator =
         optionalServices: string[];
       }): Promise<WebBluetoothDevice>;
       getDevices?(): Promise<WebBluetoothDevice[]>;
+      getAvailability?(): Promise<boolean>;
     };
   };
 
 type BleConnection = {
   device: WebBluetoothDevice;
   characteristic: GattCharacteristic;
+  serviceUuid: string;
 };
 
 const runtimeDevices =
@@ -73,8 +75,9 @@ const disconnectListeners =
   new Set<string>();
 
 /**
- * UUID umum untuk printer BLE. Printer Bluetooth Classic/SPP tidak dapat
- * diakses melalui Web Bluetooth browser.
+ * UUID umum printer BLE thermal / ESC-POS.
+ *
+ * Bluetooth Classic / SPP TIDAK dapat dipulihkan memakai Web Bluetooth.
  */
 const COMMON_BLE_SERVICES = [
   '0000ff00-0000-1000-8000-00805f9b34fb',
@@ -84,14 +87,58 @@ const COMMON_BLE_SERVICES = [
   '49535343-fe7d-4ae5-8fa9-9fafd205e455',
 ];
 
+function normalizeName(
+  value: unknown,
+) {
+  return String(
+    value ??
+      '',
+  )
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function normalizeUuid(
+  value: unknown,
+) {
+  return String(
+    value ??
+      '',
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function currentOrigin() {
+  if (
+    typeof window ===
+    'undefined'
+  ) {
+    return '';
+  }
+
+  return window.location.origin;
+}
+
 export class BluetoothDriver {
-  static async scan(): Promise<PrinterDevice[]> {
+  /**
+   * Deteksi Bluetooth harus dipicu oleh interaksi user karena memakai
+   * navigator.bluetooth.requestDevice().
+   *
+   * Setelah user memilih device, browser memiliki permission untuk origin
+   * tersebut. Metadata PrinterDevice yang dikembalikan menggunakan
+   * BluetoothDevice.id asli.
+   */
+  static async scan():
+    Promise<PrinterDevice[]> {
     const bluetooth =
       this.getWebBluetooth();
 
     const device =
       await bluetooth.requestDevice({
-        acceptAllDevices: true,
+        acceptAllDevices:
+          true,
         optionalServices:
           COMMON_BLE_SERVICES,
       });
@@ -112,20 +159,34 @@ export class BluetoothDriver {
 
     return [
       {
-        id: device.id,
+        id:
+          device.id,
+
         name:
           device.name ||
           'BLE Printer',
-        address: device.id,
-        type: 'ble',
+
+        address:
+          device.id,
+
+        type:
+          'ble',
+
         serviceUuid:
           discovered.serviceUuid,
+
         characteristicUuid:
           discovered.characteristic.uuid,
       },
     ];
   }
 
+  /**
+   * Connect / reconnect TANPA membuka chooser.
+   *
+   * Jika page baru direload, getConnection() akan mencoba memulihkan
+   * BluetoothDevice dari navigator.bluetooth.getDevices().
+   */
   static async connect(
     printer: PrinterDevice,
   ) {
@@ -134,6 +195,11 @@ export class BluetoothDriver {
         printer,
         true,
       );
+
+    this.syncPrinterMetadata(
+      printer,
+      connection,
+    );
 
     runtimeConnections.set(
       printer.id,
@@ -154,26 +220,75 @@ export class BluetoothDriver {
   static isConnected(
     printer: PrinterDevice,
   ) {
-    return Boolean(
-      runtimeConnections
-        .get(printer.id)
-        ?.device.gatt
-        ?.connected,
-    );
+    const direct =
+      runtimeConnections.get(
+        printer.id,
+      );
+
+    if (
+      direct?.device.gatt
+        ?.connected
+    ) {
+      return true;
+    }
+
+    /**
+     * Printer.id bisa disembuhkan setelah getDevices() fallback-by-name.
+     * Karena itu cek juga connection yang menunjuk device dengan nama sama.
+     */
+    const wantedName =
+      normalizeName(
+        printer.name,
+      );
+
+    if (
+      !wantedName
+    ) {
+      return false;
+    }
+
+    for (
+      const connection of
+      runtimeConnections.values()
+    ) {
+      if (
+        connection.device.gatt
+          ?.connected &&
+        normalizeName(
+          connection.device.name,
+        ) ===
+          wantedName
+      ) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   static async disconnect(
     printer: PrinterDevice,
   ) {
     const connection =
-      runtimeConnections.get(
-        printer.id,
+      this.findRuntimeConnection(
+        printer,
       );
 
     try {
       connection?.device.gatt
         ?.disconnect?.();
     } finally {
+      if (
+        connection
+      ) {
+        runtimeConnections.delete(
+          connection.device.id,
+        );
+        connectionPromises.delete(
+          connection.device.id,
+        );
+      }
+
       runtimeConnections.delete(
         printer.id,
       );
@@ -183,11 +298,24 @@ export class BluetoothDriver {
     }
   }
 
+  /**
+   * Semua chunk ditulis SERIAL dan benar-benar di-await.
+   *
+   * Prioritas:
+   * 1. writeValueWithResponse -> ada ACK GATT per chunk
+   * 2. writeValueWithoutResponse -> fallback untuk printer yang hanya
+   *    menyediakan mode tersebut.
+   *
+   * Setelah chunk terakhir, ada transport-drain kecil agar buffer BLE
+   * selesai menerima data sebelum PrinterManager menghitung mechanical
+   * completion.
+   */
   static async print(
     printer: PrinterDevice,
     data: Uint8Array,
   ) {
-    let lastError: unknown =
+    let lastError:
+      unknown =
       null;
 
     for (
@@ -202,14 +330,42 @@ export class BluetoothDriver {
             attempt > 0,
           );
 
+        this.syncPrinterMetadata(
+          printer,
+          connection,
+        );
+
         await this.writeChunks(
           connection.characteristic,
           data,
         );
 
+        await this.waitForTransportDrain(
+          data,
+          connection.characteristic,
+        );
+
         return true;
       } catch (error) {
-        lastError = error;
+        lastError =
+          error;
+
+        const connection =
+          this.findRuntimeConnection(
+            printer,
+          );
+
+        if (
+          connection
+        ) {
+          runtimeConnections.delete(
+            connection.device.id,
+          );
+          connectionPromises.delete(
+            connection.device.id,
+          );
+        }
+
         runtimeConnections.delete(
           printer.id,
         );
@@ -217,78 +373,237 @@ export class BluetoothDriver {
           printer.id,
         );
 
-        if (attempt === 0) {
-          await this.delay(150);
+        if (
+          attempt === 0
+        ) {
+          await this.delay(
+            250,
+          );
         }
       }
     }
 
-    throw lastError instanceof Error
+    throw lastError instanceof
+      Error
       ? lastError
       : new Error(
           'Koneksi Bluetooth printer gagal.',
         );
   }
 
-  private static async writeChunks(
-    characteristic: GattCharacteristic,
-    data: Uint8Array,
+  /**
+   * Diagnostic helper untuk UI/logging.
+   */
+  static async getPermissionDiagnostics(
+    printer?: PrinterDevice,
   ) {
-    const chunkSize = 180;
+    const bluetooth =
+      this.getWebBluetooth();
+
+    const supportsGetDevices =
+      typeof bluetooth.getDevices ===
+      'function';
+
+    let available:
+      boolean | null =
+      null;
+
+    if (
+      typeof bluetooth.getAvailability ===
+      'function'
+    ) {
+      try {
+        available =
+          await bluetooth.getAvailability();
+      } catch {
+        available =
+          null;
+      }
+    }
+
+    let rememberedDevices:
+      WebBluetoothDevice[] =
+      [];
+
+    if (
+      supportsGetDevices
+    ) {
+      try {
+        rememberedDevices =
+          await bluetooth.getDevices!();
+      } catch {
+        rememberedDevices =
+          [];
+      }
+    }
+
+    return {
+      origin:
+        currentOrigin(),
+
+      available,
+
+      supportsGetDevices,
+
+      rememberedCount:
+        rememberedDevices.length,
+
+      remembered:
+        rememberedDevices.map(
+          (device) => ({
+            id:
+              device.id,
+            name:
+              device.name ||
+              '',
+          }),
+        ),
+
+      requestedPrinter:
+        printer
+          ? {
+              id:
+                printer.id,
+              name:
+                printer.name,
+              type:
+                printer.type,
+              serviceUuid:
+                printer.serviceUuid,
+              characteristicUuid:
+                printer.characteristicUuid,
+            }
+          : null,
+    };
+  }
+
+  private static async writeChunks(
+    characteristic:
+      GattCharacteristic,
+    data:
+      Uint8Array,
+  ) {
+    /**
+     * BLE thermal printer umumnya lebih stabil dengan packet lebih kecil.
+     * write-with-response boleh sedikit lebih besar.
+     */
+    const useResponse =
+      Boolean(
+        characteristic.properties
+          .write,
+      );
+
+    const chunkSize =
+      useResponse
+        ? 160
+        : 120;
 
     for (
       let offset = 0;
       offset < data.length;
       offset += chunkSize
     ) {
-      const chunk = data.slice(
-        offset,
-        offset + chunkSize,
-      );
+      const chunk =
+        data.slice(
+          offset,
+          offset +
+            chunkSize,
+        );
 
       if (
-        characteristic.properties
-          .writeWithoutResponse
+        useResponse
       ) {
-        await characteristic.writeValueWithoutResponse(
-          chunk,
+        await characteristic
+          .writeValueWithResponse(
+            chunk,
+          );
+
+        /**
+         * ACK GATT sudah ada, delay tipis cukup.
+         */
+        await this.delay(
+          8,
         );
       } else if (
         characteristic.properties
-          .write
+          .writeWithoutResponse
       ) {
-        await characteristic.writeValueWithResponse(
-          chunk,
+        await characteristic
+          .writeValueWithoutResponse(
+            chunk,
+          );
+
+        /**
+         * Tanpa ACK, throttle lebih konservatif supaya buffer printer
+         * tidak penuh dan supaya promise tidak terlalu jauh mendahului
+         * printer.
+         */
+        await this.delay(
+          28,
         );
       } else {
         throw new Error(
           'Characteristic Bluetooth tidak mendukung penulisan data.',
         );
       }
-
-      await this.delay(12);
     }
   }
 
+  /**
+   * Hanya untuk memastikan buffer TRANSPORT selesai menerima data.
+   * Ini bukan timer jeda antar-copy.
+   *
+   * Mechanical completion tetap ditangani PrinterManager.
+   */
+  private static async waitForTransportDrain(
+    data:
+      Uint8Array,
+    characteristic:
+      GattCharacteristic,
+  ) {
+    const useResponse =
+      Boolean(
+        characteristic.properties
+          .write,
+      );
+
+    const byteFactor =
+      useResponse
+        ? 0.02
+        : 0.06;
+
+    const drainMs =
+      Math.round(
+        Math.max(
+          useResponse
+            ? 120
+            : 300,
+
+          Math.min(
+            1800,
+            data.length *
+              byteFactor,
+          ),
+        ),
+      );
+
+    await this.delay(
+      drainMs,
+    );
+  }
+
   private static delay(
-    duration: number,
+    duration:
+      number,
   ) {
     return new Promise<void>(
       (resolve) => {
-        if (
-          typeof window !==
-          'undefined'
-        ) {
-          window.setTimeout(
-            resolve,
-            duration,
-          );
-          return;
-        }
-
         setTimeout(
           resolve,
-          duration,
+          Math.max(
+            0,
+            duration,
+          ),
         );
       },
     );
@@ -310,9 +625,11 @@ export class BluetoothDriver {
           BluetoothNavigator
       ).bluetooth;
 
-    if (!bluetooth) {
+    if (
+      !bluetooth
+    ) {
       throw new Error(
-        'Browser tidak mendukung Web Bluetooth. Gunakan Chrome/Edge melalui HTTPS.',
+        'Browser tidak mendukung Web Bluetooth. Gunakan Chrome atau Edge pada secure context (HTTPS / localhost).',
       );
     }
 
@@ -320,12 +637,25 @@ export class BluetoothDriver {
   }
 
   private static rememberDevice(
-    device: WebBluetoothDevice,
+    device:
+      WebBluetoothDevice,
+    aliasId?: string,
   ) {
     runtimeDevices.set(
       device.id,
       device,
     );
+
+    if (
+      aliasId &&
+      aliasId !==
+        device.id
+    ) {
+      runtimeDevices.set(
+        aliasId,
+        device,
+      );
+    }
 
     if (
       disconnectListeners.has(
@@ -344,6 +674,12 @@ export class BluetoothDriver {
         connectionPromises.delete(
           device.id,
         );
+
+        /**
+         * Alias runtimeDevices tetap disimpan. Object BluetoothDevice yang
+         * sudah granted masih bisa dipakai untuk gatt.connect() lagi selama
+         * page belum reload.
+         */
       },
     );
 
@@ -352,62 +688,301 @@ export class BluetoothDriver {
     );
   }
 
+  private static findRuntimeConnection(
+    printer:
+      PrinterDevice,
+  ):
+    BleConnection |
+    undefined {
+    const direct =
+      runtimeConnections.get(
+        printer.id,
+      );
+
+    if (
+      direct
+    ) {
+      return direct;
+    }
+
+    const wantedName =
+      normalizeName(
+        printer.name,
+      );
+
+    if (
+      !wantedName
+    ) {
+      return undefined;
+    }
+
+    for (
+      const connection of
+      runtimeConnections.values()
+    ) {
+      if (
+        normalizeName(
+          connection.device.name,
+        ) ===
+          wantedName
+      ) {
+        return connection;
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Cari remembered BluetoothDevice setelah reload.
+   *
+   * Urutan matching:
+   * 1. exact BluetoothDevice.id
+   * 2. printer.address lama == candidate.id
+   * 3. nama exact jika hanya ada satu kandidat
+   * 4. bila ada beberapa nama sama, cek stored serviceUuid
+   *
+   * Fallback nama dibutuhkan karena beberapa kombinasi Chrome/Windows
+   * dapat mengembalikan opaque id yang berbeda setelah permission/device
+   * direfresh, sedangkan nama + service tetap sama.
+   */
   private static async findDevice(
-    printer: PrinterDevice,
-  ) {
+    printer:
+      PrinterDevice,
+  ):
+    Promise<WebBluetoothDevice> {
     const cached =
       runtimeDevices.get(
         printer.id,
       );
 
-    if (cached) {
+    if (
+      cached
+    ) {
       return cached;
+    }
+
+    const wantedName =
+      normalizeName(
+        printer.name,
+      );
+
+    if (
+      wantedName
+    ) {
+      for (
+        const device of
+        new Set(
+          runtimeDevices.values(),
+        )
+      ) {
+        if (
+          normalizeName(
+            device.name,
+          ) ===
+            wantedName
+        ) {
+          this.rememberDevice(
+            device,
+            printer.id,
+          );
+
+          this.syncPrinterIdentity(
+            printer,
+            device,
+          );
+
+          return device;
+        }
+      }
     }
 
     const bluetooth =
       this.getWebBluetooth();
 
     if (
-      typeof bluetooth.getDevices ===
+      typeof bluetooth.getDevices !==
       'function'
     ) {
-      const devices =
+      throw new Error(
+        `Browser ini dapat memilih printer Bluetooth, tetapi tidak menyediakan navigator.bluetooth.getDevices() untuk memulihkan permission setelah reload. Origin saat ini: ${currentOrigin() || '-'}. Gunakan Chrome/Edge terbaru melalui origin yang sama.`,
+      );
+    }
+
+    let devices:
+      WebBluetoothDevice[];
+
+    try {
+      devices =
         await bluetooth.getDevices();
+    } catch (error) {
+      const message =
+        error instanceof
+          Error
+          ? error.message
+          : String(
+              error,
+            );
 
-      const device =
-        devices.find(
+      throw new Error(
+        `Permission Bluetooth tidak dapat dibaca oleh browser pada origin ${currentOrigin() || '-'}. ${message}`,
+      );
+    }
+
+    if (
+      devices.length ===
+      0
+    ) {
+      throw new Error(
+        `Chrome tidak mengembalikan perangkat Bluetooth yang pernah diberi izin untuk origin ${currentOrigin() || '-'}. Pastikan URL/origin tidak berubah sejak printer dideteksi.`,
+      );
+    }
+
+    /**
+     * Exact ID adalah kandidat utama.
+     */
+    let device =
+      devices.find(
+        (candidate) =>
+          candidate.id ===
+            printer.id ||
+          candidate.id ===
+            printer.address,
+      );
+
+    if (
+      !device &&
+      wantedName
+    ) {
+      const sameName =
+        devices.filter(
           (candidate) =>
-            candidate.id ===
-            printer.id,
+            normalizeName(
+              candidate.name,
+            ) ===
+              wantedName,
         );
 
-      if (device) {
-        this.rememberDevice(
-          device,
-        );
-        return device;
+      if (
+        sameName.length ===
+        1
+      ) {
+        device =
+          sameName[0];
+      } else if (
+        sameName.length >
+          1 &&
+        printer.serviceUuid
+      ) {
+        device =
+          await this.pickByServiceUuid(
+            sameName,
+            printer.serviceUuid,
+          );
       }
     }
 
-    throw new Error(
-      'Izin perangkat Bluetooth tidak tersedia lagi. Tekan Deteksi Bluetooth dan pilih ulang printer.',
+    if (
+      !device
+    ) {
+      const rememberedNames =
+        devices
+          .map(
+            (item) =>
+              item.name ||
+              '(tanpa nama)',
+          )
+          .join(
+            ', ',
+          );
+
+      throw new Error(
+        `Permission Bluetooth masih ada di browser, tetapi printer tersimpan "${printer.name}" tidak cocok dengan remembered device. Device yang tersedia: ${rememberedNames || '-'}.`,
+      );
+    }
+
+    this.rememberDevice(
+      device,
+      printer.id,
     );
+
+    this.syncPrinterIdentity(
+      printer,
+      device,
+    );
+
+    return device;
+  }
+
+  private static async pickByServiceUuid(
+    devices:
+      WebBluetoothDevice[],
+    serviceUuid:
+      string,
+  ):
+    Promise<
+      WebBluetoothDevice |
+      undefined
+    > {
+    const normalized =
+      normalizeUuid(
+        serviceUuid,
+      );
+
+    for (
+      const device of
+      devices
+    ) {
+      if (
+        !device.gatt
+      ) {
+        continue;
+      }
+
+      try {
+        const server =
+          device.gatt.connected
+            ? device.gatt
+            : await device.gatt.connect();
+
+        await server
+          .getPrimaryService(
+            normalized,
+          );
+
+        return device;
+      } catch {
+        // Coba candidate berikutnya.
+      }
+    }
+
+    return undefined;
   }
 
   private static async getConnection(
-    printer: PrinterDevice,
-    forceReconnect = false,
-  ): Promise<BleConnection> {
-    if (!forceReconnect) {
+    printer:
+      PrinterDevice,
+    forceReconnect =
+      false,
+  ):
+    Promise<BleConnection> {
+    if (
+      !forceReconnect
+    ) {
       const existing =
-        runtimeConnections.get(
-          printer.id,
+        this.findRuntimeConnection(
+          printer,
         );
 
       if (
         existing?.device.gatt
           ?.connected
       ) {
+        this.syncPrinterMetadata(
+          printer,
+          existing,
+        );
+
         return existing;
       }
 
@@ -416,7 +991,9 @@ export class BluetoothDriver {
           printer.id,
         );
 
-      if (pending) {
+      if (
+        pending
+      ) {
         return pending;
       }
     }
@@ -435,6 +1012,16 @@ export class BluetoothDriver {
       const connection =
         await pendingConnection;
 
+      this.syncPrinterMetadata(
+        printer,
+        connection,
+      );
+
+      runtimeConnections.set(
+        connection.device.id,
+        connection,
+      );
+
       runtimeConnections.set(
         printer.id,
         connection,
@@ -449,59 +1036,20 @@ export class BluetoothDriver {
   }
 
   private static async createConnection(
-    printer: PrinterDevice,
-  ): Promise<BleConnection> {
+    printer:
+      PrinterDevice,
+  ):
+    Promise<BleConnection> {
     const device =
       await this.findDevice(
         printer,
       );
 
-    if (!device.gatt) {
+    if (
+      !device.gatt
+    ) {
       throw new Error(
         'Perangkat tidak menyediakan BLE GATT. Printer kemungkinan memakai Bluetooth Classic/SPP.',
-      );
-    }
-
-    if (
-      printer.serviceUuid &&
-      printer.characteristicUuid
-    ) {
-      const server =
-        device.gatt.connected
-          ? device.gatt
-          : await device.gatt.connect();
-
-      const service =
-        await server.getPrimaryService(
-          printer.serviceUuid,
-        );
-
-      const characteristic =
-        await service.getCharacteristic(
-          printer.characteristicUuid,
-        );
-
-      return {
-        device,
-        characteristic,
-      };
-    }
-
-    return this.discoverWritableCharacteristic(
-      device,
-    );
-  }
-
-  private static async discoverWritableCharacteristic(
-    device: WebBluetoothDevice,
-  ): Promise<
-    BleConnection & {
-      serviceUuid: string;
-    }
-  > {
-    if (!device.gatt) {
-      throw new Error(
-        'Printer tidak menyediakan BLE GATT. Jika printer hanya paired di Android, kemungkinan menggunakan Bluetooth Classic/SPP.',
       );
     }
 
@@ -510,46 +1058,161 @@ export class BluetoothDriver {
         ? device.gatt
         : await device.gatt.connect();
 
-    let services: GattService[];
+    /**
+     * Coba UUID tersimpan dulu.
+     * Jika firmware/device berubah atau UUID stale, jangan langsung gagal:
+     * discovery ulang characteristic writable.
+     */
+    if (
+      printer.serviceUuid &&
+      printer.characteristicUuid
+    ) {
+      try {
+        const service =
+          await server.getPrimaryService(
+            printer.serviceUuid,
+          );
 
+        const characteristic =
+          await service.getCharacteristic(
+            printer.characteristicUuid,
+          );
+
+        const connection:
+          BleConnection = {
+            device,
+            characteristic,
+            serviceUuid:
+              service.uuid,
+          };
+
+        this.syncPrinterMetadata(
+          printer,
+          connection,
+        );
+
+        return connection;
+      } catch {
+        // Discovery ulang di bawah.
+      }
+    }
+
+    const discovered =
+      await this.discoverWritableCharacteristic(
+        device,
+      );
+
+    this.syncPrinterMetadata(
+      printer,
+      discovered,
+    );
+
+    return discovered;
+  }
+
+  private static async discoverWritableCharacteristic(
+    device:
+      WebBluetoothDevice,
+  ):
+    Promise<BleConnection> {
+    if (
+      !device.gatt
+    ) {
+      throw new Error(
+        'Printer tidak menyediakan BLE GATT. Jika printer hanya paired di Windows/Android tanpa service GATT, kemungkinan memakai Bluetooth Classic/SPP.',
+      );
+    }
+
+    const server =
+      device.gatt.connected
+        ? device.gatt
+        : await device.gatt.connect();
+
+    let services:
+      GattService[] =
+      [];
+
+    /**
+     * getPrimaryServices() paling nyaman, tetapi Chrome hanya dapat
+     * mengakses service yang sudah diizinkan saat requestDevice().
+     */
     try {
       services =
         await server.getPrimaryServices();
     } catch {
-      services = [];
+      services =
+        [];
+    }
 
-      for (
-        const uuid of
-        COMMON_BLE_SERVICES
+    /**
+     * Tambahkan COMMON_BLE_SERVICES satu per satu jika tidak muncul lewat
+     * getPrimaryServices().
+     */
+    for (
+      const uuid of
+      COMMON_BLE_SERVICES
+    ) {
+      if (
+        services.some(
+          (service) =>
+            normalizeUuid(
+              service.uuid,
+            ) ===
+              normalizeUuid(
+                uuid,
+              ),
+        )
       ) {
-        try {
-          services.push(
-            await server.getPrimaryService(
-              uuid,
-            ),
-          );
-        } catch {
-          // Service tidak tersedia.
-        }
+        continue;
+      }
+
+      try {
+        services.push(
+          await server.getPrimaryService(
+            uuid,
+          ),
+        );
+      } catch {
+        // Service tersebut tidak tersedia.
       }
     }
 
     for (
-      const service of services
+      const service of
+      services
     ) {
-      const characteristics =
-        await service.getCharacteristics();
+      let characteristics:
+        GattCharacteristic[];
 
-      const writable =
+      try {
+        characteristics =
+          await service.getCharacteristics();
+      } catch {
+        continue;
+      }
+
+      /**
+       * Prefer characteristic yang support WRITE WITH RESPONSE jika ada.
+       * Ini memberi kontrol flow yang lebih baik daripada no-response.
+       */
+      const writableWithResponse =
         characteristics.find(
           (characteristic) =>
-            characteristic.properties
-              .writeWithoutResponse ||
             characteristic.properties
               .write,
         );
 
-      if (writable) {
+      const writable =
+        writableWithResponse ||
+        characteristics.find(
+          (characteristic) =>
+            characteristic.properties
+              .writeWithoutResponse,
+        );
+
+      if (
+        writable
+      ) {
         return {
           device,
           characteristic:
@@ -563,5 +1226,57 @@ export class BluetoothDriver {
     throw new Error(
       'Characteristic BLE yang dapat ditulis tidak ditemukan. Printer kemungkinan Bluetooth Classic/SPP atau UUID vendor belum didaftarkan.',
     );
+  }
+
+  private static syncPrinterIdentity(
+    printer:
+      PrinterDevice,
+    device:
+      WebBluetoothDevice,
+  ) {
+    /**
+     * Mutasi object sengaja dilakukan supaya caller yang memegang reference
+     * printer lama langsung mendapat ID actual hasil getDevices().
+     *
+     * PrinterManager akan menyimpan ulang object ini setelah connect sukses.
+     */
+    printer.id =
+      device.id;
+
+    printer.address =
+      device.id;
+
+    if (
+      device.name
+    ) {
+      printer.name =
+        device.name;
+    }
+
+    if (
+      printer.type ===
+      'bluetooth'
+    ) {
+      printer.type =
+        'ble';
+    }
+  }
+
+  private static syncPrinterMetadata(
+    printer:
+      PrinterDevice,
+    connection:
+      BleConnection,
+  ) {
+    this.syncPrinterIdentity(
+      printer,
+      connection.device,
+    );
+
+    printer.serviceUuid =
+      connection.serviceUuid;
+
+    printer.characteristicUuid =
+      connection.characteristic.uuid;
   }
 }

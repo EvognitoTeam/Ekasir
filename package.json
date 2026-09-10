@@ -1,6 +1,6 @@
 {
   "name": "kaloopos",
-  "version": "26.8.31.6",
+  "version": "26.9.5.1",
   "private": true,
   "scripts": {
     "dev": "concurrently -k -n \"NEXT,IOT\" \"npm:dev:next\" \"npm:dev:iot\"",
@@ -36,7 +36,7 @@
     "mysql2": "^3.22.3",
     "next": "16.2.4",
     "nodemailer": "^9.0.3",
-    "postcss": "^8.5.10",
+    "postcss": "^8.5.28",
     "qrcode.react": "^4.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -53,7 +53,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^7.6.6",
-    "@tailwindcss/postcss": "^4",
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/nodemailer": "^8.0.1",
@@ -64,7 +64,7 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
-    "tailwindcss": "^3.4.19",
+    "tailwindcss": "^4.3.3",
     "tsx": "^4.23.12",
     "typescript": "^5"
   }

@@ -6,6 +6,9 @@ const nextConfig: NextConfig = {
     // Prefix NEXT_PUBLIC_ agar bisa dibaca oleh browser (client-side)
     NEXT_PUBLIC_APP_VERSION: packageJson.version,
   },
+  allowedDevOrigins: [
+    '*.ngrok-free.app',
+  ],
 };
 
 export default nextConfig;

@@ -1,22 +1,111 @@
 "use client";
 
-import { useState, useEffect } from 'react'; // 🔴 Tambahin useEffect
-import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, Lock, Eye, EyeOff, Loader2, ArrowRight } from 'lucide-react';
-import Link from 'next/link';
+import { useCallback, useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Eye,
+  EyeOff,
+  Languages,
+  Loader2,
+  Lock,
+  Mail,
+} from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+
+import { KALOO_BRAND } from "@/config/brand";
+import { useLanguageStore } from "@/store/language.store";
+
+type Locale = "id" | "en";
+
+const copy = {
+  id: {
+    back: "Kembali ke beranda",
+    language: "Bahasa",
+    welcome: "Selamat Datang",
+    subtitle: "Masuk ke akun KALOO untuk mengelola operasional bisnis Anda.",
+    email: "Alamat Email",
+    password: "Kata Sandi",
+    forgot: "Lupa Sandi?",
+    login: "Masuk Sekarang",
+    noAccount: "Belum punya akun?",
+    register: "Daftar Sekarang",
+    showPassword: "Tampilkan kata sandi",
+    hidePassword: "Sembunyikan kata sandi",
+    required: "Email dan kata sandi wajib diisi.",
+    loginFailed: "Login gagal. Periksa kembali email dan kata sandi Anda.",
+    slugMissing: "Slug toko tidak ditemukan.",
+    genericError: "Terjadi kesalahan saat login.",
+    notAuthorized: "Akses ditolak. Anda tidak memiliki izin untuk halaman tersebut.",
+    sessionExpired: "Sesi Anda telah berakhir. Silakan masuk kembali.",
+    invalidTenant: "Akses ditolak. Anda mencoba masuk ke dashboard toko yang salah.",
+    authError: "Terjadi kesalahan autentikasi. Silakan masuk kembali.",
+    secureAccess: "Secure business access",
+  },
+  en: {
+    back: "Back to home",
+    language: "Language",
+    welcome: "Welcome Back",
+    subtitle: "Sign in to your KALOO account to manage your business operations.",
+    email: "Email Address",
+    password: "Password",
+    forgot: "Forgot Password?",
+    login: "Sign In",
+    noAccount: "Don't have an account?",
+    register: "Create Account",
+    showPassword: "Show password",
+    hidePassword: "Hide password",
+    required: "Email and password are required.",
+    loginFailed: "Login failed. Please check your email and password.",
+    slugMissing: "Store slug was not found.",
+    genericError: "An error occurred while signing in.",
+    notAuthorized: "Access denied. You do not have permission to open that page.",
+    sessionExpired: "Your session has expired. Please sign in again.",
+    invalidTenant: "Access denied. You are trying to access a different store dashboard.",
+    authError: "An authentication error occurred. Please sign in again.",
+    secureAccess: "Secure business access",
+  },
+} as const;
+
+function redirectByRole(role: string | undefined, slug: string | undefined) {
+  if (!slug) return false;
+
+  if (role === "Owner") {
+    window.location.href = `/${slug}/admin/dashboard`;
+    return true;
+  }
+
+  if (role === "Cashier") {
+    window.location.href = `/${slug}/cashier`;
+    return true;
+  }
+
+  if (role === "Kitchen") {
+    window.location.href = `/${slug}/kitchen`;
+    return true;
+  }
+
+  return false;
+}
 
 export default function LoginView() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const locale = useLanguageStore((state) => state.locale) as Locale;
+  const setLocale = useLanguageStore((state) => state.setLocale);
+  const t = copy[locale];
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
-  // 🔴 TANGKAP ERROR DARI URL MIDDLEWARE
-  const checkSession = async () => {
+  const checkSession = useCallback(async () => {
     try {
-      const res = await fetch('/api/auth/session', {
-        credentials: 'include'
+      const res = await fetch("/api/auth/session", {
+        credentials: "include",
+        cache: "no-store",
       });
 
       if (!res.ok) return;
@@ -25,59 +114,65 @@ export default function LoginView() {
 
       if (!data.authenticated) return;
 
-      const role = data.user.role;
-      const slug = data.user.slug;
+      const role = data.user?.role;
+      const slug = data.user?.slug;
 
-      if (role === 'Owner') {
-        window.location.href = `/${slug}/admin/dashboard`;
-      } else if (role === 'Cashier') {
-        window.location.href = `/${slug}/cashier`;
-      } else if (role === 'Kitchen') {
-        window.location.href = `/${slug}/kitchen`;
+      if (!redirectByRole(role, slug)) {
+        window.location.href = "/";
       }
-    } catch {}
-  };
-  
-  useEffect(() => {
-    checkSession();
-    // Pake window.location biar aman dari error 'Suspense Boundary' Next.js
-    const searchParams = new URLSearchParams(window.location.search);
-    const urlError = searchParams.get('error');
-
-    if (urlError) {
-      if (urlError === 'not_authorized') {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setError('Akses ditolak. Anda tidak memiliki izin untuk halaman tersebut.');
-      } else if (urlError === 'session_expired') {
-        setError('Sesi Anda telah berakhir. Silakan masuk kembali.');
-      } else if (urlError === 'invalid_tenant') {
-        setError('Akses ditolak. Anda mencoba masuk ke dashboard toko yang salah.');
-      } else {
-        setError('Terjadi kesalahan otentikasi. Silakan masuk kembali.');
-      }
+    } catch {
+      // Session check is optional on the login screen.
     }
   }, []);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
+  useEffect(() => {
+    void checkSession();
 
-    if (!email || !password) {
-      setError('Email dan kata sandi wajib diisi.');
+    const searchParams = new URLSearchParams(window.location.search);
+    const urlError = searchParams.get("error");
+
+    if (!urlError) return;
+
+    if (urlError === "not_authorized") {
+      setError(t.notAuthorized);
+      return;
+    }
+
+    if (urlError === "session_expired") {
+      setError(t.sessionExpired);
+      return;
+    }
+
+    if (urlError === "invalid_tenant") {
+      setError(t.invalidTenant);
+      return;
+    }
+
+    setError(t.authError);
+  }, [checkSession, t.authError, t.invalidTenant, t.notAuthorized, t.sessionExpired]);
+
+  const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+
+    const normalizedEmail = email.trim();
+
+    if (!normalizedEmail || !password) {
+      setError(t.required);
       return;
     }
 
     setIsLoading(true);
 
     try {
-      // LOGIN API
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
+        credentials: "include",
         body: JSON.stringify({
-          email: email.trim(),
+          email: normalizedEmail,
           password,
         }),
       });
@@ -85,163 +180,236 @@ export default function LoginView() {
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(
-          data.message ||
-            'Login gagal. Periksa kembali email dan kata sandi Anda.'
-        );
+        throw new Error(data.message || t.loginFailed);
       }
 
-      // AMBIL DATA USER
       const storeSlug = data.user?.slug;
       const role = data.user?.role;
 
       if (!storeSlug) {
-        throw new Error('Slug toko tidak ditemukan.');
+        throw new Error(t.slugMissing);
       }
 
-      // REDIRECT BERDASARKAN ROLE
-      if (role === 'Owner') {
-        window.location.href = `/${storeSlug}/admin/dashboard`;
-      } else if (role === 'Cashier') {
-        window.location.href = `/${storeSlug}/cashier`;
-      }else if (role === 'Kitchen') {
-        window.location.href = `/${storeSlug}/kitchen`;
-      } else {
-        // fallback role lain
-        window.location.href = '/';
+      if (!redirectByRole(role, storeSlug)) {
+        window.location.href = "/";
       }
-
-    } catch (err: any) {
-      setError(err.message || 'Terjadi kesalahan saat login.');
+    } catch (loginError: unknown) {
+      setError(
+        loginError instanceof Error
+          ? loginError.message
+          : t.genericError,
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
+  const toggleLanguage = () => {
+    setLocale(locale === "id" ? "en" : "id");
+    setError("");
+  };
+
   return (
-    <div className="min-h-screen bg-[#F7F8FA] flex items-center justify-center p-4 sm:p-6 font-sans relative overflow-hidden">
-      {/* Dekorasi Background */}
-      <div className="absolute top-0 right-0 w-[80vw] sm:w-[40vw] h-[80vw] sm:h-[40vw] bg-[#0E5C37] opacity-[0.03] blur-[100px] rounded-full -translate-y-1/2 translate-x-1/2" />
-      <div className="absolute bottom-0 left-0 w-[60vw] sm:w-[30vw] h-[60vw] sm:h-[30vw] bg-emerald-200 opacity-[0.05] blur-[80px] rounded-full translate-y-1/2 -translate-x-1/2" />
+    <div className="relative min-h-screen overflow-hidden bg-[#f7f7f4] text-[#111111]">
+      <div className="pointer-events-none fixed inset-0 opacity-[0.32] [background-image:linear-gradient(to_right,rgba(17,17,17,0.035)_1px,transparent_1px),linear-gradient(to_bottom,rgba(17,17,17,0.035)_1px,transparent_1px)] [background-size:40px_40px]" />
 
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md bg-white rounded-[2rem] shadow-2xl shadow-emerald-900/5 border border-stone-100 relative z-10 overflow-hidden"
-      >
-        {/* Header Section */}
-        <div className="px-8 pt-10 pb-6 text-center">
-          <div className="w-16 h-16 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto mb-6 border border-emerald-100 shadow-inner">
-            <Lock className="w-7 h-7 text-[#0E5C37]" />
-          </div>
-          <h1 className="text-3xl font-black text-stone-900 tracking-tight leading-none mb-2">
-            Selamat Datang
-          </h1>
-          <p className="text-xs text-stone-500">
-            Masuk ke akun Anda untuk mengelola bisnis.
-          </p>
-        </div>
-
-        {/* Form Section */}
-        <div className="px-8 pb-10">
-          
-          {/* Notifikasi Error (Otomatis muncul kalau state error terisi) */}
-          <AnimatePresence mode="wait">
-            {error && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0, marginBottom: 0 }} 
-                animate={{ opacity: 1, height: 'auto', marginBottom: 24 }} 
-                exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-                className="overflow-hidden"
-              >
-                <div className="p-3 bg-red-50 border border-red-100 text-red-600 rounded-xl text-xs font-bold flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0" />
-                  {error}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <form onSubmit={handleLogin} className="space-y-5">
-            {/* Input Email */}
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500 ml-1">
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
-                <input 
-                  type="email" 
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    setError(''); // Hilangkan error saat user mulai ngetik lagi
-                  }}
-                  placeholder="admin@bisnis.com" 
-                  className="w-full bg-stone-50/50 border border-stone-200 rounded-xl py-3.5 pl-11 pr-4 text-sm font-medium text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#0E5C37]/20 focus:border-[#0E5C37] transition-all placeholder:text-stone-300" 
-                />
-              </div>
+      <header className="relative z-20">
+        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 sm:px-6 lg:px-8">
+          <Link
+            href="/"
+            className="group flex items-center gap-3"
+            aria-label={KALOO_BRAND.name}
+          >
+            <div className="relative h-11 w-11 overflow-hidden rounded-xl border border-black/10 bg-white">
+              <Image
+                src="/logo.png"
+                alt={`${KALOO_BRAND.name} Logo`}
+                fill
+                sizes="44px"
+                className="object-contain p-1.5"
+                priority
+              />
             </div>
 
-            {/* Input Password */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center ml-1 mr-1">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500">
-                  Password
-                </label>
-                {/* Opsi Lupa Password */}
-                <Link href="/forgot-password" className="text-[10px] font-bold text-[#0E5C37] hover:underline">
-                  Lupa Sandi?
-                </Link>
-              </div>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
-                <input 
-                  type={showPassword ? "text" : "password"} 
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    setError(''); // Hilangkan error saat user mulai ngetik lagi
-                  }}
-                  placeholder="••••••••" 
-                  className="w-full bg-stone-50/50 border border-stone-200 rounded-xl py-3.5 pl-11 pr-12 text-sm font-medium text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#0E5C37]/20 focus:border-[#0E5C37] transition-all placeholder:text-stone-300" 
-                />
-                <button 
-                  type="button" 
-                  onClick={() => setShowPassword(!showPassword)} 
-                  className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-stone-400 hover:text-stone-600 rounded-lg transition-colors"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
+            <div className="hidden leading-none sm:block">
+              <p className="text-sm font-extrabold tracking-[0.18em]">
+                {KALOO_BRAND.name}
+              </p>
+              <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.26em] text-black/40">
+                {KALOO_BRAND.descriptor}
+              </p>
             </div>
+          </Link>
 
-            {/* Tombol Login */}
-            <button 
-              type="submit" 
-              disabled={isLoading}
-              className="w-full mt-2 bg-[#0E5C37] text-white rounded-xl py-4 font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all active:scale-[0.98] disabled:bg-stone-300 disabled:shadow-none shadow-lg shadow-emerald-900/10"
+          <div className="flex items-center gap-2">
+            <Link
+              href="/"
+              className="hidden items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2.5 text-xs font-bold text-black/60 transition-colors hover:border-black/25 hover:text-black sm:inline-flex"
             >
-              {isLoading ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <>Masuk Sekarang <ArrowRight className="w-4 h-4" /></>
-              )}
-            </button>
-          </form>
+              <ArrowLeft size={14} />
+              {t.back}
+            </Link>
 
-          {/* Footer Link ke Register */}
-          <div className="mt-8 pt-6 border-t border-stone-100 text-center">
-            <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">
-              Belum punya akun?{' '}
-              <Link href="/register" className="text-[#0E5C37] hover:underline">
-                Daftar Sekarang
-              </Link>
+            <button
+              type="button"
+              onClick={toggleLanguage}
+              aria-label={t.language}
+              className="inline-flex h-10 items-center gap-2 rounded-full border border-black/10 bg-white px-3 text-xs font-extrabold transition-colors hover:border-black/25"
+            >
+              <Languages size={15} />
+              {locale.toUpperCase()}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="relative z-10 flex min-h-[calc(100vh-80px)] items-center justify-center px-4 py-10 sm:px-6">
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          className="w-full max-w-md overflow-hidden rounded-[30px] border border-black/10 bg-white shadow-[0_30px_90px_rgba(0,0,0,0.09)]"
+        >
+          <div className="border-b border-black/8 px-7 pb-7 pt-8 sm:px-9 sm:pt-10">
+            <div className="mb-7 flex items-center justify-between">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-black text-white">
+                <Lock size={19} strokeWidth={1.8} />
+              </div>
+
+              <span className="rounded-full bg-[#f2f2ee] px-3 py-1.5 text-[9px] font-extrabold uppercase tracking-[0.18em] text-black/40">
+                {t.secureAccess}
+              </span>
+            </div>
+
+            <h1 className="[font-family:var(--font-body)] text-4xl font-semibold leading-none tracking-[-0.045em]">
+              {t.welcome}
+            </h1>
+
+            <p className="mt-4 max-w-sm text-sm leading-6 text-black/48">
+              {t.subtitle}
             </p>
           </div>
 
-        </div>
-      </motion.div>
+          <div className="px-7 py-7 sm:px-9 sm:py-8">
+            <AnimatePresence mode="wait">
+              {error && (
+                <motion.div
+                  key={error}
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold leading-5 text-red-700"
+                >
+                  {error}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <form onSubmit={handleLogin} className="space-y-5">
+              <div className="space-y-2">
+                <label
+                  htmlFor="email"
+                  className="ml-1 text-[10px] font-extrabold uppercase tracking-[0.17em] text-black/40"
+                >
+                  {t.email}
+                </label>
+
+                <div className="relative">
+                  <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-black/30" />
+
+                  <input
+                    id="email"
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(event) => {
+                      setEmail(event.target.value);
+                      setError("");
+                    }}
+                    placeholder="admin@bisnis.com"
+                    className="w-full rounded-2xl border border-black/10 bg-[#f8f8f5] py-4 pl-11 pr-4 text-sm font-semibold outline-none transition-all placeholder:text-black/25 focus:border-black/35 focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="mx-1 flex items-center justify-between">
+                  <label
+                    htmlFor="password"
+                    className="text-[10px] font-extrabold uppercase tracking-[0.17em] text-black/40"
+                  >
+                    {t.password}
+                  </label>
+
+                  <Link
+                    href="/forgot-password"
+                    className="text-[10px] font-extrabold text-black/50 transition-colors hover:text-black"
+                  >
+                    {t.forgot}
+                  </Link>
+                </div>
+
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-black/30" />
+
+                  <input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(event) => {
+                      setPassword(event.target.value);
+                      setError("");
+                    }}
+                    placeholder="••••••••"
+                    className="w-full rounded-2xl border border-black/10 bg-[#f8f8f5] py-4 pl-11 pr-12 text-sm font-semibold outline-none transition-all placeholder:text-black/25 focus:border-black/35 focus:bg-white"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((value) => !value)}
+                    aria-label={showPassword ? t.hidePassword : t.showPassword}
+                    className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-black/35 transition-colors hover:bg-black/5 hover:text-black"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="mt-2 inline-flex min-h-14 w-full items-center justify-center gap-3 rounded-full bg-black px-6 text-sm font-extrabold text-white transition-all hover:-translate-y-0.5 hover:bg-[#252525] disabled:cursor-not-allowed disabled:bg-black/25 disabled:hover:translate-y-0"
+              >
+                {isLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <>
+                    {t.login}
+                    <ArrowRight size={16} />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="mt-8 border-t border-black/8 pt-6 text-center">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-black/35">
+                {t.noAccount}{" "}
+                <Link
+                  href="/register"
+                  className="font-extrabold text-black underline-offset-4 hover:underline"
+                >
+                  {t.register}
+                </Link>
+              </p>
+            </div>
+          </div>
+        </motion.div>
+      </main>
     </div>
   );
 }

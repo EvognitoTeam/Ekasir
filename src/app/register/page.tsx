@@ -1,61 +1,230 @@
 "use client";
 
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Store, MapPin, Quote, User, Mail, Lock, 
-  Eye, EyeOff, ShieldCheck, FileText, ChevronRight, 
-  ChevronLeft, CheckCircle2, Loader2, X, ScrollText
-} from 'lucide-react';
-import Link from 'next/link';
+import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  ChevronLeft,
+  Eye,
+  EyeOff,
+  FileText,
+  Languages,
+  Loader2,
+  Lock,
+  Mail,
+  MapPin,
+  Quote,
+  ScrollText,
+  ShieldCheck,
+  Store,
+  User,
+  X,
+} from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
 
-// 🔴 IMPORT DATA LEGAL DI SINI
-import { TERMS_CONTENT, PRIVACY_CONTENT } from '@/constants/legal';
+import { KALOO_BRAND } from "@/config/brand";
+import { PRIVACY_CONTENT, TERMS_CONTENT } from "@/constants/legal";
+import { useLanguageStore } from "@/store/language.store";
+
+type Locale = "id" | "en";
+type LegalModal = "terms" | "privacy" | null;
+
+const copy = {
+  id: {
+    back: "Kembali ke beranda",
+    language: "Bahasa",
+    step: "Langkah",
+    of: "dari",
+    businessData: "Data Bisnis",
+    businessDesc: "Ceritakan sedikit tentang bisnis yang akan menggunakan KALOO.",
+    ownerProfile: "Profil Pemilik",
+    ownerDesc: "Buat kredensial utama untuk mengakses dashboard KALOO POS.",
+    agreement: "Persetujuan",
+    agreementDesc: "Tinjau dokumen legal sebelum menyelesaikan pendaftaran.",
+
+    businessName: "Nama Bisnis",
+    businessNamePlaceholder: "Contoh: Kopi Kaloo",
+    tagline: "Slogan / Tagline",
+    taglinePlaceholder: "Contoh: Kopi dari lubuk hati",
+    address: "Alamat Lengkap",
+    addressPlaceholder: "Alamat operasional bisnis...",
+
+    ownerName: "Nama Pemilik",
+    ownerNamePlaceholder: "Nama lengkap Anda",
+    activeEmail: "Email Aktif",
+    password: "Kata Sandi",
+    confirmPassword: "Ulangi Kata Sandi",
+    showPassword: "Tampilkan kata sandi",
+    hidePassword: "Sembunyikan kata sandi",
+
+    almostDone: "Hampir selesai.",
+    almostDoneDesc:
+      "Buka setiap dokumen dan baca hingga bagian akhir untuk memberikan persetujuan.",
+    terms: "Syarat & Ketentuan",
+    termsDesc: "Ketentuan penggunaan platform dan layanan KALOO.",
+    privacy: "Kebijakan Privasi",
+    privacyDesc: "Penjelasan mengenai pengelolaan data bisnis dan akun Anda.",
+
+    readUntilEnd: "Baca hingga selesai untuk menyetujui",
+    agreeClose: "Setuju & Tutup",
+    scrollToAgree: "Scroll ke bawah untuk menyetujui",
+    legalNote:
+      "Isi dokumen di bawah mengikuti versi legal yang saat ini dipublikasikan oleh KALOO.",
+
+    continue: "Lanjutkan",
+    finish: "Selesaikan Pendaftaran",
+    haveAccount: "Sudah punya akun?",
+    loginHere: "Masuk di sini",
+
+    businessRequired: "Nama bisnis dan alamat wajib diisi.",
+    ownerRequired: "Nama pemilik, email, dan kata sandi wajib diisi.",
+    invalidEmail: "Format email tidak valid.",
+    passwordMismatch: "Konfirmasi kata sandi tidak cocok.",
+    passwordMin: "Kata sandi minimal 6 karakter.",
+    legalRequired:
+      "Anda wajib membaca dan menyetujui Syarat & Ketentuan serta Kebijakan Privasi.",
+    registerFailed: "Gagal melakukan pendaftaran.",
+    networkError: "Terjadi kesalahan jaringan. Silakan coba lagi.",
+
+    secureSetup: "3-step account setup",
+  },
+  en: {
+    back: "Back to home",
+    language: "Language",
+    step: "Step",
+    of: "of",
+    businessData: "Business Details",
+    businessDesc: "Tell us about the business that will use KALOO.",
+    ownerProfile: "Owner Profile",
+    ownerDesc: "Create the primary credentials used to access the KALOO POS dashboard.",
+    agreement: "Agreement",
+    agreementDesc: "Review the legal documents before completing registration.",
+
+    businessName: "Business Name",
+    businessNamePlaceholder: "Example: Kopi Nusantara",
+    tagline: "Slogan / Tagline",
+    taglinePlaceholder: "Example: Coffee from the heart",
+    address: "Full Address",
+    addressPlaceholder: "Business operating address...",
+
+    ownerName: "Owner Name",
+    ownerNamePlaceholder: "Your full name",
+    activeEmail: "Active Email",
+    password: "Password",
+    confirmPassword: "Confirm Password",
+    showPassword: "Show password",
+    hidePassword: "Hide password",
+
+    almostDone: "Almost there.",
+    almostDoneDesc:
+      "Open each document and read to the end before giving your consent.",
+    terms: "Terms & Conditions",
+    termsDesc: "Terms governing the use of the KALOO platform and services.",
+    privacy: "Privacy Policy",
+    privacyDesc: "How KALOO handles your business and account data.",
+
+    readUntilEnd: "Read to the end to provide consent",
+    agreeClose: "Agree & Close",
+    scrollToAgree: "Scroll to the bottom to agree",
+    legalNote:
+      "The document below follows KALOO's currently published legal version.",
+
+    continue: "Continue",
+    finish: "Complete Registration",
+    haveAccount: "Already have an account?",
+    loginHere: "Sign in here",
+
+    businessRequired: "Business name and address are required.",
+    ownerRequired: "Owner name, email, and password are required.",
+    invalidEmail: "Please enter a valid email address.",
+    passwordMismatch: "Password confirmation does not match.",
+    passwordMin: "Password must contain at least 6 characters.",
+    legalRequired:
+      "You must read and agree to the Terms & Conditions and Privacy Policy.",
+    registerFailed: "Registration failed.",
+    networkError: "A network error occurred. Please try again.",
+
+    secureSetup: "3-step account setup",
+  },
+} as const;
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
 
 export default function RegisterView() {
+  const locale = useLanguageStore((state) => state.locale) as Locale;
+  const setLocale = useLanguageStore((state) => state.setLocale);
+  const t = copy[locale];
+
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
-  
-  const [activeModal, setActiveModal] = useState<'terms' | 'privacy' | null>(null);
+  const [activeModal, setActiveModal] = useState<LegalModal>(null);
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
+  const [error, setError] = useState("");
 
   const [formData, setFormData] = useState({
-    businessName: '',
-    tagline: '',
-    address: '',
-    ownerName: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
+    businessName: "",
+    tagline: "",
+    address: "",
+    ownerName: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
     agreeTerms: false,
     agreePrivacy: false,
   });
 
-  const [error, setError] = useState('');
+  const handleInputChange = (
+    event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    const { name, value } = event.target;
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-    setError('');
+    setFormData((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+
+    setError("");
   };
 
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const { scrollTop, clientHeight, scrollHeight } = e.currentTarget;
-    if (scrollHeight - scrollTop <= clientHeight + 5) {
-      setHasScrolledToBottom(true);
-      if (activeModal === 'terms') {
-        setFormData(prev => ({ ...prev, agreeTerms: true }));
-      } else if (activeModal === 'privacy') {
-        setFormData(prev => ({ ...prev, agreePrivacy: true }));
-      }
+  const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const {
+      scrollTop,
+      clientHeight,
+      scrollHeight,
+    } = event.currentTarget;
+
+    if (scrollHeight - scrollTop > clientHeight + 5) return;
+
+    setHasScrolledToBottom(true);
+
+    if (activeModal === "terms") {
+      setFormData((previous) => ({
+        ...previous,
+        agreeTerms: true,
+      }));
+    }
+
+    if (activeModal === "privacy") {
+      setFormData((previous) => ({
+        ...previous,
+        agreePrivacy: true,
+      }));
     }
   };
 
-  const openModal = (type: 'terms' | 'privacy') => {
+  const openModal = (type: Exclude<LegalModal, null>) => {
     setActiveModal(type);
-    setHasScrolledToBottom(false);
+    setHasScrolledToBottom(
+      type === "terms"
+        ? formData.agreeTerms
+        : formData.agreePrivacy,
+    );
   };
 
   const closeModal = () => {
@@ -64,53 +233,80 @@ export default function RegisterView() {
 
   const validateStep = () => {
     if (step === 1) {
-      if (!formData.businessName || !formData.address) {
-        setError('Nama Bisnis dan Alamat wajib diisi.');
-        return false;
-      }
-    } else if (step === 2) {
-      if (!formData.ownerName || !formData.email || !formData.password) {
-        setError('Semua kolom data pemilik wajib diisi.');
-        return false;
-      }
-      if (formData.password !== formData.confirmPassword) {
-        setError('Konfirmasi kata sandi tidak cocok.');
-        return false;
-      }
-      if (formData.password.length < 6) {
-        setError('Kata sandi minimal 6 karakter.');
-        return false;
-      }
-    } else if (step === 3) {
-      if (!formData.agreeTerms || !formData.agreePrivacy) {
-        setError('Anda wajib membaca dan menyetujui Syarat & Ketentuan serta Kebijakan Privasi dengan mengkliknya.');
+      if (!formData.businessName.trim() || !formData.address.trim()) {
+        setError(t.businessRequired);
         return false;
       }
     }
+
+    if (step === 2) {
+      const normalizedEmail = formData.email.trim();
+
+      if (
+        !formData.ownerName.trim() ||
+        !normalizedEmail ||
+        !formData.password
+      ) {
+        setError(t.ownerRequired);
+        return false;
+      }
+
+      if (!isValidEmail(normalizedEmail)) {
+        setError(t.invalidEmail);
+        return false;
+      }
+
+      if (formData.password.length < 6) {
+        setError(t.passwordMin);
+        return false;
+      }
+
+      if (formData.password !== formData.confirmPassword) {
+        setError(t.passwordMismatch);
+        return false;
+      }
+    }
+
+    if (step === 3) {
+      if (!formData.agreeTerms || !formData.agreePrivacy) {
+        setError(t.legalRequired);
+        return false;
+      }
+    }
+
+    setError("");
     return true;
   };
 
-  const nextStep = () => { if (validateStep()) setStep(prev => prev + 1); };
-  const prevStep = () => { setStep(prev => prev - 1); setError(''); };
+  const nextStep = () => {
+    if (!validateStep()) return;
+    setStep((previous) => Math.min(previous + 1, 3));
+  };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const previousStep = () => {
+    setStep((previous) => Math.max(previous - 1, 1));
+    setError("");
+  };
+
+  const handleSubmit = async () => {
     if (!validateStep()) return;
 
     setIsLoading(true);
+    setError("");
+
     try {
-      // 🔴 MENGIRIM DATA KE API
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
+        credentials: "include",
         body: JSON.stringify({
-          businessName: formData.businessName,
-          tagline: formData.tagline,
-          address: formData.address,
-          ownerName: formData.ownerName,
-          email: formData.email,
+          businessName: formData.businessName.trim(),
+          tagline: formData.tagline.trim(),
+          address: formData.address.trim(),
+          ownerName: formData.ownerName.trim(),
+          email: formData.email.trim(),
           password: formData.password,
         }),
       });
@@ -118,68 +314,166 @@ export default function RegisterView() {
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(data.message || 'Gagal melakukan pendaftaran.');
+        throw new Error(data.message || t.registerFailed);
       }
 
-      // Jika berhasil, tampilkan layar sukses
-      // setIsSuccess(true);
-      window.location.href = `/${data.slug}/cashier`;
+      if (data.slug) {
+        window.location.href = `/${data.slug}/cashier`;
+        return;
+      }
 
-    } catch (err: any) {
-      setError(err.message || 'Terjadi kesalahan jaringan. Silakan coba lagi.');
+      window.location.href = "/login";
+    } catch (registerError: unknown) {
+      setError(
+        registerError instanceof Error
+          ? registerError.message
+          : t.networkError,
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
-  const slideVariants = {
-    hiddenRight: { x: 50, opacity: 0 },
-    hiddenLeft: { x: -50, opacity: 0 },
-    visible: { x: 0, opacity: 1, transition: { duration: 0.4, ease: 'easeOut' } },
-    exitRight: { x: 50, opacity: 0, transition: { duration: 0.3 } },
-    exitLeft: { x: -50, opacity: 0, transition: { duration: 0.3 } },
+  const toggleLanguage = () => {
+    setLocale(locale === "id" ? "en" : "id");
+    setError("");
   };
 
-  if (isSuccess) {
-    return (
-      <div className="min-h-screen bg-[#F7F8FA] flex flex-col items-center justify-center p-6 font-sans">
-        <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white p-10 rounded-[2rem] shadow-xl max-w-md w-full text-center border border-stone-100">
-          <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-6"><CheckCircle2 className="w-10 h-10 text-[#0E5C37]" /></div>
-          <h2 className="text-2xl font-black text-stone-900 mb-3">Registrasi Berhasil!</h2>
-          <p className="text-sm text-stone-500 mb-8">Akun <span className="font-bold text-stone-800">{formData.businessName}</span> telah berhasil dibuat.</p>
-          <Link href="/login" className="block w-full py-4 bg-[#0E5C37] text-white rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-emerald-700 transition-colors">Menuju Halaman Login</Link>
-        </motion.div>
-      </div>
-    );
-  }
+  const title =
+    step === 1
+      ? t.businessData
+      : step === 2
+        ? t.ownerProfile
+        : t.agreement;
+
+  const description =
+    step === 1
+      ? t.businessDesc
+      : step === 2
+        ? t.ownerDesc
+        : t.agreementDesc;
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA] flex items-center justify-center p-4 sm:p-6 font-sans relative overflow-hidden">
-      
-      {/* OVERLAY MODAL DOKUMEN */}
+    <div className="relative min-h-screen overflow-hidden bg-[#f7f7f4] text-[#111111]">
+      <div className="pointer-events-none fixed inset-0 opacity-[0.32] [background-image:linear-gradient(to_right,rgba(17,17,17,0.035)_1px,transparent_1px),linear-gradient(to_bottom,rgba(17,17,17,0.035)_1px,transparent_1px)] [background-size:40px_40px]" />
+
+      <header className="relative z-20">
+        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 sm:px-6 lg:px-8">
+          <Link
+            href="/"
+            className="group flex items-center gap-3"
+            aria-label={KALOO_BRAND.name}
+          >
+            <div className="relative h-11 w-11 overflow-hidden rounded-xl border border-black/10 bg-white">
+              <Image
+                src="/logo.png"
+                alt={`${KALOO_BRAND.name} Logo`}
+                fill
+                sizes="44px"
+                priority
+                className="object-contain p-1.5"
+              />
+            </div>
+
+            <div className="hidden leading-none sm:block">
+              <p className="text-sm font-extrabold tracking-[0.18em]">
+                {KALOO_BRAND.name}
+              </p>
+              <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.26em] text-black/40">
+                {KALOO_BRAND.descriptor}
+              </p>
+            </div>
+          </Link>
+
+          <div className="flex items-center gap-2">
+            <Link
+              href="/"
+              className="hidden items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2.5 text-xs font-bold text-black/60 transition-colors hover:border-black/25 hover:text-black sm:inline-flex"
+            >
+              <ArrowLeft size={14} />
+              {t.back}
+            </Link>
+
+            <button
+              type="button"
+              onClick={toggleLanguage}
+              aria-label={t.language}
+              className="inline-flex h-10 items-center gap-2 rounded-full border border-black/10 bg-white px-3 text-xs font-extrabold transition-colors hover:border-black/25"
+            >
+              <Languages size={15} />
+              {locale.toUpperCase()}
+            </button>
+          </div>
+        </div>
+      </header>
+
       <AnimatePresence>
         {activeModal && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm">
-            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }} className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-              <div className="px-6 py-5 border-b border-stone-100 flex items-center justify-between bg-stone-50/50">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 16, scale: 0.98 }}
+              className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-[30px] border border-black/10 bg-[#f7f7f4] shadow-2xl"
+            >
+              <div className="flex items-center justify-between border-b border-black/10 px-6 py-5">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-emerald-100 text-[#0E5C37] rounded-xl flex items-center justify-center"><ScrollText className="w-5 h-5" /></div>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-white">
+                    <ScrollText size={17} />
+                  </div>
+
                   <div>
-                    <h3 className="font-bold text-stone-900 leading-tight">{activeModal === 'terms' ? 'Syarat & Ketentuan' : 'Kebijakan Privasi'}</h3>
-                    <p className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Silakan baca hingga selesai</p>
+                    <h2 className="font-extrabold">
+                      {activeModal === "terms" ? t.terms : t.privacy}
+                    </h2>
+                    <p className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.16em] text-black/35">
+                      {t.readUntilEnd}
+                    </p>
                   </div>
                 </div>
-                <button onClick={closeModal} className="w-8 h-8 flex items-center justify-center bg-white border border-stone-200 text-stone-400 hover:text-stone-700 rounded-full"><X className="w-4 h-4" /></button>
-              </div>
-              
-              <div onScroll={handleScroll} className="p-6 overflow-y-auto custom-scrollbar text-sm text-stone-600 whitespace-pre-wrap leading-relaxed">
-                {activeModal === 'terms' ? TERMS_CONTENT : PRIVACY_CONTENT}
-                <div className="h-10" />
+
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white transition-colors hover:bg-black hover:text-white"
+                  aria-label="Close"
+                >
+                  <X size={17} />
+                </button>
               </div>
 
-              <div className="p-5 border-t border-stone-100 bg-white">
-                <button onClick={closeModal} disabled={!hasScrolledToBottom} className={`w-full py-4 rounded-xl font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2 transition-all ${hasScrolledToBottom ? 'bg-[#0E5C37]' : 'bg-stone-100 text-stone-400 cursor-not-allowed'}`}>
-                  {hasScrolledToBottom ? <><CheckCircle2 className="w-4 h-4" /> Setuju & Tutup</> : 'Scroll ke bawah untuk menyetujui'}
+              <div className="border-b border-black/8 bg-white/55 px-6 py-3 text-xs leading-5 text-black/45">
+                {t.legalNote}
+              </div>
+
+              <div
+                onScroll={handleScroll}
+                className="custom-scrollbar flex-1 overflow-y-auto whitespace-pre-wrap px-6 py-6 text-sm leading-7 text-black/60"
+              >
+                {activeModal === "terms" ? TERMS_CONTENT : PRIVACY_CONTENT}
+                <div className="h-12" />
+              </div>
+
+              <div className="border-t border-black/10 bg-white p-5">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  disabled={!hasScrolledToBottom}
+                  className="inline-flex min-h-13 w-full items-center justify-center gap-2 rounded-full bg-black px-6 text-xs font-extrabold uppercase tracking-[0.12em] text-white transition-all disabled:cursor-not-allowed disabled:bg-black/15"
+                >
+                  {hasScrolledToBottom ? (
+                    <>
+                      <Check size={15} strokeWidth={2.6} />
+                      {t.agreeClose}
+                    </>
+                  ) : (
+                    t.scrollToAgree
+                  )}
                 </button>
               </div>
             </motion.div>
@@ -187,148 +481,355 @@ export default function RegisterView() {
         )}
       </AnimatePresence>
 
-      <div className="w-full max-w-lg bg-white rounded-[2rem] shadow-2xl border border-stone-100 relative z-10 overflow-hidden flex flex-col h-[650px]">
-        {/* Header Indicator */}
-        <div className="px-8 pt-10 pb-6 border-b border-stone-50 bg-white z-20">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex gap-2">
-              {[1,2,3].map((item) => (
-                <div key={item} className={`h-2 rounded-full transition-all duration-500 ${step >= item ? 'w-8 bg-[#0E5C37]' : 'w-4 bg-stone-100'}`} />
-              ))}
+      <main className="relative z-10 flex min-h-[calc(100vh-80px)] items-center justify-center px-4 py-8 sm:px-6 sm:py-10">
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          className="flex max-h-[780px] min-h-[650px] w-full max-w-xl flex-col overflow-hidden rounded-[30px] border border-black/10 bg-white shadow-[0_30px_90px_rgba(0,0,0,0.09)]"
+        >
+          <div className="border-b border-black/8 px-6 pb-6 pt-7 sm:px-8 sm:pt-8">
+            <div className="mb-7 flex items-center justify-between gap-4">
+              <div className="flex gap-2">
+                {[1, 2, 3].map((item) => (
+                  <div
+                    key={item}
+                    className={`h-2 rounded-full transition-all duration-300 ${
+                      step >= item
+                        ? "w-9 bg-black"
+                        : "w-4 bg-black/10"
+                    }`}
+                  />
+                ))}
+              </div>
+
+              <div className="text-right">
+                <p className="text-[9px] font-extrabold uppercase tracking-[0.16em] text-black/35">
+                  {t.step} {step} {t.of} 3
+                </p>
+                <p className="mt-1 hidden text-[9px] font-bold uppercase tracking-[0.14em] text-black/25 sm:block">
+                  {t.secureSetup}
+                </p>
+              </div>
             </div>
-            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-400">Langkah {step} dari 3</span>
+
+            <h1 className="[font-family:var(--font-body)] text-4xl font-semibold leading-none tracking-[-0.045em]">
+              {title}
+            </h1>
+
+            <p className="mt-4 max-w-md text-sm leading-6 text-black/48">
+              {description}
+            </p>
           </div>
-          <h1 className="text-3xl font-black text-stone-900 tracking-tight leading-none mb-2">
-            {step === 1 ? 'Data Bisnis' : step === 2 ? 'Profil Pemilik' : 'Persetujuan'}
-          </h1>
-          <p className="text-xs text-stone-500">
-            {step === 1 ? 'Ceritakan tentang usaha hebat Anda.' : step === 2 ? 'Informasi kredensial untuk akses dashboard.' : 'Langkah terakhir sebelum memulai.'}
-          </p>
-        </div>
 
-        {/* Form Body */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar relative px-8 py-6">
-          <AnimatePresence mode="wait">
-            {error && (
-              <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mb-6 p-3 bg-red-50 border border-red-100 text-red-600 rounded-xl text-xs font-bold flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-red-600" />{error}
-              </motion.div>
-            )}
-          </AnimatePresence>
+          <div className="custom-scrollbar flex-1 overflow-y-auto px-6 py-6 sm:px-8">
+            <AnimatePresence mode="wait">
+              {error && (
+                <motion.div
+                  key={error}
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold leading-5 text-red-700"
+                >
+                  {error}
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-          <AnimatePresence mode="wait">
-            {step === 1 && (
-              <motion.div key="step1" variants={slideVariants} initial="hiddenRight" animate="visible" exit="exitLeft" className="space-y-5">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500 ml-1">Nama Bisnis *</label>
-                  <div className="relative">
-                    <Store className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
-                    <input type="text" name="businessName" value={formData.businessName} onChange={handleInputChange} placeholder="E.g. Kopi Kenangan" className="w-full bg-stone-50/50 border border-stone-200 rounded-xl py-3.5 pl-11 pr-4 text-sm font-medium text-stone-900 focus:outline-none focus:border-[#0E5C37] transition-all" />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500 ml-1">Slogan / Tagline</label>
-                  <div className="relative">
-                    <Quote className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
-                    <input type="text" name="tagline" value={formData.tagline} onChange={handleInputChange} placeholder="E.g. Kopi dari hati" className="w-full bg-stone-50/50 border border-stone-200 rounded-xl py-3.5 pl-11 pr-4 text-sm font-medium text-stone-900 focus:outline-none focus:border-[#0E5C37] transition-all" />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500 ml-1">Alamat Lengkap *</label>
-                  <div className="relative">
-                    <MapPin className="absolute left-4 top-4 w-4 h-4 text-stone-400" />
-                    <textarea name="address" value={formData.address} onChange={handleInputChange} rows={3} placeholder="Alamat operasional usaha..." className="w-full bg-stone-50/50 border border-stone-200 rounded-xl py-3.5 pl-11 pr-4 text-sm font-medium text-stone-900 focus:outline-none focus:border-[#0E5C37] transition-all resize-none" />
-                  </div>
-                </div>
-              </motion.div>
-            )}
+            <AnimatePresence mode="wait">
+              {step === 1 && (
+                <motion.div
+                  key="step-1"
+                  initial={{ opacity: 0, x: 24 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -24 }}
+                  transition={{ duration: 0.22 }}
+                  className="space-y-5"
+                >
+                  <FieldLabel label={`${t.businessName} *`}>
+                    <Store className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-black/30" />
+                    <input
+                      type="text"
+                      name="businessName"
+                      autoComplete="organization"
+                      value={formData.businessName}
+                      onChange={handleInputChange}
+                      placeholder={t.businessNamePlaceholder}
+                      className="w-full rounded-2xl border border-black/10 bg-[#f8f8f5] py-4 pl-11 pr-4 text-sm font-semibold outline-none transition-all placeholder:text-black/25 focus:border-black/35 focus:bg-white"
+                    />
+                  </FieldLabel>
 
-            {step === 2 && (
-              <motion.div key="step2" variants={slideVariants} initial="hiddenRight" animate="visible" exit="exitLeft" className="space-y-5">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500 ml-1">Nama Pemilik *</label>
-                  <div className="relative">
-                    <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
-                    <input type="text" name="ownerName" value={formData.ownerName} onChange={handleInputChange} placeholder="Nama lengkap Anda" className="w-full bg-stone-50/50 border border-stone-200 rounded-xl py-3.5 pl-11 pr-4 text-sm font-medium text-stone-900 focus:outline-none focus:border-[#0E5C37] transition-all" />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500 ml-1">Email Aktif *</label>
-                  <div className="relative">
-                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
-                    <input type="email" name="email" value={formData.email} onChange={handleInputChange} placeholder="email@domain.com" className="w-full bg-stone-50/50 border border-stone-200 rounded-xl py-3.5 pl-11 pr-4 text-sm font-medium text-stone-900 focus:outline-none focus:border-[#0E5C37] transition-all" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500 ml-1">Kata Sandi *</label>
-                    <div className="relative">
-                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
-                      <input type={showPassword ? "text" : "password"} name="password" value={formData.password} onChange={handleInputChange} placeholder="••••••••" className="w-full bg-stone-50/50 border border-stone-200 rounded-xl py-3.5 pl-10 pr-10 text-sm font-medium text-stone-900 focus:outline-none focus:border-[#0E5C37] transition-all" />
-                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400">{showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
-                    </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500 ml-1">Ulangi Sandi *</label>
-                    <div className="relative">
-                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
-                      <input type={showPassword ? "text" : "password"} name="confirmPassword" value={formData.confirmPassword} onChange={handleInputChange} placeholder="••••••••" className="w-full bg-stone-50/50 border border-stone-200 rounded-xl py-3.5 pl-10 pr-4 text-sm font-medium text-stone-900 focus:outline-none focus:border-[#0E5C37] transition-all" />
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
+                  <FieldLabel label={t.tagline}>
+                    <Quote className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-black/30" />
+                    <input
+                      type="text"
+                      name="tagline"
+                      value={formData.tagline}
+                      onChange={handleInputChange}
+                      placeholder={t.taglinePlaceholder}
+                      className="w-full rounded-2xl border border-black/10 bg-[#f8f8f5] py-4 pl-11 pr-4 text-sm font-semibold outline-none transition-all placeholder:text-black/25 focus:border-black/35 focus:bg-white"
+                    />
+                  </FieldLabel>
 
-            {step === 3 && (
-              <motion.div key="step3" variants={slideVariants} initial="hiddenRight" animate="visible" exit="exitLeft" className="space-y-4">
-                <div className="bg-emerald-50/50 border border-emerald-100 p-5 rounded-2xl mb-6">
-                  <h3 className="text-sm font-bold text-stone-900 mb-1">Hampir Selesai!</h3>
-                  <p className="text-xs text-stone-500">Klik kotak di bawah ini dan baca dokumen hingga selesai untuk menyetujui ketentuan kami.</p>
-                </div>
+                  <FieldLabel label={`${t.address} *`}>
+                    <MapPin className="absolute left-4 top-4 h-4 w-4 text-black/30" />
+                    <textarea
+                      name="address"
+                      value={formData.address}
+                      onChange={handleInputChange}
+                      rows={4}
+                      placeholder={t.addressPlaceholder}
+                      className="w-full resize-none rounded-2xl border border-black/10 bg-[#f8f8f5] py-4 pl-11 pr-4 text-sm font-semibold outline-none transition-all placeholder:text-black/25 focus:border-black/35 focus:bg-white"
+                    />
+                  </FieldLabel>
+                </motion.div>
+              )}
 
-                <div onClick={() => openModal('terms')} className={`flex items-start gap-4 p-4 border rounded-xl cursor-pointer transition-colors ${formData.agreeTerms ? 'bg-emerald-50/50 border-[#0E5C37]' : 'border-stone-200 hover:bg-stone-50'}`}>
-                  <div className="relative flex items-center mt-0.5">
-                    <input type="checkbox" readOnly checked={formData.agreeTerms} className="peer sr-only" />
-                    <div className="w-5 h-5 border-2 border-stone-300 rounded peer-checked:bg-[#0E5C37] peer-checked:border-[#0E5C37] flex items-center justify-center"><ShieldCheck className="w-3.5 h-3.5 text-white opacity-0 peer-checked:opacity-100" /></div>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-bold text-stone-800">Syarat & Ketentuan</span>
-                    <span className="text-xs text-stone-500 mt-0.5">Ketentuan penggunaan platform dan layanan.</span>
-                  </div>
-                </div>
+              {step === 2 && (
+                <motion.div
+                  key="step-2"
+                  initial={{ opacity: 0, x: 24 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -24 }}
+                  transition={{ duration: 0.22 }}
+                  className="space-y-5"
+                >
+                  <FieldLabel label={`${t.ownerName} *`}>
+                    <User className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-black/30" />
+                    <input
+                      type="text"
+                      name="ownerName"
+                      autoComplete="name"
+                      value={formData.ownerName}
+                      onChange={handleInputChange}
+                      placeholder={t.ownerNamePlaceholder}
+                      className="w-full rounded-2xl border border-black/10 bg-[#f8f8f5] py-4 pl-11 pr-4 text-sm font-semibold outline-none transition-all placeholder:text-black/25 focus:border-black/35 focus:bg-white"
+                    />
+                  </FieldLabel>
 
-                <div onClick={() => openModal('privacy')} className={`flex items-start gap-4 p-4 border rounded-xl cursor-pointer transition-colors ${formData.agreePrivacy ? 'bg-emerald-50/50 border-[#0E5C37]' : 'border-stone-200 hover:bg-stone-50'}`}>
-                  <div className="relative flex items-center mt-0.5">
-                    <input type="checkbox" readOnly checked={formData.agreePrivacy} className="peer sr-only" />
-                    <div className="w-5 h-5 border-2 border-stone-300 rounded peer-checked:bg-[#0E5C37] peer-checked:border-[#0E5C37] flex items-center justify-center"><FileText className="w-3.5 h-3.5 text-white opacity-0 peer-checked:opacity-100" /></div>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-bold text-stone-800">Kebijakan Privasi</span>
-                    <span className="text-xs text-stone-500 mt-0.5">Bagaimana kami mengelola data bisnis Anda.</span>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+                  <FieldLabel label={`${t.activeEmail} *`}>
+                    <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-black/30" />
+                    <input
+                      type="email"
+                      name="email"
+                      autoComplete="email"
+                      value={formData.email}
+                      onChange={handleInputChange}
+                      placeholder="email@domain.com"
+                      className="w-full rounded-2xl border border-black/10 bg-[#f8f8f5] py-4 pl-11 pr-4 text-sm font-semibold outline-none transition-all placeholder:text-black/25 focus:border-black/35 focus:bg-white"
+                    />
+                  </FieldLabel>
 
-        {/* Footer Buttons */}
-        <div className="p-6 bg-white border-t border-stone-100 z-20">
-          <div className="flex gap-3">
-            {step > 1 && (
-              <button type="button" onClick={prevStep} className="w-14 h-14 shrink-0 bg-stone-100 text-stone-500 rounded-xl flex items-center justify-center"><ChevronLeft className="w-6 h-6" /></button>
-            )}
-            {step < 3 ? (
-              <button type="button" onClick={nextStep} className="flex-1 bg-[#0E5C37] text-white rounded-xl font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2">Lanjutkan <ChevronRight className="w-4 h-4" /></button>
-            ) : (
-              <button type="button" onClick={handleSubmit} disabled={isLoading || !formData.agreeTerms || !formData.agreePrivacy} className="flex-1 bg-[#0E5C37] text-white rounded-xl font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2 disabled:bg-stone-300">
-                {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Selesaikan Pendaftaran'}
-              </button>
-            )}
+                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                    <FieldLabel label={`${t.password} *`}>
+                      <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-black/30" />
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        name="password"
+                        autoComplete="new-password"
+                        value={formData.password}
+                        onChange={handleInputChange}
+                        placeholder="••••••••"
+                        className="w-full rounded-2xl border border-black/10 bg-[#f8f8f5] py-4 pl-11 pr-12 text-sm font-semibold outline-none transition-all placeholder:text-black/25 focus:border-black/35 focus:bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((value) => !value)}
+                        aria-label={showPassword ? t.hidePassword : t.showPassword}
+                        className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-black/35 transition-colors hover:bg-black/5 hover:text-black"
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </FieldLabel>
+
+                    <FieldLabel label={`${t.confirmPassword} *`}>
+                      <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-black/30" />
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        name="confirmPassword"
+                        autoComplete="new-password"
+                        value={formData.confirmPassword}
+                        onChange={handleInputChange}
+                        placeholder="••••••••"
+                        className="w-full rounded-2xl border border-black/10 bg-[#f8f8f5] py-4 pl-11 pr-4 text-sm font-semibold outline-none transition-all placeholder:text-black/25 focus:border-black/35 focus:bg-white"
+                      />
+                    </FieldLabel>
+                  </div>
+                </motion.div>
+              )}
+
+              {step === 3 && (
+                <motion.div
+                  key="step-3"
+                  initial={{ opacity: 0, x: 24 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -24 }}
+                  transition={{ duration: 0.22 }}
+                  className="space-y-4"
+                >
+                  <div className="mb-6 rounded-2xl bg-[#f2f2ee] p-5">
+                    <p className="font-extrabold">
+                      {t.almostDone}
+                    </p>
+                    <p className="mt-1.5 text-xs leading-5 text-black/45">
+                      {t.almostDoneDesc}
+                    </p>
+                  </div>
+
+                  <LegalCard
+                    icon={ShieldCheck}
+                    title={t.terms}
+                    description={t.termsDesc}
+                    checked={formData.agreeTerms}
+                    onClick={() => openModal("terms")}
+                  />
+
+                  <LegalCard
+                    icon={FileText}
+                    title={t.privacy}
+                    description={t.privacyDesc}
+                    checked={formData.agreePrivacy}
+                    onClick={() => openModal("privacy")}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
-          <p className="text-center text-[10px] font-bold text-stone-400 mt-6 uppercase tracking-widest">Sudah punya akun? <Link href="/login" className="text-[#0E5C37] hover:underline">Masuk di sini</Link></p>
-        </div>
-      </div>
+
+          <div className="border-t border-black/8 bg-white px-6 py-5 sm:px-8">
+            <div className="flex gap-3">
+              {step > 1 && (
+                <button
+                  type="button"
+                  onClick={previousStep}
+                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-black/10 bg-[#f5f5f1] transition-colors hover:border-black/25 hover:bg-white"
+                >
+                  <ChevronLeft size={20} />
+                </button>
+              )}
+
+              {step < 3 ? (
+                <button
+                  type="button"
+                  onClick={nextStep}
+                  className="inline-flex min-h-14 flex-1 items-center justify-center gap-3 rounded-full bg-black px-6 text-xs font-extrabold uppercase tracking-[0.1em] text-white transition-all hover:-translate-y-0.5 hover:bg-[#252525]"
+                >
+                  {t.continue}
+                  <ArrowRight size={15} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={
+                    isLoading ||
+                    !formData.agreeTerms ||
+                    !formData.agreePrivacy
+                  }
+                  className="inline-flex min-h-14 flex-1 items-center justify-center gap-3 rounded-full bg-black px-6 text-xs font-extrabold uppercase tracking-[0.1em] text-white transition-all hover:-translate-y-0.5 hover:bg-[#252525] disabled:cursor-not-allowed disabled:bg-black/20 disabled:hover:translate-y-0"
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <>
+                      {t.finish}
+                      <ArrowRight size={15} />
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+
+            <p className="mt-5 text-center text-[9px] font-bold uppercase tracking-[0.14em] text-black/35">
+              {t.haveAccount}{" "}
+              <Link
+                href="/login"
+                className="font-extrabold text-black underline-offset-4 hover:underline"
+              >
+                {t.loginHere}
+              </Link>
+            </p>
+          </div>
+        </motion.div>
+      </main>
     </div>
+  );
+}
+
+function FieldLabel({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block space-y-2">
+      <span className="ml-1 block text-[10px] font-extrabold uppercase tracking-[0.17em] text-black/40">
+        {label}
+      </span>
+
+      <span className="relative block">
+        {children}
+      </span>
+    </label>
+  );
+}
+
+function LegalCard({
+  icon: Icon,
+  title,
+  description,
+  checked,
+  onClick,
+}: {
+  icon: React.ElementType;
+  title: string;
+  description: string;
+  checked: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-start gap-4 rounded-2xl border p-4 text-left transition-all ${
+        checked
+          ? "border-black bg-black text-white"
+          : "border-black/10 bg-white hover:border-black/25"
+      }`}
+    >
+      <div
+        className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+          checked
+            ? "bg-white text-black"
+            : "bg-[#f2f2ee] text-black"
+        }`}
+      >
+        {checked ? (
+          <Check size={17} strokeWidth={2.6} />
+        ) : (
+          <Icon size={17} />
+        )}
+      </div>
+
+      <div>
+        <p className="text-sm font-extrabold">
+          {title}
+        </p>
+        <p
+          className={`mt-1 text-xs leading-5 ${
+            checked ? "text-white/55" : "text-black/45"
+          }`}
+        >
+          {description}
+        </p>
+      </div>
+    </button>
   );
 }

@@ -32,44 +32,144 @@ export default function KioskOrderSuccess({
     if (hasPrinted.current) return;
     hasPrinted.current = true;
 
+    let cancelled = false;
+
+    const clamp = (
+      value: unknown,
+      min: number,
+      max: number,
+      fallback: number,
+    ) => {
+      const parsed = Number(value);
+
+      if (!Number.isFinite(parsed)) {
+        return fallback;
+      }
+
+      return Math.min(
+        max,
+        Math.max(
+          min,
+          Math.round(parsed),
+        ),
+      );
+    };
+
+    const wait = (milliseconds: number) =>
+      new Promise<void>((resolve) => {
+        window.setTimeout(resolve, milliseconds);
+      });
+
     const handleAutoPrint = async () => {
       try {
-        const activePrinter = PrinterManager.getPrinter(slug);
+        const activePrinter =
+          PrinterManager.getPrinter(slug);
 
         if (!activePrinter) {
           console.warn('Printer Kiosk belum diatur.');
           return;
         }
 
-        let receiptSettings: Record<string, unknown> = {};
+        let receiptSettings: Record<string, any> = {};
+
         try {
           receiptSettings = JSON.parse(
-            localStorage.getItem(`evo_printer_settings_${slug}`) || '{}'
+            localStorage.getItem(
+              `evo_printer_settings_${slug}`,
+            ) || '{}',
           );
         } catch {
           receiptSettings = {};
         }
 
-        // Ambil daftar produk dari Zustand store untuk dikirim ke orderPrint
-        const storeMenuItems = useMenuStore.getState().items as any;
+        /*
+         * Samakan dengan Cashier:
+         * autoPrint = false berarti transaksi Kiosk tidak mencetak otomatis.
+         */
+        if (receiptSettings.autoPrint === false) {
+          return;
+        }
 
-        await printOrder({
-          order,
-          target: 'customer',
-          printer: activePrinter,
-          slug,
-          storeName: storeName,
-          cashierName: 'Kiosk', // <--- Dipendekkan jadi 'Kiosk' agar rapi & tidak tindihan di 58mm
-          menuItems: storeMenuItems || [],
-          settings: receiptSettings as any,
-        });
+        const copies = clamp(
+          receiptSettings.copies,
+          1,
+          5,
+          1,
+        );
 
+        const copyDelayMs = clamp(
+          receiptSettings.copyDelayMs,
+          0,
+          15000,
+          3000,
+        );
+
+        const storeMenuItems =
+          useMenuStore.getState().items as any[];
+
+        for (
+          let index = 0;
+          index < copies;
+          index += 1
+        ) {
+          if (cancelled) {
+            return;
+          }
+
+          const copyNumber = index + 1;
+
+          await printOrder({
+            order,
+            target: 'customer',
+            printer: activePrinter,
+            slug,
+            storeName,
+            cashierName: 'Kiosk',
+            menuItems: storeMenuItems || [],
+            settings: {
+              ...receiptSettings,
+              copies: 1,
+              copyDelayMs,
+              copyLabel:
+                copyNumber > 1
+                  ? `COPY #${copyNumber - 1}`
+                  : '',
+            } as any,
+          });
+
+          if (
+            copyNumber < copies &&
+            copyDelayMs > 0
+          ) {
+            const manager = PrinterManager as any;
+
+            if (
+              typeof manager.waitAfterPhysicalPrint ===
+              'function'
+            ) {
+              await manager.waitAfterPhysicalPrint(
+                activePrinter,
+                slug,
+                copyDelayMs,
+              );
+            } else {
+              await wait(copyDelayMs);
+            }
+          }
+        }
       } catch (error) {
-        console.error('Gagal mencetak struk Kiosk:', error);
+        console.error(
+          'Gagal mencetak struk Kiosk:',
+          error,
+        );
       }
     };
 
     void handleAutoPrint();
+
+    return () => {
+      cancelled = true;
+    };
   }, [order, slug, storeName]);
 
   return (

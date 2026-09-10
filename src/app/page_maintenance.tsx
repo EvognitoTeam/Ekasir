@@ -24,7 +24,7 @@ export default function MaintenancePage() {
         {/* Typographic Content */}
         <div className="space-y-4">
           <h1 className="text-4xl md:text-5xl font-headline text-[var(--color-primary)] tracking-tight">
-            Evokasir
+            KALOO POS
           </h1>
           
           <div className="w-12 h-1 bg-[var(--color-primary)] mx-auto opacity-20 rounded-full"></div>

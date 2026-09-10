@@ -2,10 +2,27 @@ import { useState, useEffect } from 'react';
 import { Order } from '@/types/menu';
 import { useMenuStore } from '@/store/menu.store';
 import { formatPrice } from '@/utils/formatters';
-import { 
-  Printer, Banknote, Sparkles, Clock, User, ShoppingBag,
-  Check, AlertCircle, CheckCircle2, Coffee, ChefHat, Edit3, XCircle,
-  Trash2, Loader2, Receipt, UtensilsCrossed
+import {
+  Printer,
+  Banknote,
+  Sparkles,
+  Clock,
+  User,
+  ShoppingBag,
+  Check,
+  AlertCircle,
+  CheckCircle2,
+  Coffee,
+  ChefHat,
+  Edit3,
+  XCircle,
+  Trash2,
+  Loader2,
+  Receipt,
+  UtensilsCrossed,
+  QrCode,
+  PackageCheck,
+  CircleDollarSign,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import Swal from 'sweetalert2';
@@ -295,190 +312,180 @@ export default function OrderCard({
     };
 
   // LOGIKA STATUS PEMBAYARAN
-  const rawPaymentStatus = String(order.paymentStatus || (order as any).payment_status);
+  const rawPaymentStatus = String(
+    readOrderField(order, ['paymentStatus', 'payment_status']) ?? '1',
+  ).trim().toLowerCase();
+
+  const paymentMethod = String(
+    readOrderField(order, ['paymentMethod', 'payment_method']) ?? 'cash',
+  ).trim().toLowerCase();
+
   let paymentStatusUi = 'BLM BAYAR';
-  
+
   if (rawPaymentStatus === '2' || rawPaymentStatus === 'paid') {
     paymentStatusUi = 'LUNAS';
   } else if (rawPaymentStatus === '3' || rawPaymentStatus === 'expired') {
-    paymentStatusUi = 'EXPIRED'; 
+    paymentStatusUi = 'EXPIRED';
+  } else if (rawPaymentStatus === '4' || rawPaymentStatus === 'failed') {
+    paymentStatusUi = 'GAGAL';
   }
 
-  // 🔴 AUTO-CANCEL PESANAN JIKA QRIS EXPIRED
+  // QRIS expired pada order pending dibatalkan otomatis, mengikuti logic lama.
   useEffect(() => {
-    if (order.status === 'pending' && order.paymentMethod === 'qris' && paymentStatusUi === 'EXPIRED') {
+    if (
+      order.status === 'pending' &&
+      paymentMethod === 'qris' &&
+      paymentStatusUi === 'EXPIRED'
+    ) {
       onUpdateStatus(String(order.id), 'cancelled');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [order.status, order.paymentMethod, paymentStatusUi, order.id]);
+  }, [order.status, paymentMethod, paymentStatusUi, order.id]);
 
-  let paymentBadgeBg = '#FEF2F2';
-  let paymentBadgeColor = '#991B1B';
-  let paymentBadgeBorder = '#FCA5A5';
+  const paymentMethodUi = paymentMethod === 'qris' ? 'QRIS' : 'TUNAI';
 
-  if (paymentStatusUi === 'LUNAS') {
-    paymentBadgeBg = '#ECFDF5';
-    paymentBadgeColor = '#065F46';
-    paymentBadgeBorder = '#6EE7B7';
-  } else if (paymentStatusUi === 'EXPIRED') {
-    paymentBadgeBg = '#F3F4F6';
-    paymentBadgeColor = '#4B5563';
-    paymentBadgeBorder = '#D1D5DB';
-  }
+  const displayId = order.order_code
+    ? String(order.order_code).substring(0, 12)
+    : String(order.id);
 
-  const paymentMethodUi = order.paymentMethod || 'TUNAI';
-  const displayId = order.order_code ? order.order_code.substring(0, 8) : order.id;
+  const totalAmount = Number(
+    readOrderField(order, [
+      'totalAfterDiscount',
+      'total_after_discount',
+      'totalPrice',
+      'total_price',
+    ]) ?? 0,
+  );
+
+  const currentAdminNote = String(
+    readOrderField(order, ['adminNotes', 'admin_notes']) ?? '',
+  );
+
+  const tone =
+    order.status === 'pending'
+      ? {
+          strip: 'bg-amber-400',
+          badge: 'bg-amber-50 text-amber-700 ring-amber-100',
+        }
+      : order.status === 'confirmed'
+        ? {
+            strip: 'bg-blue-500',
+            badge: 'bg-blue-50 text-blue-700 ring-blue-100',
+          }
+        : order.status === 'preparing'
+          ? {
+              strip: 'bg-violet-500',
+              badge: 'bg-violet-50 text-violet-700 ring-violet-100',
+            }
+          : order.status === 'ready'
+            ? {
+                strip: 'bg-emerald-500',
+                badge: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
+              }
+            : order.status === 'cancelled'
+              ? {
+                  strip: 'bg-red-500',
+                  badge: 'bg-red-50 text-red-700 ring-red-100',
+                }
+              : {
+                  strip: 'bg-stone-400',
+                  badge: 'bg-stone-100 text-stone-600 ring-stone-200',
+                };
+
+  const paymentTone =
+    paymentStatusUi === 'LUNAS'
+      ? 'bg-emerald-50 text-emerald-700 ring-emerald-100'
+      : paymentStatusUi === 'EXPIRED' || paymentStatusUi === 'GAGAL'
+        ? 'bg-stone-100 text-stone-500 ring-stone-200'
+        : 'bg-red-50 text-red-700 ring-red-100';
 
   return (
-    <motion.div
+    <motion.article
       layout
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.96 }}
-      transition={{ duration: 0.28, ease: [0.4, 0, 0.2, 1] }}
-      style={{
-        background: '#ffffff',
-        borderRadius: '16px',
-        border: `1.5px solid ${isUrgent ? '#FCA5A5' : cfg.border}`,
-        boxShadow: isUrgent
-          ? '0 0 0 3px rgba(252,165,165,0.25), 0 4px 24px rgba(28,28,25,0.07)'
-          : '0 2px 16px rgba(28,28,25,0.06)',
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-
-        /*
-         * Tinggi card mengikuti isi.
-         * Penting untuk masonry layout agar tidak ada ruang kosong.
-         */
-        height: 'auto',
-        alignSelf: 'flex-start',
-        breakInside: 'avoid',
-
-        opacity: order.status === 'cancelled' ? 0.7 : 1,
-      }}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: order.status === 'cancelled' ? 0.58 : 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.985 }}
+      transition={{ duration: 0.16 }}
+      className={`relative overflow-hidden rounded-[18px] border bg-[#fffefa] shadow-[0_2px_10px_rgba(0,0,0,.04)] ${
+        isUrgent
+          ? 'border-red-300 ring-2 ring-red-100'
+          : 'border-black/[0.09]'
+      }`}
     >
+      {/* PRINT MODAL */}
       {showPrintPopup && (
         <div
-          onClick={(
-            event
-          ) => {
+          onClick={(event) => {
             event.stopPropagation();
-            setShowPrintPopup(
-              false
-            );
+            setShowPrintPopup(false);
           }}
-          className="fixed inset-0 z-[10000] flex items-end justify-center bg-stone-950/65 p-0 backdrop-blur-sm sm:items-center sm:p-5"
+          className="fixed inset-0 z-[10000] flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-5"
         >
           <motion.div
-            initial={{
-              opacity: 0,
-              y: 30,
-              scale: 0.97,
-            }}
-            animate={{
-              opacity: 1,
-              y: 0,
-              scale: 1,
-            }}
-            onClick={(
-              event
-            ) =>
-              event.stopPropagation()
-            }
-            className="w-full max-w-md overflow-hidden rounded-t-[2rem] bg-white shadow-2xl sm:rounded-[2rem]"
+            initial={{ opacity: 0, y: 30, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            onClick={(event) => event.stopPropagation()}
+            className="w-full max-w-md overflow-hidden rounded-t-[28px] bg-white shadow-2xl sm:rounded-[28px]"
           >
-            <div className="flex items-center justify-between border-b border-stone-100 bg-stone-50 p-5">
+            <header className="flex items-center justify-between gap-4 bg-[#11110f] p-5 text-white">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#0E5C37]">
-                  Pesanan #{displayId}
+                <p className="font-mono text-[8px] font-black uppercase tracking-[.14em] text-white/35">
+                  Order #{displayId}
                 </p>
-
-                <h3 className="mt-1 text-xl font-black text-stone-900">
-                  Pilih tujuan cetak
+                <h3 className="mt-1 text-xl font-black tracking-[-.04em]">
+                  Print ticket
                 </h3>
               </div>
 
               <button
                 type="button"
-                disabled={
-                  printingTarget !==
-                  null
-                }
-                onClick={() =>
-                  setShowPrintPopup(
-                    false
-                  )
-                }
-                className="flex h-10 w-10 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-500"
+                disabled={printingTarget !== null}
+                onClick={() => setShowPrintPopup(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-white/60"
               >
-                <XCircle className="h-5 w-5" />
+                <XCircle className="h-4 w-4" />
               </button>
-            </div>
+            </header>
 
-            <div className="grid gap-3 p-5">
+            <div className="grid gap-2 p-4">
               <button
                 type="button"
-                disabled={
-                  printingTarget !==
-                  null
-                }
-                onClick={() =>
-                  void handlePrintTarget(
-                    'kitchen'
-                  )
-                }
-                className="group flex min-h-[104px] items-center gap-4 rounded-2xl border-2 border-orange-200 bg-orange-50 p-4 text-left transition hover:border-orange-400 disabled:opacity-50"
+                disabled={printingTarget !== null}
+                onClick={() => void handlePrintTarget('kitchen')}
+                className="flex min-h-[88px] items-center gap-4 rounded-[16px] border border-black/[0.08] bg-[#f5f5f1] p-4 text-left disabled:opacity-40"
               >
-                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-orange-500 text-white shadow-lg shadow-orange-500/20">
-                  {printingTarget ===
-                  'kitchen' ? (
-                    <Loader2 className="h-7 w-7 animate-spin" />
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-black text-white">
+                  {printingTarget === 'kitchen' ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
                   ) : (
-                    <UtensilsCrossed className="h-7 w-7" />
+                    <UtensilsCrossed className="h-5 w-5" />
                   )}
                 </span>
-
-                <div className="min-w-0 flex-1">
-                  <p className="text-base font-black text-stone-900">
-                    Cetak Dapur
-                  </p>
-
-                  <p className="mt-1 text-xs leading-relaxed text-stone-500">
-                    Berisi item, jumlah, add-on, catatan, meja, dan tipe layanan tanpa harga.
+                <div>
+                  <p className="text-xs font-black">Kitchen Ticket</p>
+                  <p className="mt-1 text-[8px] leading-4 text-black/35">
+                    Tanpa harga. Fokus pada item, add-on, catatan, meja, dan tipe layanan.
                   </p>
                 </div>
               </button>
 
               <button
                 type="button"
-                disabled={
-                  printingTarget !==
-                  null
-                }
-                onClick={() =>
-                  void handlePrintTarget(
-                    'customer'
-                  )
-                }
-                className="group flex min-h-[104px] items-center gap-4 rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-4 text-left transition hover:border-emerald-400 disabled:opacity-50"
+                disabled={printingTarget !== null}
+                onClick={() => void handlePrintTarget('customer')}
+                className="flex min-h-[88px] items-center gap-4 rounded-[16px] border border-black/[0.08] bg-white p-4 text-left disabled:opacity-40"
               >
-                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#0E5C37] text-white shadow-lg shadow-emerald-900/20">
-                  {printingTarget ===
-                  'customer' ? (
-                    <Loader2 className="h-7 w-7 animate-spin" />
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#ecece7] text-black">
+                  {printingTarget === 'customer' ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
                   ) : (
-                    <Receipt className="h-7 w-7" />
+                    <Receipt className="h-5 w-5" />
                   )}
                 </span>
-
-                <div className="min-w-0 flex-1">
-                  <p className="text-base font-black text-stone-900">
-                    Cetak Customer
-                  </p>
-
-                  <p className="mt-1 text-xs leading-relaxed text-stone-500">
-                    Struk lengkap dengan harga, total, pembayaran, uang diterima, dan kembalian.
+                <div>
+                  <p className="text-xs font-black">Customer Receipt</p>
+                  <p className="mt-1 text-[8px] leading-4 text-black/35">
+                    Struk lengkap dengan total dan informasi pembayaran.
                   </p>
                 </div>
               </button>
@@ -487,497 +494,413 @@ export default function OrderCard({
         </div>
       )}
 
-      <div style={{ height: '4px', background: isUrgent ? '#EF4444' : cfg.dot, borderRadius: '16px 16px 0 0' }} />
-
-      <div style={{ padding: '11px 14px 9px', background: cfg.bg, borderBottom: `1px solid ${cfg.border}` }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            {isTakeaway ? (
-              <>
-                <span style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  background: '#DC2626',
-                  color: '#fff',
-                  border: '1px solid #B91C1C',
-                  padding: '4px 10px',
-                  borderRadius: '6px',
-                  fontSize: '10px',
-                  fontWeight: 900,
-                  fontFamily: 'var(--font-label)',
-                  letterSpacing: '0.08em',
-                  boxShadow: '0 2px 8px rgba(220,38,38,0.2)',
-                }}>
-                  <ShoppingBag size={11} /> TAKEAWAY
-                </span>
-
-                {hasTable && (
-                  <span style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    background: '#FFFBEB',
-                    color: '#92400E',
-                    border: '1px solid #FCD34D',
-                    padding: '3px 9px',
-                    borderRadius: '6px',
-                    fontSize: '10px',
-                    fontWeight: 800,
-                    fontFamily: 'var(--font-label)',
-                    letterSpacing: '0.05em',
-                  }}>
-                    <Coffee size={10} />
-                    DARI
-                    <strong style={{ color: '#B45309', marginLeft: 1 }}>
-                      {tableName}
-                    </strong>
-                  </span>
-                )}
-              </>
-            ) : (
-              <span style={{
-                display: 'inline-flex', alignItems: 'center', gap: '4px',
-                background: '#f0ede9', color: '#1c1c19', border: '1px solid #d6c2bd',
-                padding: '3px 9px', borderRadius: '6px', fontSize: '10px', fontWeight: 700, fontFamily: 'var(--font-label)', letterSpacing: '0.06em'
-              }}>
-                <Coffee size={10} /> MEJA
-                <strong style={{ color: '#0E5C37', marginLeft: 2 }}>
-                  {hasTable ? tableName : 'WALK-IN'}
-                </strong>
-              </span>
-            )}
-
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: '5px',
-              background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}`,
-              padding: '3px 9px', borderRadius: '6px', fontSize: '10px', fontWeight: 700, fontFamily: 'var(--font-label)', letterSpacing: '0.04em'
-            }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.dot, display: 'inline-block' }} />
-              {cfg.label}
-            </span>
+      {/* TICKET HEADER */}
+      <header className="bg-[#11110f] px-4 py-4 text-white">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[7px] font-black uppercase tracking-[.16em] text-white/30">
+              Order ticket
+            </p>
+            <h2 className="mt-1 truncate font-mono text-2xl font-black tracking-[-.04em]">
+              #{displayId}
+            </h2>
           </div>
 
-          {order.status !== 'cancelled' && order.status !== 'completed' && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '4px',
-              fontSize: '10px', fontWeight: 700, fontFamily: 'monospace',
-              color: isUrgent ? '#DC2626' : '#9CA3AF',
-              background: isUrgent ? '#FEF2F2' : 'transparent',
-              padding: isUrgent ? '2px 7px' : '2px 0',
-              borderRadius: '6px',
-            }}>
-              {isUrgent ? <AlertCircle size={11} /> : <Clock size={11} />}
-              {elapsed}
+          <div className="shrink-0 text-right">
+            <div className="flex items-center justify-end gap-1.5">
+              <span
+                className={`rounded-full px-2.5 py-1 text-[7px] font-black uppercase tracking-[.08em] ${tone.badge}`}
+              >
+                {cfg.label}
+              </span>
             </div>
-          )}
+
+            {order.status !== 'cancelled' && order.status !== 'completed' && (
+              <div
+                className={`mt-2 inline-flex items-center gap-1.5 font-mono text-[8px] font-black ${
+                  isUrgent ? 'text-red-300' : 'text-white/35'
+                }`}
+              >
+                {isUrgent ? (
+                  <AlertCircle className="h-3 w-3" />
+                ) : (
+                  <Clock className="h-3 w-3" />
+                )}
+                {elapsed}
+              </div>
+            )}
+          </div>
         </div>
 
-        <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 700, color: '#1c1c19', letterSpacing: '0.03em' }}>
-            #{displayId}
-          </span>
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
+          {isTakeaway ? (
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[7px] font-black uppercase tracking-[.08em] text-red-700">
+              <ShoppingBag className="h-3 w-3" />
+              Takeaway
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[7px] font-black uppercase tracking-[.08em] text-black">
+              <Coffee className="h-3 w-3" />
+              {hasTable ? `Meja ${tableName}` : 'Walk-in'}
+            </span>
+          )}
+
           {(order.customerName || order.name) && (
-            <>
-              <span style={{ color: '#d6c2bd', fontSize: '10px' }}>·</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '11px', fontWeight: 600, color: '#5a4b44' }}>
-                <User size={10} style={{ color: '#0E5C37' }} />
-                {order.customerName || order.name}
-              </span>
-            </>
+            <span className="inline-flex min-w-0 items-center gap-1.5 text-[8px] font-bold text-white/45">
+              <User className="h-3 w-3 shrink-0" />
+              <span className="truncate">{order.customerName || order.name}</span>
+            </span>
           )}
         </div>
+      </header>
+
+      {/* tear line */}
+      <div className="relative h-3 bg-[#fffefa]">
+        <div className="absolute inset-x-0 top-1/2 border-t border-dashed border-black/15" />
+        <div className="absolute -left-2 top-0 h-4 w-4 rounded-full bg-[#efefeb]" />
+        <div className="absolute -right-2 top-0 h-4 w-4 rounded-full bg-[#efefeb]" />
       </div>
 
-      {isTakeaway && (
-        <div style={{
-          background: '#FEF2F2',
-          borderBottom: '1px solid #FCA5A5',
-          padding: '8px 14px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '7px',
-          color: '#B91C1C',
-        }}>
-          <ShoppingBag size={14} />
-          <span style={{
-            fontSize: '10px',
-            fontWeight: 900,
-            letterSpacing: '0.1em',
-            textTransform: 'uppercase',
-            textAlign: 'center',
-          }}>
-            Bungkus pesanan atas nama: {order.customerName || order.name}
-          </span>
-        </div>
-      )}
+      {/* ITEMS */}
+      <div className="px-4 pb-3">
+        {(order.items || []).map((cartItem: any, index) => {
+          const searchId = String(
+            cartItem.menuItemId ??
+              cartItem.menu_item_id ??
+              cartItem.product_id ??
+              cartItem.productId ??
+              '',
+          );
 
-      <div
-        style={{
-          padding: '11px 14px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-          background: '#ffffff',
+          const product = menuItems.find((menu) => String(menu.id) === searchId);
 
-          // Jangan pakai flex: 1 — tinggi card harus mengikuti jumlah item.
-          flex: '0 0 auto',
-        }}
-      >
-        {(order.items || []).map((cartItem, idx) => {
-          const searchId = cartItem.menuItemId || String(cartItem.product_id);
-          const product = menuItems.find(m => String(m.id) === searchId);
-          if (!product) return null;
+          const productName =
+            product?.name ||
+            cartItem.name ||
+            cartItem.product_name ||
+            `Item ${searchId || index + 1}`;
 
           const addons: string[] = [];
-          let extractedCustNotes = '';
-          
-          let rawAddOnsDetails = cartItem.selectedAddOnsDetails;
+          let extractedCustomerNote = '';
+
+          let rawAddOnsDetails =
+            cartItem.selectedAddOnsDetails ??
+            cartItem.selected_add_ons_details ??
+            cartItem.notes;
+
           if (typeof rawAddOnsDetails === 'string') {
             try {
               rawAddOnsDetails = JSON.parse(rawAddOnsDetails);
-            } catch (e) {
-              console.error("Gagal memproses JSON addons:", e);
+            } catch {
               rawAddOnsDetails = [];
             }
           }
-          
-          if (rawAddOnsDetails && Array.isArray(rawAddOnsDetails)) {
+
+          if (Array.isArray(rawAddOnsDetails)) {
             rawAddOnsDetails.forEach((addonItem: any) => {
-                if (addonItem && typeof addonItem === 'object') {
-                  if (addonItem.cust_notes) {
-                      extractedCustNotes = addonItem.cust_notes;
-                  }
+              if (!addonItem || typeof addonItem !== 'object') return;
 
-                  const addonId = addonItem.id;
-                  const fallbackName = addonItem.name;
+              if (addonItem.cust_notes || addonItem.customer_note) {
+                extractedCustomerNote = String(
+                  addonItem.cust_notes || addonItem.customer_note,
+                );
+              }
 
-                  let foundName = null;
-                  if (addonId) {
-                    product.categorizedAddons?.forEach((cat: any) => {
-                        const found = cat.addons?.find((a: any) => Number(a.id) === Number(addonId));
-                        if (found) foundName = found.name;
-                    });
-                  }
+              const addonId = addonItem.id;
+              const fallbackName = addonItem.name;
+              let foundName = '';
 
-                  if (foundName) {
-                      addons.push(foundName);
-                  } else if (fallbackName) {
-                      addons.push(fallbackName);
-                  } else if (addonId) {
-                      addons.push(`Ekstra #${addonId}`); 
-                  }
+              if (addonId && product) {
+                product.categorizedAddons?.forEach((category: any) => {
+                  const found = category.addons?.find(
+                    (addon: any) => Number(addon.id) === Number(addonId),
+                  );
+
+                  if (found) foundName = String(found.name);
+                });
+              }
+
+              if (foundName) {
+                addons.push(foundName);
+              } else if (
+                fallbackName &&
+                !String(fallbackName).startsWith('Note:')
+              ) {
+                addons.push(String(fallbackName));
               }
             });
           }
 
+          const quantity = Number(cartItem.quantity || 1);
+
           return (
-            <div key={idx} style={{ display: 'flex', gap: '9px', alignItems: 'flex-start' }}>
-              <div style={{
-                minWidth: '22px', height: '22px', borderRadius: '7px',
-                background: '#f0ede9', border: '1px solid #e5e2dd',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '11px', fontWeight: 800, color: '#0E5C37', fontFamily: 'monospace'
-              }}>
-                {cartItem.quantity || 1}
-              </div>
-              <div style={{ flex: 1 }}>
-                <p style={{ fontSize: '13px', fontWeight: 700, color: '#1c1c19', lineHeight: 1.3, margin: 0 }}>
-                  {product.name}
-                </p>
-                {addons.length > 0 && (
-                  <p style={{ fontSize: '11px', color: '#5a4b44', margin: '2px 0 0', lineHeight: 1.4 }}>
-                    {addons.join(' · ')}
-                  </p>
-                )}
-                {extractedCustNotes && (
-                  <p style={{
-                    fontSize: '11px', color: '#0369a1', background: '#f0f9ff',
-                    border: '1px solid #bae6fd', padding: '2px 8px', borderRadius: '5px',
-                    marginTop: '4px', fontStyle: 'italic', display: 'inline-block'
-                  }}>
-                    <i className="fas fa-comment-dots mr-1 text-[10px]"></i> &quot;{extractedCustNotes}&quot;
-                  </p>
-                )}
+            <div
+              key={`${searchId}-${index}`}
+              className={`${index > 0 ? 'border-t border-dashed border-black/10' : ''} py-3`}
+            >
+              <div className="flex items-start gap-3">
+                <span className="min-w-7 font-mono text-[10px] font-black text-black">
+                  {quantity}×
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-black leading-4">{productName}</p>
+
+                  {addons.length > 0 && (
+                    <p className="mt-1 text-[8px] leading-4 text-black/40">
+                      + {addons.join(' · ')}
+                    </p>
+                  )}
+
+                  {extractedCustomerNote && (
+                    <p className="mt-1.5 rounded-lg bg-blue-50 px-2 py-1.5 text-[8px] font-bold italic leading-4 text-blue-700">
+                      “{extractedCustomerNote}”
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           );
         })}
+
+        {(!order.items || order.items.length === 0) && (
+          <div className="py-5 text-center text-[8px] font-bold uppercase tracking-[.08em] text-black/25">
+            Detail item tidak tersedia
+          </div>
+        )}
       </div>
 
+      {/* TAKEAWAY INFO */}
+      {isTakeaway && (
+        <div className="mx-4 mb-3 flex items-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2.5 text-[8px] font-black uppercase tracking-[.08em] text-red-700">
+          <ShoppingBag className="h-3.5 w-3.5 shrink-0" />
+          Ambil atas nama {order.customerName || order.name || 'Customer'}
+        </div>
+      )}
+
+      {/* CASHIER NOTE */}
       {role === 'cashier' && order.status !== 'cancelled' && (
-        <div style={{ padding: '0 14px 10px', background: '#ffffff' }}>
+        <div className="border-t border-dashed border-black/12 px-4 py-3">
           {isEditingNote ? (
-            <div style={{ display: 'flex', gap: '6px' }}>
-              <input 
-                type="text" 
-                value={noteInput} 
-                onChange={e => setNoteInput(e.target.value)}
-                placeholder="Catatan kasir (misal: Split cash/Qris)"
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={noteInput}
+                onChange={(event) => setNoteInput(event.target.value)}
+                placeholder="Catatan internal..."
                 autoFocus
-                style={{ 
-                  flex: 1, padding: '8px 12px', borderRadius: '8px', 
-                  border: '1.5px solid #0E5C37', fontSize: '12px', outline: 'none',
-                  color: '#1c1c19'
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    onUpdateNote?.(String(order.id), noteInput);
+                    setIsEditingNote(false);
+                  }
                 }}
-                onKeyDown={e => { if (e.key === 'Enter') { onUpdateNote?.(String(order.id), noteInput); setIsEditingNote(false); } }}
+                className="h-9 min-w-0 flex-1 rounded-xl border border-black/[0.12] bg-white px-3 text-[9px] font-semibold outline-none focus:border-black"
               />
-              <button 
-                onClick={() => { onUpdateNote?.(String(order.id), noteInput); setIsEditingNote(false); }}
-                style={{ 
-                  padding: '8px 12px', borderRadius: '8px', background: '#0E5C37', 
-                  color: '#fff', fontSize: '12px', fontWeight: 700, border: 'none', cursor: 'pointer' 
-                }}>
+              <button
+                type="button"
+                onClick={() => {
+                  onUpdateNote?.(String(order.id), noteInput);
+                  setIsEditingNote(false);
+                }}
+                className="h-9 rounded-xl bg-black px-3 text-[8px] font-black uppercase tracking-[.08em] text-white"
+              >
                 Simpan
               </button>
             </div>
           ) : (
-            <div 
-              onClick={() => setIsEditingNote(true)}
-              style={{ 
-                padding: '8px 12px', borderRadius: '8px', background: order.admin_notes ? '#FFFBEB' : '#f6f3ee', 
-                border: `1px dashed ${order.admin_notes ? '#FDE68A' : '#d6c2bd'}`,
-                display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer',
-                color: order.admin_notes ? '#92400E' : '#9CA3AF', fontSize: '11px', transition: 'all 0.2s'
-              }}>
-              <Edit3 size={12} />
-              <span style={{ flex: 1, fontStyle: order.admin_notes ? 'normal' : 'italic', fontWeight: order.admin_notes ? 600 : 400 }}>
-                {order.admin_notes || '+ Tambah catatan kasir'}
+            <button
+              type="button"
+              onClick={() => {
+                setNoteInput(currentAdminNote);
+                setIsEditingNote(true);
+              }}
+              className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[8px] font-bold ${
+                currentAdminNote
+                  ? 'bg-amber-50 text-amber-800'
+                  : 'bg-[#f2f2ee] text-black/30'
+              }`}
+            >
+              <Edit3 className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">
+                {currentAdminNote || 'Tambah catatan kasir'}
               </span>
-            </div>
+            </button>
           )}
         </div>
       )}
 
-      <div style={{ borderTop: '1px solid #f0ede9', background: '#fafaf9' }}>
-        <div style={{ padding: '8px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f0ede9' }}>
-          <div>
-            <p style={{ fontSize: '9px', color: '#9CA3AF', fontFamily: 'var(--font-label)', letterSpacing: '0.08em', margin: 0 }}>TOTAL BAYAR</p>
-            <p style={{ fontSize: '15px', fontWeight: 800, color: '#0E5C37', margin: 0, letterSpacing: '-0.01em', textDecoration: order.status === 'cancelled' ? 'line-through' : 'none' }}>
-              {formatPrice(Number(order.totalAfterDiscount || order.total_after_discount || 0))}
-            </p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '10px', fontWeight: 700, color: '#5a4b44', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+      {/* PAYMENT */}
+      <div className="border-t border-dashed border-black/15 bg-[#f6f6f2] px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[7px] font-black uppercase tracking-[.08em] text-black/50 ring-1 ring-black/[0.06]">
+              {paymentMethod === 'qris' ? (
+                <QrCode className="h-3 w-3" />
+              ) : (
+                <Banknote className="h-3 w-3" />
+              )}
               {paymentMethodUi}
             </span>
-            <span style={{
-              fontSize: '9px', fontWeight: 800, padding: '2px 7px', borderRadius: '5px', letterSpacing: '0.05em',
-              background: paymentBadgeBg,
-              color: paymentBadgeColor,
-              border: `1px solid ${paymentBadgeBorder}`
-            }}>
-              {paymentStatusUi === 'EXPIRED' ? 'KEDALUWARSA' : paymentStatusUi}
+
+            <span
+              className={`rounded-lg px-2.5 py-1.5 text-[7px] font-black uppercase tracking-[.08em] ring-1 ${paymentTone}`}
+            >
+              {paymentStatusUi === 'EXPIRED'
+                ? 'Kedaluwarsa'
+                : paymentStatusUi === 'BLM BAYAR'
+                  ? 'Belum bayar'
+                  : paymentStatusUi}
             </span>
           </div>
-        </div>
 
-        <div style={{ padding: '9px 12px 11px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <button
-            onClick={handleOpenPrintPopup}
-            title="Pilih Jenis Cetak"
-            style={{
-              width: '40px', height: '40px', borderRadius: '10px',
-              background: '#fff', border: '1.5px solid #e5e2dd',
-              color: '#5a4b44', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', flexShrink: 0, transition: 'all 0.2s',
-            }}
-            onMouseOver={e => (e.currentTarget.style.background = '#f6f3ee')}
-            onMouseOut={e => (e.currentTarget.style.background = '#fff')}
-          >
-            <Printer size={15} />
-          </button>
-
-          {role === 'cashier' && order.status == 'pending' && (
-            <button
-              onClick={() => {
-                Swal.fire({
-                  title: 'Batalkan Pesanan?',
-                  text: `Pesanan #${displayId} akan dibatalkan permanen.`,
-                  icon: 'warning',
-                  showCancelButton: true,
-                  confirmButtonColor: '#DC2626',
-                  cancelButtonColor: '#9CA3AF',
-                  confirmButtonText: 'Ya, Batalkan!',
-                  cancelButtonText: 'Kembali',
-                  reverseButtons: true, 
-                  customClass: {
-                    popup: 'rounded-2xl',
-                  }
-                }).then((result) => {
-                  if (result.isConfirmed) {
-                    onUpdateStatus(String(order.id), 'cancelled' as any);
-                    Swal.fire({
-                      title: 'Dibatalkan!',
-                      text: `Pesanan #${displayId} telah dibatalkan.`,
-                      icon: 'success',
-                      timer: 1500,
-                      showConfirmButton: false
-                    });
-                  }
-                });
-              }}
-              title="Batalkan Pesanan"
-              style={{
-                width: '40px', height: '40px', borderRadius: '10px',
-                background: '#fff', border: '1.5px solid #FCA5A5',
-                color: '#DC2626', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', flexShrink: 0, transition: 'all 0.2s',
-              }}
-              onMouseOver={e => (e.currentTarget.style.background = '#FEF2F2')}
-              onMouseOut={e => (e.currentTarget.style.background = '#fff')}
+          <div className="text-right">
+            <p className="text-[7px] font-black uppercase tracking-[.1em] text-black/25">
+              Total
+            </p>
+            <p
+              className={`mt-0.5 font-mono text-sm font-black ${
+                order.status === 'cancelled' ? 'line-through text-black/30' : ''
+              }`}
             >
-              <Trash2 size={15} />
-            </button>
-          )}
-
-          <div style={{ flex: 1 }}>
-            {role === 'owner' ? (
-              <div style={{
-                textAlign: 'center', padding: '10px', borderRadius: '10px',
-                background: '#f6f3ee', border: '1px solid #e5e2dd',
-                fontSize: '11px', fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.06em', fontFamily: 'var(--font-label)'
-              }}>
-                MODE PANTAU
-              </div>
-            ) : (
-              <>
-                {order.status === 'pending' && (
-                  paymentMethodUi === 'cash' && paymentStatusUi !== 'LUNAS' ? (
-                    <button
-                      onClick={() => onUpdateStatus(String(order.id), 'confirmed', '2')} 
-                      style={{
-                        width: '100%', padding: '11px 16px', borderRadius: '10px',
-                        background: 'linear-gradient(135deg, #D97706, #B45309)',
-                        color: '#fff', fontSize: '12px', fontWeight: 800,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                        border: 'none', cursor: 'pointer', letterSpacing: '0.02em',
-                        boxShadow: '0 4px 14px rgba(180,83,9,0.3)',
-                      }}
-                    >
-                      <Banknote size={15} /> Terima Tunai
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => onUpdateStatus(String(order.id), 'confirmed')}
-                      disabled={order.paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS'}
-                      style={{
-                        width: '100%', padding: '11px 16px', borderRadius: '10px',
-                        background: (order.paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS') 
-                            ? '#e5e2dd' 
-                            : 'linear-gradient(135deg, #0E5C37, #065F46)',
-                        color: (order.paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS') 
-                            ? '#9CA3AF' 
-                            : '#fff',
-                        fontSize: '12px', fontWeight: 800,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                        border: 'none', cursor: (order.paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS') ? 'not-allowed' : 'pointer', 
-                        letterSpacing: '0.02em',
-                        boxShadow: (order.paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS') ? 'none' : '0 4px 14px rgba(14,92,55,0.3)',
-                      }}
-                    >
-                      {order.paymentMethod === 'qris' && paymentStatusUi === 'EXPIRED' ? (
-                        <> <XCircle size={15} /> QRIS Kedaluwarsa </>
-                      ) : order.paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS' ? (
-                        <> <Loader2 size={15} className="animate-spin" /> Menunggu Pembayaran...</>
-                      ) : (
-                        <> <CheckCircle2 size={15} /> Terima Pesanan </>
-                      )}
-                    </button>
-                  )
-                )}
-
-                {order.status === 'confirmed' && (
-                  <button disabled
-                    style={{
-                      width: '100%', padding: '11px 16px', borderRadius: '10px',
-                      background: 'linear-gradient(135deg, #7C3AED, #6D28D9)',
-                      color: '#fff', fontSize: '12px', fontWeight: 800,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                      border: 'none', cursor: 'not-allowed',
-                      boxShadow: '0 4px 14px rgba(124,58,237,0.3)',
-                    }}
-                  >
-                    <ChefHat size={15} /> (Hanya Kitchen yang bisa menggunakan tombol ini!!)
-                  </button>
-                )}
-
-                {order.status === 'preparing' && (
-                  <button
-                    onClick={() =>
-                      onUpdateStatus(
-                        String(order.id),
-                        'ready',
-                      )
-                    }
-                    style={{
-                      width: '100%',
-                      padding: '11px 16px',
-                      borderRadius: '10px',
-                      background:
-                        'linear-gradient(135deg, #2563EB, #1D4ED8)',
-                      color: '#fff',
-                      fontSize: '12px',
-                      fontWeight: 800,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                      border: 'none',
-                      cursor: 'pointer',
-                      boxShadow:
-                        '0 4px 14px rgba(37,99,235,0.3)',
-                    }}
-                  >
-                    <Sparkles size={15} />
-                    Tandai Siap Disajikan
-                  </button>
-                )}
-
-                {order.status === 'ready' && (
-                  <button
-                    onClick={() => onUpdateStatus(String(order.id), 'completed')}
-                    style={{
-                      width: '100%', padding: '11px 16px', borderRadius: '10px',
-                      background: 'linear-gradient(135deg, #1c1c19, #3a3a35)',
-                      color: '#fff', fontSize: '12px', fontWeight: 800,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                      border: 'none', cursor: 'pointer',
-                      boxShadow: '0 4px 14px rgba(28,28,25,0.25)',
-                    }}
-                  >
-                    <Check size={15} />
-                    {isTakeaway ? 'Sudah Diambil' : 'Sudah Disajikan'}
-                  </button>
-                )}
-
-                {order.status === 'completed' && (
-                  <div style={{
-                    width: '100%', padding: '11px 16px', borderRadius: '10px',
-                    background: '#f0ede9', border: '1px solid #d6c2bd',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                    fontSize: '12px', fontWeight: 700, color: '#9CA3AF',
-                  }}>
-                    <CheckCircle2 size={15} style={{ color: '#10B981' }} /> Selesai
-                  </div>
-                )}
-                
-                {order.status === 'cancelled' && (
-                  <div style={{
-                    width: '100%', padding: '11px 16px', borderRadius: '10px',
-                    background: '#FEF2F2', border: '1px solid #FCA5A5',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                    fontSize: '12px', fontWeight: 700, color: '#991B1B',
-                  }}>
-                    <XCircle size={15} /> Pesanan Dibatalkan
-                  </div>
-                )}
-              </>
-            )}
+              {formatPrice(totalAmount)}
+            </p>
           </div>
         </div>
       </div>
-    </motion.div>
+
+      {/* ACTIONS */}
+      <footer className="flex items-center gap-2 border-t border-black/[0.07] bg-white p-3">
+        <button
+          type="button"
+          onClick={handleOpenPrintPopup}
+          title="Cetak"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-black/[0.08] bg-white text-black/40 hover:bg-[#f2f2ee] hover:text-black"
+        >
+          <Printer className="h-4 w-4" />
+        </button>
+
+        {role === 'cashier' && order.status === 'pending' && (
+          <button
+            type="button"
+            onClick={() => {
+              void Swal.fire({
+                title: 'Batalkan pesanan?',
+                text: `Pesanan #${displayId} akan dibatalkan.`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#111111',
+                cancelButtonColor: '#e7e5e4',
+                confirmButtonText: 'Batalkan Pesanan',
+                cancelButtonText: 'Kembali',
+                reverseButtons: true,
+                customClass: {
+                  popup: 'rounded-2xl',
+                },
+              }).then((result) => {
+                if (result.isConfirmed) {
+                  onUpdateStatus(String(order.id), 'cancelled' as any);
+                }
+              });
+            }}
+            title="Batalkan pesanan"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-red-100 bg-red-50 text-red-600 hover:bg-red-100"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
+
+        <div className="min-w-0 flex-1">
+          {role === 'owner' ? (
+            <div className="flex h-11 items-center justify-center rounded-xl bg-[#ecece7] text-[8px] font-black uppercase tracking-[.1em] text-black/35">
+              Mode Pantau
+            </div>
+          ) : (
+            <>
+              {order.status === 'pending' &&
+                (paymentMethod === 'cash' && paymentStatusUi !== 'LUNAS' ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onUpdateStatus(String(order.id), 'confirmed', '2')
+                    }
+                    className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#11110f] px-4 text-[8px] font-black uppercase tracking-[.08em] text-white"
+                  >
+                    <Banknote className="h-4 w-4" />
+                    Terima Tunai
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onUpdateStatus(String(order.id), 'confirmed')}
+                    disabled={paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS'}
+                    className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#11110f] px-4 text-[8px] font-black uppercase tracking-[.08em] text-white disabled:cursor-not-allowed disabled:bg-[#e5e5df] disabled:text-black/30"
+                  >
+                    {paymentMethod === 'qris' && paymentStatusUi === 'EXPIRED' ? (
+                      <>
+                        <XCircle className="h-4 w-4" />
+                        QRIS Expired
+                      </>
+                    ) : paymentMethod === 'qris' && paymentStatusUi !== 'LUNAS' ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Menunggu QRIS
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="h-4 w-4" />
+                        Terima Pesanan
+                      </>
+                    )}
+                  </button>
+                ))}
+
+              {order.status === 'confirmed' && (
+                <div className="flex h-11 items-center justify-center gap-2 rounded-xl bg-violet-50 px-4 text-[8px] font-black uppercase tracking-[.08em] text-violet-700">
+                  <ChefHat className="h-4 w-4" />
+                  Menunggu Kitchen
+                </div>
+              )}
+
+              {order.status === 'preparing' && (
+                <button
+                  type="button"
+                  onClick={() => onUpdateStatus(String(order.id), 'ready')}
+                  className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-[8px] font-black uppercase tracking-[.08em] text-white"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Tandai Ready
+                </button>
+              )}
+
+              {order.status === 'ready' && (
+                <button
+                  type="button"
+                  onClick={() => onUpdateStatus(String(order.id), 'completed')}
+                  className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-[8px] font-black uppercase tracking-[.08em] text-white"
+                >
+                  <PackageCheck className="h-4 w-4" />
+                  {isTakeaway ? 'Sudah Diambil' : 'Sudah Disajikan'}
+                </button>
+              )}
+
+              {order.status === 'completed' && (
+                <div className="flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-50 px-4 text-[8px] font-black uppercase tracking-[.08em] text-emerald-700">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Selesai
+                </div>
+              )}
+
+              {order.status === 'cancelled' && (
+                <div className="flex h-11 items-center justify-center gap-2 rounded-xl bg-red-50 px-4 text-[8px] font-black uppercase tracking-[.08em] text-red-700">
+                  <XCircle className="h-4 w-4" />
+                  Dibatalkan
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </footer>
+    </motion.article>
   );
 }

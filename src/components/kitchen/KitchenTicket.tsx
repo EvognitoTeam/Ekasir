@@ -1,283 +1,848 @@
-import { useEffect, useState } from 'react';
-import { Order } from '@/types/menu';
-import { useMenuStore } from '@/store/menu.store';
-import { ChefHat, Sparkles, ShoppingBag, Coffee, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
+'use client';
+
+import {
+  useEffect,
+  useState,
+} from 'react';
+
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChefHat,
+  Clock3,
+  Coffee,
+  PackageCheck,
+  ShoppingBag,
+  UtensilsCrossed,
+} from 'lucide-react';
+
+import {
+  useMenuStore,
+} from '@/store/menu.store';
+
+import type {
+  Order,
+} from '@/types/menu';
 
 interface Props {
   order: Order;
-  onUpdateStatus: (id: string, status: Order['status']) => void;
+  onUpdateStatus: (
+    id: string,
+    status: Order['status'],
+  ) => void;
 }
 
-export default function KitchenTicket({ order, onUpdateStatus }: Props) {
-  const { items: menuItems } = useMenuStore();
-  const [elapsedTime, setElapsedTime] = useState(0);
+function normalizeText(
+  value: unknown,
+): string {
+  return String(
+    value ??
+      '',
+  ).trim();
+}
+
+function parseJsonValue(
+  value: unknown,
+): unknown {
+  let current =
+    value;
+
+  for (
+    let attempt = 0;
+    attempt < 5;
+    attempt += 1
+  ) {
+    if (
+      typeof current !==
+      'string'
+    ) {
+      return current;
+    }
+
+    const trimmed =
+      current.trim();
+
+    if (!trimmed) {
+      return '';
+    }
+
+    try {
+      current =
+        JSON.parse(
+          trimmed,
+        );
+    } catch {
+      return trimmed;
+    }
+  }
+
+  return current;
+}
+
+function collectAddonNames(
+  value: unknown,
+  output: string[],
+  notes: string[],
+): void {
+  const parsed =
+    parseJsonValue(
+      value,
+    );
+
+  if (!parsed) {
+    return;
+  }
+
+  if (
+    Array.isArray(
+      parsed,
+    )
+  ) {
+    parsed.forEach(
+      (item) => {
+        collectAddonNames(
+          item,
+          output,
+          notes,
+        );
+      },
+    );
+
+    return;
+  }
+
+  if (
+    typeof parsed ===
+    'string'
+  ) {
+    const clean =
+      parsed.trim();
+
+    if (
+      clean &&
+      !clean.includes(
+        '{"name":',
+      ) &&
+      !clean.includes(
+        '[{',
+      )
+    ) {
+      output.push(
+        clean,
+      );
+    }
+
+    return;
+  }
+
+  if (
+    typeof parsed ===
+      'object'
+  ) {
+    const record =
+      parsed as Record<
+        string,
+        unknown
+      >;
+
+    const custNote =
+      normalizeText(
+        record.cust_notes ??
+          record.custNotes,
+      );
+
+    if (custNote) {
+      notes.push(
+        custNote,
+      );
+    }
+
+    const name =
+      normalizeText(
+        record.name ??
+          record.title ??
+          record.choiceName,
+      );
+
+    if (name) {
+      output.push(
+        name,
+      );
+    }
+  }
+}
+
+function getParsedItems(
+  order: Order,
+): any[] {
+  try {
+    const parsed =
+      parseJsonValue(
+        order.items,
+      );
+
+    return Array.isArray(
+      parsed,
+    )
+      ? parsed
+      : [];
+  } catch (
+    error
+  ) {
+    console.error(
+      'Gagal memproses detail pesanan:',
+      error,
+    );
+
+    return [];
+  }
+}
+
+export default function KitchenTicket({
+  order,
+  onUpdateStatus,
+}: Props) {
+  const {
+    items: menuItems,
+  } =
+    useMenuStore();
+
+  const [
+    elapsedTime,
+    setElapsedTime,
+  ] =
+    useState(0);
 
   useEffect(() => {
-    if (order.status === 'ready' || order.status === 'completed' || order.status === 'cancelled') return;
+    if (
+      order.status ===
+        'ready' ||
+      order.status ===
+        'completed' ||
+      order.status ===
+        'cancelled'
+    ) {
+      return;
+    }
 
-    const orderTime = new Date(order.createdAt || order.created_at || Date.now()).getTime();
-    
-    const interval = setInterval(() => {
-      const now = new Date().getTime();
-      const diffInSeconds = Math.floor((now - orderTime) / 1000);
-      setElapsedTime(diffInSeconds > 0 ? diffInSeconds : 0);
-    }, 1000);
+    const orderTime =
+      new Date(
+        order.createdAt ||
+          order.created_at ||
+          Date.now(),
+      ).getTime();
 
-    return () => clearInterval(interval);
-  }, [order.status, order.createdAt, order.created_at]);
+    const updateElapsed =
+      () => {
+        const now =
+          Date.now();
 
-  const minutes = Math.floor(elapsedTime / 60);
-  const seconds = elapsedTime % 60;
-  const timeText = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        const diffInSeconds =
+          Math.floor(
+            (
+              now -
+              orderTime
+            ) /
+              1000,
+          );
+
+        setElapsedTime(
+          diffInSeconds >
+            0
+            ? diffInSeconds
+            : 0,
+        );
+      };
+
+    updateElapsed();
+
+    const interval =
+      window.setInterval(
+        updateElapsed,
+        1000,
+      );
+
+    return () =>
+      window.clearInterval(
+        interval,
+      );
+  }, [
+    order.status,
+    order.createdAt,
+    order.created_at,
+  ]);
+
+  const minutes =
+    Math.floor(
+      elapsedTime /
+        60,
+    );
+
+  const seconds =
+    elapsedTime %
+    60;
+
+  const timeText =
+    `${String(
+      minutes,
+    ).padStart(
+      2,
+      '0',
+    )}:${String(
+      seconds,
+    ).padStart(
+      2,
+      '0',
+    )}`;
 
   const manualTableInfo =
-    (order as any)?.manualTableInfo ||
-    (order as any)?.manual_table_info ||
-    '';
+    normalizeText(
+      (order as any)
+        ?.manualTableInfo ??
+        (order as any)
+          ?.manual_table_info,
+    );
 
   const normalizedOrderType =
-    String(
-      (order as any)?.orderType ||
-        (order as any)?.order_type ||
-        manualTableInfo ||
-        '',
-    )
-      .trim()
-      .toLowerCase();
+    normalizeText(
+      (order as any)
+        ?.orderType ??
+        (order as any)
+          ?.order_type ??
+        (order as any)
+          ?.serviceType ??
+        (order as any)
+          ?.service_type ??
+        manualTableInfo,
+    ).toLowerCase();
 
   const isTakeaway =
-    normalizedOrderType === 'takeaway' ||
-    String(manualTableInfo)
-      .trim()
-      .toLowerCase() === 'takeaway';
+    [
+      'takeaway',
+      'take away',
+      'take_away',
+      'bungkus',
+      'walk-in',
+      'walk_in',
+      'walk in',
+    ].includes(
+      normalizedOrderType,
+    ) ||
+    normalizeText(
+      manualTableInfo,
+    ).toLowerCase() ===
+      'takeaway';
 
   const rawTableName =
-    (order as any)?.tableName ||
-    (order as any)?.table_name ||
-    (order as any)?.tableId ||
-    (order as any)?.table_id ||
-    (order as any)?.tableNumber ||
-    (order as any)?.table_number ||
+    (order as any)
+      ?.tableName ??
+    (order as any)
+      ?.table_name ??
+    (order as any)
+      ?.tableCode ??
+    (order as any)
+      ?.table_code ??
+    (order as any)
+      ?.tableId ??
+    (order as any)
+      ?.table_id ??
+    (order as any)
+      ?.tableNumber ??
+    (order as any)
+      ?.table_number ??
     '';
 
   const tableName =
-    typeof rawTableName === 'string'
-      ? rawTableName.replace(/^T-/, '')
-      : rawTableName
-        ? String(rawTableName)
-        : '';
+    normalizeText(
+      rawTableName,
+    ).replace(
+      /^T-/i,
+      '',
+    );
 
   const hasTable =
-    Boolean(tableName) &&
-    tableName !== 'null' &&
-    tableName !== 'undefined' &&
-    tableName.toLowerCase() !== 'walk-in';
+    Boolean(
+      tableName,
+    ) &&
+    ![
+      'null',
+      'undefined',
+      'walk-in',
+      'walk in',
+    ].includes(
+      tableName.toLowerCase(),
+    );
 
-  let urgencyClass = 'border-stone-200 bg-white';
-  let headerClass = 'bg-stone-50 border-b border-stone-200';
-  let timerClass = 'text-stone-500 bg-stone-200/50';
+  const orderCode =
+    normalizeText(
+      (order as any)
+        ?.order_code ??
+        (order as any)
+          ?.orderCode ??
+        order.id,
+    );
 
-  if (minutes >= 15) {
-    urgencyClass = 'border-red-200 bg-red-50/10 shadow-lg shadow-red-500/10 ring-2 ring-red-500/20';
-    headerClass = 'bg-red-50 border-b border-red-100';
-    timerClass = 'text-red-700 bg-red-200 animate-pulse font-black';
-  } else if (minutes >= 10) {
-    urgencyClass = 'border-amber-200 bg-amber-50/30';
-    headerClass = 'bg-amber-50 border-b border-amber-100';
-    timerClass = 'text-amber-700 bg-amber-200 font-bold';
-  }
+  const customerName =
+    normalizeText(
+      (order as any)
+        ?.customerName ??
+        (order as any)
+          ?.customer_name ??
+        (order as any)
+          ?.name,
+    );
 
-  if (order.status === 'ready' || order.status === 'completed') {
-    urgencyClass = 'border-stone-200 bg-stone-50 opacity-60';
-    headerClass = 'bg-stone-100 border-b border-stone-200';
-  }
+  const adminNotes =
+    normalizeText(
+      (order as any)
+        ?.admin_notes ??
+        (order as any)
+          ?.adminNotes,
+    );
 
-  // 🔴 LOGIKA PARSING ANTI-GAGAL UNTUK ARRAY ITEMS
-  let parsedItems: any[] = [];
-  try {
-    if (typeof order.items === 'string') {
-      parsedItems = JSON.parse(order.items);
-    } else if (Array.isArray(order.items)) {
-      parsedItems = order.items;
-    }
-  } catch (error) {
-    console.error("Gagal memproses detail pesanan:", error);
-    parsedItems = [];
-  }
+  const parsedItems =
+    getParsedItems(
+      order,
+    );
+
+  const isUrgent =
+    minutes >= 15;
+
+  const isWarning =
+    minutes >= 10 &&
+    minutes < 15;
+
+  const isHistory =
+    order.status ===
+      'ready' ||
+    order.status ===
+      'completed' ||
+    order.status ===
+      'cancelled';
+
+  const cardClass =
+    isHistory
+      ? 'border-black/10 bg-white opacity-75'
+      : isUrgent
+        ? 'border-red-300 bg-white ring-2 ring-red-500/20 shadow-[0_18px_50px_rgba(220,38,38,0.12)]'
+        : isWarning
+          ? 'border-amber-300 bg-white ring-1 ring-amber-300/40 shadow-[0_16px_44px_rgba(245,158,11,0.10)]'
+          : 'border-black/10 bg-white shadow-[0_14px_36px_rgba(0,0,0,0.06)]';
+
+  const timerClass =
+    isUrgent
+      ? 'border-red-200 bg-red-600 text-white'
+      : isWarning
+        ? 'border-amber-300 bg-amber-400 text-black'
+        : 'border-black/10 bg-black text-white';
+
+  const statusLabel =
+    order.status ===
+      'confirmed'
+      ? 'Menunggu Diproses'
+      : order.status ===
+          'preparing'
+        ? 'Sedang Diproses'
+        : order.status ===
+            'ready'
+          ? 'Siap Saji'
+          : order.status ===
+              'completed'
+            ? 'Selesai'
+            : order.status ===
+                'cancelled'
+              ? 'Dibatalkan'
+              : 'Pesanan Baru';
 
   return (
-    <div className={`rounded-[1.5rem] border overflow-hidden flex flex-col transition-all duration-300 ${urgencyClass}`}>
-      
-      <div className={`px-4 py-3 flex items-center justify-between ${headerClass}`}>
-        <div className="flex items-center gap-3">
-          <div className="px-2.5 py-1 rounded-md bg-stone-900 text-white font-mono font-bold text-sm tracking-widest shadow-sm">
-            #{order.id}
-          </div>
-          <div className="flex flex-col gap-1">
-            {isTakeaway ? (
-              <>
-                <div className="flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-black uppercase tracking-widest text-red-700">
-                  <ShoppingBag className="h-4 w-4 shrink-0" />
-                  TAKEAWAY
-                </div>
+    <article
+      className={`flex min-w-0 flex-col overflow-hidden rounded-[26px] border transition-all duration-200 ${cardClass}`}
+    >
+      <header
+        className={`border-b px-5 py-4 ${
+          isUrgent
+            ? 'border-red-200 bg-red-50'
+            : isWarning
+              ? 'border-amber-200 bg-amber-50'
+              : 'border-black/10 bg-[#fafaf8]'
+        }`}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex min-h-9 items-center rounded-xl bg-black px-3 font-mono text-base font-black tracking-[0.06em] text-white">
+                #{orderCode}
+              </span>
 
-                {hasTable && (
-                  <div className="flex items-center gap-1.5 pl-1 text-[10px] font-bold uppercase tracking-widest text-stone-600">
-                    <Coffee className="h-3.5 w-3.5 text-amber-600" />
-                    DARI MEJA
-                    <strong className="ml-0.5 text-xs text-amber-700">
-                      {tableName}
-                    </strong>
-                  </div>
+              <span
+                className={`inline-flex min-h-9 items-center gap-2 rounded-xl border px-3 text-xs font-black uppercase tracking-[0.12em] ${
+                  order.status ===
+                  'preparing'
+                    ? 'border-black bg-black text-white'
+                    : order.status ===
+                        'cancelled'
+                      ? 'border-red-200 bg-red-50 text-red-700'
+                      : 'border-black/10 bg-white text-black/55'
+                }`}
+              >
+                {order.status ===
+                'preparing' ? (
+                  <ChefHat className="h-4 w-4" />
+                ) : (
+                  <Clock3 className="h-4 w-4" />
                 )}
-              </>
-            ) : (
-              <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-stone-700">
-                <Coffee className="h-4 w-4 text-amber-600" />
-                MEJA
-                <strong className="ml-1 text-sm text-amber-600">
-                  {hasTable ? tableName : 'WALK-IN'}
-                </strong>
+
+                {statusLabel}
+              </span>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+              {isTakeaway ? (
+                <span className="inline-flex items-center gap-2 text-sm font-black uppercase tracking-[0.08em] text-red-600">
+                  <ShoppingBag className="h-5 w-5" />
+                  Takeaway
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-2 text-sm font-black uppercase tracking-[0.08em] text-black/55">
+                  <Coffee className="h-5 w-5" />
+                  Dine In
+                </span>
+              )}
+
+              <span className="h-4 w-px bg-black/10" />
+
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-black/35">
+                  {isTakeaway &&
+                  hasTable
+                    ? 'Asal Meja'
+                    : 'Meja / Lokasi'}
+                </p>
+
+                <p className="mt-0.5 truncate text-lg font-black text-black">
+                  {hasTable
+                    ? tableName
+                    : isTakeaway
+                      ? 'Takeaway'
+                      : 'Walk-in'}
+                </p>
               </div>
+            </div>
+
+            {customerName && (
+              <p className="mt-3 truncate text-sm font-semibold text-black/45">
+                Atas nama{' '}
+                <strong className="font-black text-black/70">
+                  {customerName}
+                </strong>
+              </p>
             )}
           </div>
+
+          {!isHistory && (
+            <div
+              className={`flex min-w-[86px] shrink-0 flex-col items-center rounded-2xl border px-3 py-2.5 ${timerClass}`}
+            >
+              <span className="text-[11px] font-bold uppercase tracking-[0.12em] opacity-70">
+                Waktu
+              </span>
+
+              <span className="mt-0.5 flex items-center gap-1.5 font-mono text-xl font-black tracking-[-0.04em]">
+                {isUrgent ? (
+                  <AlertCircle className="h-4 w-4" />
+                ) : (
+                  <Clock3 className="h-4 w-4" />
+                )}
+
+                {timeText}
+              </span>
+            </div>
+          )}
         </div>
 
-        {order.status !== 'ready' && order.status !== 'completed' && order.status !== 'cancelled' && (
-          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-mono tracking-widest ${timerClass}`}>
-            {minutes >= 15 ? <AlertCircle className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
-            {timeText}
+        {isUrgent && (
+          <div className="mt-4 flex items-center gap-2 rounded-xl bg-red-600 px-3 py-2.5 text-sm font-black text-white">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            Pesanan melewati 15 menit — prioritaskan.
+          </div>
+        )}
+      </header>
+
+      <div className="flex-1 px-5 py-4">
+        {parsedItems.length ===
+        0 ? (
+          <div className="flex min-h-28 items-center justify-center rounded-2xl border-2 border-dashed border-black/10 bg-[#fafaf8] p-5 text-center">
+            <div>
+              <UtensilsCrossed className="mx-auto h-6 w-6 text-black/20" />
+              <p className="mt-3 text-sm font-bold text-black/40">
+                Detail item tidak tersedia.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="divide-y divide-black/8">
+            {parsedItems.map(
+              (
+                cartItem:
+                  any,
+                idx:
+                  number,
+              ) => {
+                const product =
+                  menuItems.find(
+                    (menuItem) =>
+                      Number(
+                        menuItem.id,
+                      ) ===
+                      Number(
+                        cartItem
+                          .menuItemId ??
+                          cartItem
+                            .product_id,
+                      ),
+                  );
+
+                const itemName =
+                  product?.name ||
+                  cartItem.name ||
+                  cartItem
+                    .menuItemName ||
+                  cartItem
+                    .menu_item_name ||
+                  'Item Menu';
+
+                const addonNames:
+                  string[] =
+                  [];
+
+                const itemNotes:
+                  string[] =
+                  [];
+
+                const directItemNote =
+                  normalizeText(
+                    cartItem
+                      .cust_notes ??
+                      cartItem
+                        .custNotes,
+                  );
+
+                if (
+                  directItemNote
+                ) {
+                  itemNotes.push(
+                    directItemNote,
+                  );
+                }
+
+                collectAddonNames(
+                  cartItem
+                    .selectedAddOnsDetails ??
+                    cartItem
+                      .selected_add_ons_details ??
+                    cartItem
+                      .selectedAddOns ??
+                    cartItem
+                      .selected_add_ons ??
+                    cartItem.notes,
+                  addonNames,
+                  itemNotes,
+                );
+
+                const uniqueAddons =
+                  Array.from(
+                    new Set(
+                      addonNames
+                        .map(
+                          (
+                            name,
+                          ) =>
+                            name.trim(),
+                        )
+                        .filter(
+                          Boolean,
+                        ),
+                    ),
+                  );
+
+                const uniqueNotes =
+                  Array.from(
+                    new Set(
+                      itemNotes
+                        .map(
+                          (
+                            note,
+                          ) =>
+                            note.trim(),
+                        )
+                        .filter(
+                          Boolean,
+                        ),
+                    ),
+                  );
+
+                const quantity =
+                  Math.max(
+                    1,
+                    Number(
+                      cartItem
+                        .quantity ??
+                        1,
+                    ) ||
+                      1,
+                  );
+
+                return (
+                  <div
+                    key={`${String(
+                      cartItem
+                        .id ??
+                        cartItem
+                          .menuItemId ??
+                        cartItem
+                          .product_id ??
+                        idx,
+                    )}-${idx}`}
+                    className="py-4 first:pt-0 last:pb-0"
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-11 min-w-11 shrink-0 items-center justify-center rounded-xl bg-black px-2 text-lg font-black text-white">
+                        {quantity}x
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-[17px] font-black leading-6 tracking-[-0.02em] text-black">
+                          {itemName}
+                        </h3>
+
+                        {uniqueAddons.length >
+                          0 && (
+                          <div className="mt-2 flex flex-col gap-1">
+                            {uniqueAddons.map(
+                              (
+                                addon,
+                              ) => (
+                                <p
+                                  key={
+                                    addon
+                                  }
+                                  className="text-sm font-bold leading-5 text-amber-700"
+                                >
+                                  +{' '}
+                                  {addon}
+                                </p>
+                              ),
+                            )}
+                          </div>
+                        )}
+
+                        {uniqueNotes.length >
+                          0 && (
+                          <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5">
+                            <p className="text-xs font-black uppercase tracking-[0.12em] text-red-500">
+                              Catatan Customer
+                            </p>
+
+                            {uniqueNotes.map(
+                              (
+                                note,
+                              ) => (
+                                <p
+                                  key={
+                                    note
+                                  }
+                                  className="mt-1 text-sm font-black leading-5 text-red-800"
+                                >
+                                  {note}
+                                </p>
+                              ),
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              },
+            )}
           </div>
         )}
       </div>
 
-      {isTakeaway && (
-        <div className="border-b border-red-200 bg-red-600 px-4 py-3 text-white">
-          <div className="flex items-center justify-center gap-2 text-sm font-black uppercase tracking-[0.18em]">
-            <ShoppingBag className="h-5 w-5" />
-            Takeaway
-          </div>
+      {adminNotes && (
+        <div className="mx-5 mb-4 rounded-2xl border border-red-200 bg-red-50 p-4">
+          <div className="flex items-start gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-600 text-white">
+              <AlertCircle className="h-5 w-5" />
+            </span>
 
-          {hasTable && (
-            <p className="mt-1 text-center text-[10px] font-bold uppercase tracking-widest text-red-100">
-              Pesanan berasal dari meja {tableName}
-            </p>
-          )}
+            <div className="min-w-0">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-red-500">
+                Catatan Kasir
+              </p>
+
+              <p className="mt-1 text-sm font-black leading-6 text-red-900">
+                {adminNotes}
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* BODY TIKET */}
-      <div className="p-4 flex-1 flex flex-col gap-4">
-        {parsedItems.map((cartItem: any, idx: number) => {
-          const product = menuItems.find(m => Number(m.id) === Number(cartItem.menuItemId || cartItem.product_id));
-          const itemName = product?.name || cartItem.name || cartItem.menuItemName || 'Item Menu';
-
-          let addOnsList: string[] = [];
-          
-          // PARSER TAHAN BANTING (Otomatis mendeteksi dan mengupas JSON string)
-          const parseAddonData = (data: any) => {
-            if (!data) return;
-            
-            if (typeof data === 'string') {
-              try {
-                // Coba kupas jika data ternyata adalah JSON string
-                const parsed = JSON.parse(data);
-                parseAddonData(parsed); // Lakukan rekursif setelah dikupas
-              } catch {
-                // Jika gagal diparse (artinya string biasa), filter teks JSON yang rusak
-                if (data.includes('{"name":') || data.includes('[{')) return;
-                addOnsList.push(data);
-              }
-            } else if (Array.isArray(data)) {
-              // Jika data adalah array, ekstrak isi di dalamnya
-              data.forEach(item => parseAddonData(item));
-            } else if (typeof data === 'object') {
-              // Jika bentuknya sudah objek sempurna, ambil namanya
-              const name = data.name || data.title || data.choiceName;
-              if (name) {
-                addOnsList.push(String(name).trim());
-              }
+      <footer className="border-t border-black/10 bg-[#fafaf8] p-4">
+        {(order.status ===
+          'pending' ||
+          order.status ===
+            'confirmed') && (
+          <button
+            type="button"
+            onClick={() =>
+              onUpdateStatus(
+                String(
+                  order.id,
+                ),
+                'preparing',
+              )
             }
-          };
+            className="flex min-h-14 w-full items-center justify-center gap-3 rounded-2xl bg-black px-5 text-base font-black text-white transition hover:bg-black/85 active:scale-[0.99]"
+          >
+            <ChefHat className="h-5 w-5" />
+            Mulai Proses
+          </button>
+        )}
 
-          // Proses data: Prioritaskan selectedAddOnsDetails, fallback ke notes
-          parseAddonData(cartItem.selectedAddOnsDetails || cartItem.notes);
+        {order.status ===
+          'preparing' && (
+          <div className="flex min-h-14 w-full items-center justify-center gap-3 rounded-2xl border border-black/10 bg-white px-5 text-center text-sm font-black text-black/55">
+            <PackageCheck className="h-5 w-5 text-black" />
 
-          // Hilangkan duplikat jika ada
-          addOnsList = Array.from(new Set(addOnsList));
-
-          return (
-            <div key={idx} className="flex gap-4 items-start relative pb-4 border-b border-stone-100 last:border-0 last:pb-0">
-              <div className="w-8 h-8 rounded-lg bg-stone-100 border border-stone-200 flex items-center justify-center text-sm font-black text-stone-700 shrink-0">
-                {cartItem.quantity || 1}
-              </div>
-              <div className="flex-1 min-w-0 pt-1">
-                <div className="text-sm font-black text-stone-800 leading-tight mb-1">{itemName}</div>
-                
-                {/* Render Add-ons / Varian (Akan tampil bersih: + Ekstra keju) */}
-                {addOnsList.length > 0 && (
-                  <div className="text-xs font-bold text-amber-600 leading-snug mb-1">
-                    + {addOnsList.join(' · ')}
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* {isTakeaway && (
-        <div className="mx-4 mb-3 flex items-center justify-center gap-2 rounded-xl border-2 border-red-200 bg-red-50 px-3 py-2.5 text-center">
-          <ShoppingBag className="h-4 w-4 shrink-0 text-red-600" />
-          <span className="text-[10px] font-black uppercase tracking-widest text-red-700">
-            Jangan disajikan di meja — bungkus pesanan
-          </span>
-        </div>
-      )} */}
-
-      {/* 🔴 FOOTER: ADMIN NOTES SEJAJAR DENGAN TOMBOL STATUS */}
-      <div className="p-4 pt-0 flex gap-3 items-stretch">
-        
-        {/* Catatan Admin / Kasir (Sebelah Kiri) */}
-        {order.admin_notes && (
-          <div className="flex-1 p-2.5 bg-red-50/80 border border-red-100 rounded-xl flex flex-col justify-center">
-            <span className="text-[9px] font-black uppercase tracking-widest text-red-500 mb-0.5">Catatan Kasir:</span>
-            <span className="text-[11px] font-medium text-red-800 leading-snug line-clamp-2" title={order.adminNotes}>
-              {order.admin_notes}
-            </span>
+            Sedang diproses — status Ready ditandai dari Kasir
           </div>
         )}
 
-        {/* Tombol Status (Sebelah Kanan) */}
-        <div className={order.admin_notes ? "flex-1" : "w-full"}>
-          {(order.status === 'pending' || order.status === 'confirmed') && (
-            <button 
-              className="w-full h-full min-h-[48px] rounded-xl bg-amber-500 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-amber-600 transition-all flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 active:scale-95 px-2"
-              onClick={() => onUpdateStatus(String(order.id), 'preparing')}
-            >
-              <ChefHat className="w-4 h-4 shrink-0" /> 
-              {order.admin_notes ? 'Meracik' : 'Mulai Meracik'}
-            </button>
-          )}
-          
-          {order.status === 'preparing' && (
-            <button 
-              className="w-full h-full min-h-[48px] rounded-xl bg-[#0E5C37] text-white text-[11px] font-bold uppercase tracking-widest hover:bg-emerald-800 transition-all flex items-center justify-center gap-1.5 shadow-md shadow-emerald-900/20 active:scale-95 px-2"
-              onClick={() => onUpdateStatus(String(order.id), 'ready')}
-            >
-              <Sparkles className="w-4 h-4 shrink-0" /> 
-              {order.admin_notes ? 'Siap' : 'Pesanan Siap'}
-            </button>
-          )}
+        {(order.status ===
+          'ready' ||
+          order.status ===
+            'completed') && (
+          <div className="flex min-h-14 w-full items-center justify-center gap-3 rounded-2xl bg-emerald-50 px-5 text-sm font-black text-emerald-700">
+            <CheckCircle2 className="h-5 w-5" />
 
-          {(order.status === 'ready' || order.status === 'completed') && (
-            <button className="w-full h-full min-h-[48px] rounded-xl bg-stone-200 text-stone-400 text-[11px] font-bold uppercase tracking-widest flex items-center justify-center gap-1.5 cursor-not-allowed px-2">
-              <CheckCircle2 className="w-4 h-4 shrink-0" /> Selesai
-            </button>
-          )}
-        </div>
+            {order.status ===
+            'ready'
+              ? 'Siap disajikan'
+              : 'Pesanan selesai'}
+          </div>
+        )}
 
-      </div>
-    </div>
+        {order.status ===
+          'cancelled' && (
+          <div className="flex min-h-14 w-full items-center justify-center gap-3 rounded-2xl bg-red-50 px-5 text-sm font-black text-red-700">
+            <AlertCircle className="h-5 w-5" />
+
+            Pesanan dibatalkan
+          </div>
+        )}
+      </footer>
+    </article>
   );
 }

@@ -17,16 +17,229 @@ const activeKey = (
 ) =>
   `ekasir_active_printer_${scope}`;
 
+const canUseStorage =
+  () =>
+    typeof window !==
+    'undefined';
+
+const normalizeName = (
+  value:
+    unknown,
+) =>
+  String(
+    value ??
+      '',
+  )
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+
+const normalizeUuid = (
+  value:
+    unknown,
+) =>
+  String(
+    value ??
+      '',
+  )
+    .trim()
+    .toLowerCase();
+
+const isBluetooth =
+  (
+    printer:
+      PrinterDevice,
+  ) =>
+    printer.type ===
+      'ble' ||
+    printer.type ===
+      'bluetooth';
+
 const identity = (
   printer:
     PrinterDevice,
 ) =>
   `${printer.type}:${printer.id}`;
 
-const canUseStorage =
-  () =>
-    typeof window !==
-    'undefined';
+/**
+ * Menentukan apakah dua metadata menunjuk printer fisik yang sama.
+ *
+ * BLE:
+ * - exact id selalu sama;
+ * - fallback nama + service/characteristic dipakai untuk menyembuhkan
+ *   opaque BluetoothDevice.id yang berubah/stale.
+ *
+ * USB:
+ * - VID/PID + serial adalah identitas kuat.
+ */
+const samePrinter = (
+  a:
+    PrinterDevice,
+  b:
+    PrinterDevice,
+) => {
+  if (
+    identity(a) ===
+    identity(b)
+  ) {
+    return true;
+  }
+
+  if (
+    isBluetooth(a) &&
+    isBluetooth(b)
+  ) {
+    const aName =
+      normalizeName(
+        a.name,
+      );
+
+    const bName =
+      normalizeName(
+        b.name,
+      );
+
+    if (
+      !aName ||
+      aName !==
+        bName
+    ) {
+      return false;
+    }
+
+    const aService =
+      normalizeUuid(
+        a.serviceUuid,
+      );
+
+    const bService =
+      normalizeUuid(
+        b.serviceUuid,
+      );
+
+    const aChar =
+      normalizeUuid(
+        a.characteristicUuid,
+      );
+
+    const bChar =
+      normalizeUuid(
+        b.characteristicUuid,
+      );
+
+    /**
+     * Nama sama + UUID sama adalah match kuat.
+     * Jika salah satu metadata UUID kosong (legacy), nama tetap dipakai
+     * untuk migrasi satu kali.
+     */
+    const serviceCompatible =
+      !aService ||
+      !bService ||
+      aService ===
+        bService;
+
+    const charCompatible =
+      !aChar ||
+      !bChar ||
+      aChar ===
+        bChar;
+
+    return (
+      serviceCompatible &&
+      charCompatible
+    );
+  }
+
+  if (
+    a.type ===
+      'usb' &&
+    b.type ===
+      'usb'
+  ) {
+    return Boolean(
+      a.vendorId ===
+        b.vendorId &&
+      a.productId ===
+        b.productId &&
+      (
+        !a.serialNumber ||
+        !b.serialNumber ||
+        a.serialNumber ===
+          b.serialNumber
+      ),
+    );
+  }
+
+  return false;
+};
+
+const mergePrinter = (
+  oldPrinter:
+    PrinterDevice |
+    undefined,
+  newPrinter:
+    PrinterDevice,
+):
+  PrinterDevice => ({
+    ...(oldPrinter ||
+      {}),
+    ...newPrinter,
+
+    /**
+     * UUID baru mengalahkan stale metadata.
+     * Jika object baru belum punya UUID, pertahankan hasil discovery lama.
+     */
+    serviceUuid:
+      newPrinter.serviceUuid ||
+      oldPrinter?.serviceUuid,
+
+    characteristicUuid:
+      newPrinter.characteristicUuid ||
+      oldPrinter?.characteristicUuid,
+  } as PrinterDevice);
+
+const parsePrinterArray = (
+  raw:
+    string |
+    null,
+):
+  PrinterDevice[] => {
+  if (
+    !raw
+  ) {
+    return [];
+  }
+
+  try {
+    const parsed =
+      JSON.parse(
+        raw,
+      );
+
+    if (
+      !Array.isArray(
+        parsed,
+      )
+    ) {
+      return [];
+    }
+
+    return parsed.filter(
+      (item) =>
+        item &&
+        typeof item ===
+          'object' &&
+        typeof item.id ===
+          'string' &&
+        typeof item.name ===
+          'string' &&
+        typeof item.type ===
+          'string',
+    );
+  } catch {
+    return [];
+  }
+};
 
 export const PrinterStorage = {
   save(
@@ -43,32 +256,42 @@ export const PrinterStorage = {
 
     const current =
       this.getAll(
-        scope
+        scope,
       );
 
-    const next =
-      [
-        ...current.filter(
-          (
-            item
-          ) =>
-            identity(
-              item
-            ) !==
-            identity(
-              printer
-            )
-        ),
+    const existing =
+      current.find(
+        (item) =>
+          samePrinter(
+            item,
+            printer,
+          ),
+      );
+
+    const merged =
+      mergePrinter(
+        existing,
         printer,
-      ];
+      );
+
+    const next = [
+      ...current.filter(
+        (item) =>
+          !samePrinter(
+            item,
+            printer,
+          ),
+      ),
+      merged,
+    ];
 
     localStorage.setItem(
       printerKey(
-        scope
+        scope,
       ),
       JSON.stringify(
-        next
-      )
+        next,
+      ),
     );
   },
 
@@ -84,29 +307,46 @@ export const PrinterStorage = {
       return;
     }
 
-    const unique =
-      Array.from(
-        new Map(
-          printers.map(
-            (
-              printer
-            ) => [
-              identity(
-                printer
-              ),
+    const unique:
+      PrinterDevice[] =
+      [];
+
+    for (
+      const printer of
+      printers
+    ) {
+      const index =
+        unique.findIndex(
+          (item) =>
+            samePrinter(
+              item,
               printer,
-            ]
-          )
-        ).values()
-      );
+            ),
+        );
+
+      if (
+        index ===
+        -1
+      ) {
+        unique.push(
+          printer,
+        );
+      } else {
+        unique[index] =
+          mergePrinter(
+            unique[index],
+            printer,
+          );
+      }
+    }
 
     localStorage.setItem(
       printerKey(
-        scope
+        scope,
       ),
       JSON.stringify(
-        unique
-      )
+        unique,
+      ),
     );
   },
 
@@ -121,59 +361,54 @@ export const PrinterStorage = {
       return [];
     }
 
-    const data =
-      localStorage.getItem(
-        printerKey(
-          scope
-        )
+    const current =
+      parsePrinterArray(
+        localStorage.getItem(
+          printerKey(
+            scope,
+          ),
+        ),
       );
 
-    if (data) {
-      try {
-        const parsed =
-          JSON.parse(
-            data
-          );
-
-        return Array.isArray(
-          parsed
-        )
-          ? parsed
-          : [];
-      } catch {
-        return [];
-      }
+    if (
+      current.length >
+      0
+    ) {
+      return current;
     }
 
-    // Migrasi penyimpanan versi lama yang hanya menyimpan satu printer.
+    /**
+     * Migrasi versi lama.
+     */
     const legacy =
       localStorage.getItem(
-        LEGACY_KEY
+        LEGACY_KEY,
       );
 
-    if (!legacy) {
+    if (
+      !legacy
+    ) {
       return [];
     }
 
     try {
       const printer =
         JSON.parse(
-          legacy
-        ) as
-          PrinterDevice;
+          legacy,
+        ) as PrinterDevice;
 
       this.save(
         printer,
-        scope
+        scope,
       );
 
       this.setActive(
         printer,
-        scope
+        scope,
       );
 
       localStorage.removeItem(
-        LEGACY_KEY
+        LEGACY_KEY,
       );
 
       return [
@@ -198,16 +433,31 @@ export const PrinterStorage = {
 
     this.save(
       printer,
-      scope
+      scope,
     );
+
+    /**
+     * Ambil canonical merged version, jangan simpan stale object.
+     */
+    const canonical =
+      this.getAll(
+        scope,
+      ).find(
+        (item) =>
+          samePrinter(
+            item,
+            printer,
+          ),
+      ) ||
+      printer;
 
     localStorage.setItem(
       activeKey(
-        scope
+        scope,
       ),
       JSON.stringify(
-        printer
-      )
+        canonical,
+      ),
     );
   },
 
@@ -226,27 +476,71 @@ export const PrinterStorage = {
     const data =
       localStorage.getItem(
         activeKey(
-          scope
-        )
+          scope,
+        ),
       );
 
-    if (data) {
+    if (
+      data
+    ) {
       try {
-        return JSON.parse(
-          data
-        );
+        const active =
+          JSON.parse(
+            data,
+          ) as
+            PrinterDevice;
+
+        /**
+         * Reconcile active metadata dengan daftar saved terbaru.
+         */
+        const canonical =
+          this.getAll(
+            scope,
+          ).find(
+            (item) =>
+              samePrinter(
+                item,
+                active,
+              ),
+          );
+
+        if (
+          canonical
+        ) {
+          if (
+            JSON.stringify(
+              canonical,
+            ) !==
+            JSON.stringify(
+              active,
+            )
+          ) {
+            localStorage.setItem(
+              activeKey(
+                scope,
+              ),
+              JSON.stringify(
+                canonical,
+              ),
+            );
+          }
+
+          return canonical;
+        }
+
+        return active;
       } catch {
         localStorage.removeItem(
           activeKey(
-            scope
-          )
+            scope,
+          ),
         );
       }
     }
 
     return (
       this.getAll(
-        scope
+        scope,
       )[0] ||
       null
     );
@@ -266,50 +560,44 @@ export const PrinterStorage = {
 
     const next =
       this.getAll(
-        scope
+        scope,
       ).filter(
-        (
-          item
-        ) =>
-          identity(
-            item
-          ) !==
-          identity(
-            printer
-          )
+        (item) =>
+          !samePrinter(
+            item,
+            printer,
+          ),
       );
 
     this.saveMany(
       next,
-      scope
+      scope,
     );
 
     const active =
       this.getActive(
-        scope
+        scope,
       );
 
     if (
       active &&
-      identity(
-        active
-      ) ===
-        identity(
-          printer
-        )
+      samePrinter(
+        active,
+        printer,
+      )
     ) {
       if (
         next[0]
       ) {
         this.setActive(
           next[0],
-          scope
+          scope,
         );
       } else {
         localStorage.removeItem(
           activeKey(
-            scope
-          )
+            scope,
+          ),
         );
       }
     }
@@ -327,14 +615,14 @@ export const PrinterStorage = {
 
     localStorage.removeItem(
       printerKey(
-        scope
-      )
+        scope,
+      ),
     );
 
     localStorage.removeItem(
       activeKey(
-        scope
-      )
+        scope,
+      ),
     );
   },
 };
