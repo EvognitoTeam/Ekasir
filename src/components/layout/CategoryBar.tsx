@@ -85,7 +85,7 @@ export default function CategoryBar({ categories, items, selectedCategoryId, onS
               return (
                 <button
                   key={category.id}
-                  onClick={() => onSelectCategory(category.id)}
+                  onClick={() => onSelectCategory(String(category.id))}
                   className={`relative px-5 py-2.5 rounded-full flex items-center gap-2 transition-colors ${
                     isActive ? 'text-white' : 'text-stone-500 hover:text-stone-900 bg-stone-100/50 hover:bg-stone-100'
                   }`}
