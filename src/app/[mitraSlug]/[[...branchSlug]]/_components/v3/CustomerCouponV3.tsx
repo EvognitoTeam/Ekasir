@@ -32,6 +32,10 @@ import {
   Zap,
 } from "lucide-react";
 
+import type {
+  LucideIcon,
+} from 'lucide-react';
+
 import {
   useParams,
   usePathname,
@@ -2000,9 +2004,7 @@ function MetaBox({
   value,
 }: {
   icon:
-    React.ComponentType<{
-      size?: number;
-    }>;
+    LucideIcon;
   label:
     string;
   value:
