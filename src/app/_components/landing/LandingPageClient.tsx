@@ -334,6 +334,7 @@ export default function LandingPageClient() {
                 alt={`${KALOO_BRAND.name} Logo`}
                 fill
                 priority
+                unoptimized
                 sizes="48px"
                 className="object-contain p-1.5 transition-transform duration-300 group-hover:scale-105"
               />
@@ -779,7 +780,7 @@ export default function LandingPageClient() {
         <div className="mx-auto flex max-w-7xl flex-col gap-8 px-5 py-10 sm:px-6 md:flex-row md:items-end md:justify-between lg:px-8">
           <div className="flex items-center gap-4">
             <div className="relative h-14 w-14 overflow-hidden rounded-xl border border-black/10 bg-white">
-              <Image src={KALOO_BRAND.logo} alt={KALOO_BRAND.name} fill sizes="56px" className="object-contain p-1.5" />
+              <Image src={KALOO_BRAND.logo} alt={KALOO_BRAND.name} unoptimized fill sizes="56px" className="object-contain p-1.5" />
             </div>
             <div>
               <p className="text-lg font-extrabold tracking-[0.18em]">{KALOO_BRAND.name}</p>
@@ -823,7 +824,7 @@ export default function LandingPageClient() {
 
             <div className="mb-7 flex items-center gap-4">
               <div className="relative h-14 w-14 overflow-hidden rounded-xl border border-black/10 bg-white">
-                <Image src={KALOO_BRAND.logo} alt={KALOO_BRAND.name} fill sizes="56px" className="object-contain p-1.5" />
+                <Image src={KALOO_BRAND.logo} alt={KALOO_BRAND.name} unoptimized fill sizes="56px" className="object-contain p-1.5" />
               </div>
               <div>
                 <p className="text-[10px] font-extrabold uppercase tracking-[0.22em] text-black/35">KALOO POS</p>
