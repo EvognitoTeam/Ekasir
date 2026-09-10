@@ -44,6 +44,10 @@ import {
   WalletCards,
 } from "lucide-react";
 
+import type {
+  LucideIcon,
+} from 'lucide-react';
+
 import {
   useLanguageStore,
 } from "@/store/language.store";
@@ -1188,10 +1192,7 @@ function MiniMetric({
   meta,
   dark = false,
 }: {
-  icon: React.ComponentType<{
-    size?: number;
-    className?: string;
-  }>;
+  icon: LucideIcon;
   label: string;
   value: string;
   meta: string;
@@ -1254,10 +1255,7 @@ function FinanceItem({
   label,
   value,
 }: {
-  icon: React.ComponentType<{
-    size?: number;
-    className?: string;
-  }>;
+  icon: LucideIcon;
   label: string;
   value: string;
 }) {

@@ -44,6 +44,10 @@ import {
   Zap,
 } from "lucide-react";
 
+import type {
+  LucideIcon,
+} from 'lucide-react';
+
 import "react-quill-new/dist/quill.snow.css";
 
 import {
@@ -3658,11 +3662,7 @@ function Metric({
   value,
   dark = false,
 }: {
-  icon:
-    React.ComponentType<{
-      size?: number;
-      className?: string;
-    }>;
+  icon: LucideIcon;
   label: string;
   value: string;
   dark?: boolean;
@@ -4375,10 +4375,7 @@ function SmallBadge({
     Icon,
   label,
 }: {
-  icon:
-    React.ComponentType<{
-      size?: number;
-    }>;
+  icon: LucideIcon;
   label:
     string;
 }) {
@@ -4403,10 +4400,7 @@ function InfoCell({
   label,
   value,
 }: {
-  icon:
-    React.ComponentType<{
-      size?: number;
-    }>;
+  icon: LucideIcon;
   label:
     string;
   value:
@@ -4443,10 +4437,7 @@ function EditorSection({
   children,
   dark = false,
 }: {
-  icon:
-    React.ComponentType<{
-      size?: number;
-    }>;
+  icon: LucideIcon;
   title:
     string;
   description:
@@ -4638,10 +4629,7 @@ function ToggleRow({
   onChange,
   disabled = false,
 }: {
-  icon:
-    React.ComponentType<{
-      size?: number;
-    }>;
+  icon: LucideIcon;
   title:
     string;
   description:
