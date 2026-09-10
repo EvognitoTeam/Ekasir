@@ -974,6 +974,7 @@ export default function AdminLayout({
                 alt="KALOO POS"
                 fill
                 priority
+                unoptimized
                 sizes="40px"
                 className="object-contain p-1.5"
               />
