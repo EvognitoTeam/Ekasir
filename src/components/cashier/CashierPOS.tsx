@@ -46,7 +46,7 @@ export default function CashierPOS({ onClose, onSubmitOrder }: CashierPOSProps) 
   const slug = (params.mitraSlug as string) || (params.slug as string) || "";
   const branchSlug = (params.branchSlug as string) || undefined;
   
-  const [activeCategory, setActiveCategory] = useState<string>(categories[0]?.id || '');
+  const [activeCategory, setActiveCategory] = useState<string>(String(categories[0]?.id ?? ''),);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false); 
