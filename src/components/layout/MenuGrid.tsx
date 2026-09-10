@@ -73,7 +73,7 @@ function CategoryCarousel({
         <h2 className="text-sm font-bold font-sans text-stone-900 uppercase tracking-wide">
           {category.name}
         </h2>
-        <button onClick={() => onSelectCategory(category.id)} className="flex items-center gap-1 text-sm font-sans text-stone-600 hover:text-[#0E5C37]">
+        <button onClick={() => onSelectCategory(String(category.id))} className="flex items-center gap-1 text-sm font-sans text-stone-600 hover:text-[#0E5C37]">
           Lihat Semua <ChevronRight className="w-4 h-4" />
         </button>
       </header>
