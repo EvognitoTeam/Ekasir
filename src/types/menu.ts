@@ -1,5 +1,5 @@
 // 🔴 1. IMPORT DRIZZLE & SCHEMA KAMU
-import { InferSelectModel } from 'drizzle-orm';
+import type { InferSelectModel } from 'drizzle-orm';
 import { products, categories } from '@/db/schema'; // Sesuaikan path ini jika folder skemamu berbeda
 
 // 🔴 2. EKSTRAK TIPE ASLI DARI DATABASE
@@ -63,26 +63,48 @@ export interface MenuItemMeta {
 }
 
 // 🔴 3. HYBRID TYPE UNTUK MENU ITEM
-// Omit: "Singkirkan kolom DB ini karena kita mau ubah wujudnya di Frontend"
-export interface MenuItem extends Omit<DbProduct, 'id' | 'price' | 'status' | 'categories_id' | 'addon_id'> {
-  // Properti hasil translasi dari API (Override dari DB)
-  id: string;                  // Frontend lebih gampang olah ID sebagai string
-  categoryId: string;          // Translasi dari categories_id
-  basePrice: number;           // Translasi dari price
-  isAvailable: boolean;        // Translasi dari status (1/0 -> true/false)
-  status: number | boolean | string;
-  addonGroups: number[];       // Translasi dari addon_id (JSON string -> Array)
+//
+// DbProduct tetap tersedia sebagai tipe database penuh.
+// MenuItem adalah view-model frontend, jadi metadata internal database
+// tidak boleh dipaksa wajib pada semua response API / Zustand store.
+export type MenuItem =
+  Partial<
+    Omit<
+      DbProduct,
+      | 'id'
+      | 'price'
+      | 'status'
+      | 'categories_id'
+      | 'addon_id'
+      | 'branch_id'
+    >
+  > & {
+    id: string;
+    name: string;
+    categoryId: string | number | null;
+    basePrice: number;
+    isAvailable: boolean;
 
-  // Properti tambahan khusus UI (View Model)
-  categorizedAddons?: any[];   // Hasil grouping addon dari backend untuk Pop-up
-  meta?: Partial<MenuItemMeta>; // Data meta custom (Barista Spec, Sizes, dll)
-}
+    status?: number | boolean | string;
+    branch_id?: number | string | null;
+    addonGroups?: Array<number | string>;
+
+    categorizedAddons?: any[];
+    meta?: Partial<MenuItemMeta>;
+  };
 
 // 🔴 4. HYBRID TYPE UNTUK CATEGORY
-export interface Category extends Omit<DbCategory, 'id'> {
-  id: string;
-  items?: MenuItem[]; // Array anak menu untuk fitur mapping di katalog (seperti di RoastGalleryView)
-}
+export type Category =
+  Partial<
+    Omit<
+      DbCategory,
+      'id' | 'name'
+    >
+  > & {
+    id: string | number;
+    name: string;
+    items?: MenuItem[];
+  };
 
 export interface POSOptions {
   size?: string;

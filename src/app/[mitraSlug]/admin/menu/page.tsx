@@ -56,6 +56,11 @@ import {
   Toast,
 } from "@/utils/toast";
 
+import type {
+  Category,
+  MenuItem,
+} from "@/types/menu";
+
 type Locale = "id" | "en";
 type AvailabilityFilter = "all" | "available" | "unavailable";
 type MenuMode = "add" | "edit";
@@ -64,11 +69,6 @@ type Branch = {
   id: number | string;
   name: string;
   slug?: string;
-};
-
-type Category = {
-  id: number | string;
-  name: string;
 };
 
 type AddonGroup = {
@@ -83,19 +83,6 @@ type AddonItem = {
   category_id?: number | string | null;
   stock?: number | string | null;
   is_track_stock?: number | string | boolean | null;
-};
-
-type MenuItem = {
-  id: string;
-  name: string;
-  image?: string | null;
-  basePrice?: number;
-  stock?: number;
-  categoryId?: string | number | null;
-  description?: string | null;
-  isAvailable?: boolean;
-  branch_id?: number | string | null;
-  addonGroups?: Array<number | string>;
 };
 
 type RecipePayload = {
@@ -444,12 +431,12 @@ export default function AdminMenuPage() {
         throw new Error(menuData.message || t.loadError);
       }
 
-      const loadedItems = Array.isArray(menuData.items)
-        ? menuData.items
+      const loadedItems: MenuItem[] = Array.isArray(menuData.items)
+        ? (menuData.items as MenuItem[])
         : [];
 
-      const loadedCategories = Array.isArray(menuData.categories)
-        ? menuData.categories
+      const loadedCategories: Category[] = Array.isArray(menuData.categories)
+        ? (menuData.categories as Category[])
         : [];
 
       setMenu(loadedItems, loadedCategories);
@@ -501,7 +488,7 @@ export default function AdminMenuPage() {
   }, [activeBranchId]);
 
   const scopedItems = useMemo(() => {
-    return (items as MenuItem[]).filter((item) => {
+    return items.filter((item) => {
       if (activeBranchId === "") {
         return !item.branch_id;
       }
@@ -770,7 +757,7 @@ export default function AdminMenuPage() {
         throw new Error(result.message || t.genericError);
       }
 
-      const nextItems = (items as MenuItem[]).map((current) =>
+      const nextItems = items.map((current) =>
         current.id === item.id
           ? {
               ...current,
