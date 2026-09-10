@@ -53,6 +53,7 @@ import {
 import {
   useLanguageStore,
 } from "@/store/language.store";
+import { KALOO_BRAND } from "@/config/brand";
 
 type Locale =
   | "id"
@@ -881,10 +882,11 @@ export default function AdminLayout({
         <div className="flex flex-col items-center text-center">
           <div className="relative mb-5 h-14 w-14 overflow-hidden rounded-2xl border border-black/[0.08] bg-white shadow-sm">
             <Image
-              src="/logo.png"
+              src={KALOO_BRAND.logo}
               alt="KALOO POS"
               fill
               priority
+              unoptimized
               sizes="56px"
               className="object-contain p-2"
             />
