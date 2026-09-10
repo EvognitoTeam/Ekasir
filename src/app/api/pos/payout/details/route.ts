@@ -948,21 +948,28 @@ export async function GET(
       );
 
     const statusSummary =
-      normalizedOrders.reduce(
+      normalizedOrders.reduce<
+        Record<
+          PayoutState,
+          number
+        >
+      >(
         (
           current,
           order,
         ) => {
-          current[
-            order.payoutState
-          ] =
-            (
-              current[
-                order.payoutState
-              ] ??
-              0
-            ) +
-            1;
+          const payoutState =
+            order.payoutState;
+
+          if (
+            isPayoutState(
+              payoutState,
+            )
+          ) {
+            current[
+              payoutState
+            ] += 1;
+          }
 
           return current;
         },
@@ -981,14 +988,7 @@ export async function GET(
 
           cashouted:
             0,
-        } as Record<
-          | 'eligible'
-          | 'pending'
-          | 'approved'
-          | 'rejected'
-          | 'cashouted',
-          number
-        >,
+        },
       );
 
     /**
@@ -1125,4 +1125,29 @@ export async function GET(
       'PAYOUT_DETAILS_FETCH_FAILED',
     );
   }
+}
+
+type PayoutState =
+  | 'eligible'
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'cashouted';
+
+function isPayoutState(
+  value:
+    unknown,
+): value is PayoutState {
+  return (
+    value ===
+      'eligible' ||
+    value ===
+      'pending' ||
+    value ===
+      'approved' ||
+    value ===
+      'rejected' ||
+    value ===
+      'cashouted'
+  );
 }
