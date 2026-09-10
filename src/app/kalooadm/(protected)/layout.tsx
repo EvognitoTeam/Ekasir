@@ -50,7 +50,7 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
     
     try {
       // Panggil API logout
-      await fetch('/api/auth/logout', { method: 'POST' });
+      await fetch('/api/superadmin/logout', { method: 'POST' });
       router.push('/kalooadm/login');
       router.refresh();
     } catch (error) {

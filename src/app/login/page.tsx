@@ -222,9 +222,10 @@ export default function LoginView() {
           >
             <div className="relative h-11 w-11 overflow-hidden rounded-xl border border-black/10 bg-white">
               <Image
-                src="/logo.png"
+                src={KALOO_BRAND.logo}
                 alt={`${KALOO_BRAND.name} Logo`}
                 fill
+                unoptimized
                 sizes="44px"
                 className="object-contain p-1.5"
                 priority
