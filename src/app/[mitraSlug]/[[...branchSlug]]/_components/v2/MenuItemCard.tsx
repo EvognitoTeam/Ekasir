@@ -32,22 +32,31 @@ function enabled(
   );
 }
 
-function plainText(
+function sanitizeHtml(
   value?:
     string | null,
 ) {
-  return String(
-    value || '',
-  )
+  if (!value) {
+    return '';
+  }
+
+  return String(value)
     .replace(
-      /<[^>]*>/g,
-      ' ',
+      /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
+      '',
     )
     .replace(
-      /\s+/g,
-      ' ',
+      /<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi,
+      '',
     )
-    .trim();
+    .replace(
+      /\son\w+\s*=\s*(".*?"|'.*?'|[^\s>]+)/gi,
+      '',
+    )
+    .replace(
+      /javascript\s*:/gi,
+      '',
+    );
 }
 
 export default function MenuItemCard({
@@ -78,7 +87,7 @@ export default function MenuItemCard({
       stock <= 0);
 
   const description =
-    plainText(
+    sanitizeHtml(
       item.description,
     );
 
@@ -121,9 +130,25 @@ export default function MenuItemCard({
         </h3>
 
         {description && (
-          <p className="mt-1.5 line-clamp-2 text-[10px] leading-4 text-black/40">
-            {description}
-          </p>
+          <div
+            className={[
+              "mt-1.5 line-clamp-2 text-[10px] leading-4 text-black/40",
+              "[&_p]:m-0",
+              "[&_strong]:font-bold",
+              "[&_b]:font-bold",
+              "[&_em]:italic",
+              "[&_i]:italic",
+              "[&_ul]:ml-3",
+              "[&_ol]:ml-3",
+              "[&_ul]:list-disc",
+              "[&_ol]:list-decimal",
+              "[&_a]:underline",
+            ].join(" ")}
+            dangerouslySetInnerHTML={{
+              __html:
+                description,
+            }}
+          />
         )}
 
         <p className="mt-2 text-xs font-extrabold">

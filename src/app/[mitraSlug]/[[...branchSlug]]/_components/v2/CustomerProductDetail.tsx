@@ -139,8 +139,25 @@ export default function CustomerProductDetail({
       : [];
 
   const description =
-    stripHtml(
-      item.description,
+  String(
+    item.description ??
+      "",
+  )
+    .replace(
+      /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
+      "",
+    )
+    .replace(
+      /<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi,
+      "",
+    )
+    .replace(
+      /\son\w+\s*=\s*(".*?"|'.*?'|[^\s>]+)/gi,
+      "",
+    )
+    .replace(
+      /javascript\s*:/gi,
+      "",
     );
 
   const totalPrice =
@@ -594,9 +611,12 @@ export default function CustomerProductDetail({
           </div>
 
           {description && (
-            <p className="mt-4 text-[13px] leading-6 text-black/52">
-              {description}
-            </p>
+            <div
+              dangerouslySetInnerHTML={{
+                __html:
+                  description,
+              }}
+            />
           )}
         </div>
 

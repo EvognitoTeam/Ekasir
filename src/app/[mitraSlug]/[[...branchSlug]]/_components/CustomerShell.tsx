@@ -118,7 +118,9 @@ export default function CustomerShell({
       (item) =>
         [
           item.name,
-          item.description,
+          htmlToPlainText(
+            item.description,
+          ),
         ]
           .filter(Boolean)
           .some((value) =>
@@ -460,4 +462,34 @@ export default function CustomerShell({
       </div>
     </div>
   );
+}
+
+function htmlToPlainText(
+  html:
+    string |
+    null |
+    undefined,
+) {
+  if (!html) {
+    return "";
+  }
+
+  return String(html)
+    .replace(
+      /<[^>]*>/g,
+      " ",
+    )
+    .replace(
+      /&nbsp;/gi,
+      " ",
+    )
+    .replace(
+      /&amp;/gi,
+      "&",
+    )
+    .replace(
+      /\s+/g,
+      " ",
+    )
+    .trim();
 }
