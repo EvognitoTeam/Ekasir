@@ -2729,11 +2729,7 @@ function SelectField({
   onChange,
   children,
 }: {
-  icon:
-    React.ComponentType<{
-      size?: number;
-      className?: string;
-    }>;
+  icon: LucideIcon;
   label:
     string;
   value:
@@ -2908,11 +2904,7 @@ function DetailLine({
   label,
   value,
 }: {
-  icon:
-    React.ComponentType<{
-      size?: number;
-      className?: string;
-    }>;
+  icon: LucideIcon;
   label:
     string;
   value:
