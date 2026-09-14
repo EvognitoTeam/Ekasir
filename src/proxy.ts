@@ -1,16 +1,12 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-import { jwtVerify } from 'jose';
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { jwtVerify } from "jose";
 
 const SECRET_KEY = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'rahasia-super-aman-evokasir-2026',
+  process.env.JWT_SECRET || "rahasia-super-aman-evokasir-2026",
 );
 
-type ProtectedArea =
-  | 'admin'
-  | 'dashboard'
-  | 'cashier'
-  | 'kitchen';
+type ProtectedArea = "admin" | "dashboard" | "cashier" | "kitchen";
 
 type ParsedProtectedPath = {
   slug: string;
@@ -21,12 +17,8 @@ type ParsedProtectedPath = {
   isLegacyDashboardUrl?: boolean;
 };
 
-function parseProtectedPath(
-  pathname: string,
-): ParsedProtectedPath | null {
-  const segments = pathname
-    .split('/')
-    .filter(Boolean);
+function parseProtectedPath(pathname: string): ParsedProtectedPath | null {
+  const segments = pathname.split("/").filter(Boolean);
 
   if (segments.length < 2) {
     return null;
@@ -43,11 +35,11 @@ function parseProtectedPath(
    * /:slug/admin/ledger
    * dst.
    */
-  if (segments[1] === 'admin') {
+  if (segments[1] === "admin") {
     return {
       slug,
-      area: 'admin',
-      adminRoute: segments[2] || 'dashboard',
+      area: "admin",
+      adminRoute: segments[2] || "dashboard",
     };
   }
 
@@ -61,15 +53,12 @@ function parseProtectedPath(
    * folder branch sebelum /admin, URL ini nantinya
    * diarahkan ke canonical admin URL.
    */
-  if (
-    segments.length >= 3 &&
-    segments[2] === 'admin'
-  ) {
+  if (segments.length >= 3 && segments[2] === "admin") {
     return {
       slug,
-      area: 'admin',
+      area: "admin",
       branchSlug: segments[1],
-      adminRoute: segments[3] || 'dashboard',
+      adminRoute: segments[3] || "dashboard",
       isLegacyAdminUrl: true,
     };
   }
@@ -82,116 +71,166 @@ function parseProtectedPath(
    * Sekarang canonical URL Owner adalah:
    * /:slug/admin/dashboard
    */
-  if (segments[1] === 'dashboard') {
+  if (segments[1] === "dashboard") {
     return {
       slug,
-      area: 'dashboard',
+      area: "dashboard",
       isLegacyDashboardUrl: true,
     };
   }
 
-  if (segments[1] === 'cashier') {
+  if (segments[1] === "cashier") {
     return {
       slug,
-      area: 'cashier',
+      area: "cashier",
     };
   }
 
-  if (segments[1] === 'kitchen') {
+  if (segments[1] === "kitchen") {
     return {
       slug,
-      area: 'kitchen',
+      area: "kitchen",
     };
   }
 
   return null;
 }
 
-function getHomeForRole(
-  slug: string,
-  role: string,
-): string {
-  const normalizedRole =
-    role.toLowerCase();
+function getHomeForRole(slug: string, role: string): string {
+  const normalizedRole = role.toLowerCase();
 
-  if (normalizedRole === 'owner') {
+  if (normalizedRole === "owner") {
     return `/${slug}/admin/dashboard`;
   }
 
-  if (normalizedRole === 'cashier') {
+  if (normalizedRole === "cashier") {
     return `/${slug}/cashier`;
   }
 
-  if (normalizedRole === 'kitchen') {
+  if (normalizedRole === "kitchen") {
     return `/${slug}/kitchen`;
   }
 
-  return '/login';
+  return "/login";
 }
 
 export async function proxy(
   request: NextRequest,
 ) {
-  const parsed =
-    parseProtectedPath(
-      request.nextUrl.pathname,
+  const hostname =
+    (
+      request.headers.get(
+        'host',
+      ) || ''
+    )
+      .split(':')[0]
+      .toLowerCase();
+
+  const pathname =
+    request.nextUrl.pathname;
+
+  console.log(
+    '[PROXY_DEBUG]',
+    {
+      hostname,
+      pathname,
+    },
+  );
+
+  const isApiHost =
+    hostname ===
+      'api.kalooposlocal.test' ||
+    hostname ===
+      'api.kaloopos.com';
+
+  if (isApiHost) {
+    /*
+    * Handle browser CORS preflight.
+    */
+    if (
+      request.method ===
+      'OPTIONS'
+    ) {
+      return applyCors(
+        new NextResponse(
+          null,
+          {
+            status: 204,
+          },
+        ),
+        request,
+      );
+    }
+
+    /*
+    * Compatibility:
+    *
+    * api.kalooposlocal.test/api/products
+    * tetap diperbolehkan.
+    */
+    if (
+      pathname === '/api' ||
+      pathname.startsWith('/api/')
+    ) {
+      return applyCors(
+        NextResponse.next(),
+        request,
+      );
+    }
+
+    /*
+    * API subdomain baru:
+    *
+    * /products
+    * ->
+    * /api/products
+    */
+    const rewriteUrl =
+      request.nextUrl.clone();
+
+    rewriteUrl.pathname =
+      pathname === '/'
+        ? '/api'
+        : `/api${pathname}`;
+
+    return applyCors(
+      NextResponse.rewrite(
+        rewriteUrl,
+      ),
+      request,
     );
+  }
+
+  const parsed = parseProtectedPath(pathname);
 
   if (!parsed) {
     return NextResponse.next();
   }
 
-  const token =
-    request.cookies.get(
-      'ekasir_session',
-    )?.value;
+  const token = request.cookies.get("ekasir_session")?.value;
 
   if (!token) {
-    return NextResponse.redirect(
-      new URL(
-        '/login',
-        request.url,
-      ),
-    );
+    return NextResponse.redirect(new URL("/login", request.url));
   }
 
   try {
-    const {
-      payload,
-    } =
-      await jwtVerify(
-        token,
-        SECRET_KEY,
-      );
+    const { payload } = await jwtVerify(token, SECRET_KEY);
 
-    const userRole =
-      String(
-        payload.role || '',
-      );
+    const userRole = String(payload.role || "");
 
-    const normalizedRole =
-      userRole.toLowerCase();
+    const normalizedRole = userRole.toLowerCase();
 
-    const userSlug =
-      String(
-        payload.slug || '',
-      );
+    const userSlug = String(payload.slug || "");
 
     /*
      * Token tidak memiliki tenant/slug yang valid.
      */
     if (!userSlug) {
-      const response =
-        NextResponse.redirect(
-          new URL(
-            '/login?error=invalid_tenant',
-            request.url,
-          ),
-        );
-
-      response.cookies.delete(
-        'ekasir_session',
+      const response = NextResponse.redirect(
+        new URL("/login?error=invalid_tenant", request.url),
       );
+
+      response.cookies.delete("ekasir_session");
 
       return response;
     }
@@ -199,32 +238,17 @@ export async function proxy(
     /*
      * User mencoba membuka tenant lain.
      */
-    if (
-      parsed.slug !==
-      userSlug
-    ) {
+    if (parsed.slug !== userSlug) {
       return NextResponse.redirect(
-        new URL(
-          getHomeForRole(
-            userSlug,
-            userRole,
-          ),
-          request.url,
-        ),
+        new URL(getHomeForRole(userSlug, userRole), request.url),
       );
     }
 
-    const isOwner =
-      normalizedRole ===
-      'owner';
+    const isOwner = normalizedRole === "owner";
 
-    const isCashier =
-      normalizedRole ===
-      'cashier';
+    const isCashier = normalizedRole === "cashier";
 
-    const isKitchen =
-      normalizedRole ===
-      'kitchen';
+    const isKitchen = normalizedRole === "kitchen";
 
     /*
      * ============================================================
@@ -240,16 +264,10 @@ export async function proxy(
      *
      * src/app/[mitraSlug]/admin/*
      */
-    if (parsed.area === 'admin') {
+    if (parsed.area === "admin") {
       if (!isOwner) {
         return NextResponse.redirect(
-          new URL(
-            getHomeForRole(
-              userSlug,
-              userRole,
-            ),
-            request.url,
-          ),
+          new URL(getHomeForRole(userSlug, userRole), request.url),
         );
       }
 
@@ -261,18 +279,11 @@ export async function proxy(
        * ->
        * /kaloo/admin/menu
        */
-      if (
-        parsed.isLegacyAdminUrl
-      ) {
-        const route =
-          parsed.adminRoute ||
-          'dashboard';
+      if (parsed.isLegacyAdminUrl) {
+        const route = parsed.adminRoute || "dashboard";
 
         return NextResponse.redirect(
-          new URL(
-            `/${userSlug}/admin/${route}`,
-            request.url,
-          ),
+          new URL(`/${userSlug}/admin/${route}`, request.url),
         );
       }
 
@@ -281,15 +292,9 @@ export async function proxy(
        * ->
        * /:slug/admin/dashboard
        */
-      if (
-        request.nextUrl.pathname ===
-        `/${userSlug}/admin`
-      ) {
+      if (request.nextUrl.pathname === `/${userSlug}/admin`) {
         return NextResponse.redirect(
-          new URL(
-            `/${userSlug}/admin/dashboard`,
-            request.url,
-          ),
+          new URL(`/${userSlug}/admin/dashboard`, request.url),
         );
       }
 
@@ -303,27 +308,15 @@ export async function proxy(
      * ->
      * /:slug/admin/dashboard
      */
-    if (
-      parsed.area ===
-      'dashboard'
-    ) {
+    if (parsed.area === "dashboard") {
       if (isOwner) {
         return NextResponse.redirect(
-          new URL(
-            `/${userSlug}/admin/dashboard`,
-            request.url,
-          ),
+          new URL(`/${userSlug}/admin/dashboard`, request.url),
         );
       }
 
       return NextResponse.redirect(
-        new URL(
-          getHomeForRole(
-            userSlug,
-            userRole,
-          ),
-          request.url,
-        ),
+        new URL(getHomeForRole(userSlug, userRole), request.url),
       );
     }
 
@@ -332,19 +325,10 @@ export async function proxy(
      * CASHIER
      * ============================================================
      */
-    if (
-      parsed.area ===
-      'cashier'
-    ) {
+    if (parsed.area === "cashier") {
       if (!isCashier) {
         return NextResponse.redirect(
-          new URL(
-            getHomeForRole(
-              userSlug,
-              userRole,
-            ),
-            request.url,
-          ),
+          new URL(getHomeForRole(userSlug, userRole), request.url),
         );
       }
 
@@ -356,19 +340,10 @@ export async function proxy(
      * KITCHEN
      * ============================================================
      */
-    if (
-      parsed.area ===
-      'kitchen'
-    ) {
+    if (parsed.area === "kitchen") {
       if (!isKitchen) {
         return NextResponse.redirect(
-          new URL(
-            getHomeForRole(
-              userSlug,
-              userRole,
-            ),
-            request.url,
-          ),
+          new URL(getHomeForRole(userSlug, userRole), request.url),
         );
       }
 
@@ -376,47 +351,80 @@ export async function proxy(
     }
 
     return NextResponse.next();
-  } catch (
-    error
-  ) {
-    console.error(
-      '[PROXY_AUTH_ERROR]',
-      error,
+  } catch (error) {
+    console.error("[PROXY_AUTH_ERROR]", error);
+
+    const response = NextResponse.redirect(
+      new URL("/login?error=session_expired", request.url),
     );
 
-    const response =
-      NextResponse.redirect(
-        new URL(
-          '/login?error=session_expired',
-          request.url,
-        ),
-      );
-
-    response.cookies.delete(
-      'ekasir_session',
-    );
+    response.cookies.delete("ekasir_session");
 
     return response;
   }
 }
 
 export const config = {
+  /*
+   * Proxy harus menerima semua pathname aplikasi agar hostname
+   * api.kalooposlocal.test / api.kaloopos.com dapat direwrite.
+   * Static asset Next.js dilewati agar tidak ikut diproses.
+   */
   matcher: [
-    '/:slug/admin',
-    '/:slug/admin/:path*',
-
-    /*
-     * Legacy branch admin URL.
-     * Bisa dihapus nanti kalau semua link lama sudah tidak digunakan.
-     */
-    '/:slug/:branch/admin/:path*',
-
-    /*
-     * Legacy Owner dashboard.
-     */
-    '/:slug/dashboard/:path*',
-
-    '/:slug/cashier/:path*',
-    '/:slug/kitchen/:path*',
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)",
   ],
 };
+
+const ALLOWED_API_ORIGINS =
+  new Set([
+    'http://kalooposlocal.test:3000',
+    'http://localhost:3000',
+
+    // Production nanti:
+    'https://kaloopos.com',
+    'https://www.kaloopos.com',
+  ]);
+
+function applyCors(
+  response: NextResponse,
+  request: NextRequest,
+) {
+  const origin =
+    request.headers.get(
+      'origin',
+    );
+
+  if (
+    origin &&
+    ALLOWED_API_ORIGINS.has(
+      origin,
+    )
+  ) {
+    response.headers.set(
+      'Access-Control-Allow-Origin',
+      origin,
+    );
+
+    response.headers.set(
+      'Access-Control-Allow-Credentials',
+      'true',
+    );
+
+    response.headers.set(
+      'Vary',
+      'Origin',
+    );
+  }
+
+  response.headers.set(
+    'Access-Control-Allow-Methods',
+    'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+  );
+
+  response.headers.set(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, X-Requested-With',
+  );
+
+  return response;
+}
