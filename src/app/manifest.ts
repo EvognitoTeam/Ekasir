@@ -12,7 +12,7 @@ MetadataRoute.Manifest {
       'KALOO POS',
 
     short_name:
-      'Evokasir',
+      'KALOO POS',
 
     description:
       'Aplikasi Point of Sale KALOO POS',

@@ -12,9 +12,6 @@ import {
 
 import './globals.css';
 
-import PwaRegister
-  from '@/components/pwa/PwaRegister';
-
 import LanguageHtmlSync
   from '@/components/common/LanguageHtmlSync';
 
@@ -43,9 +40,6 @@ export const metadata: Metadata = {
 
   description:
     'Sistem kasir dan menu digital modern untuk bisnis F&B Anda.',
-
-  manifest:
-    '/manifest.webmanifest',
 
   applicationName:
     'KALOO POS',
@@ -143,8 +137,6 @@ export default function RootLayout({
         `}
       >
         <LanguageHtmlSync />
-
-        <PwaRegister />
 
         {children}
       </body>
